@@ -31,7 +31,6 @@ public class Referral extends BaseEntity {
     @Column(nullable = false)
     private UUID examTypeId;
 
-    @Column(nullable = false)
     private UUID currentReservationId;
 
     @Column(nullable = false, length = 20)
@@ -44,17 +43,24 @@ public class Referral extends BaseEntity {
     @Column(nullable = false, unique = true)
     private UUID idempotencyKey;
 
-    public static Referral createReferral(UUID referringInstitutionId, UUID referrerId, UUID examTypeId, UUID currentReservationId, String patientName, UUID idempotencyKey) {
+    public static Referral create(UUID referringInstitutionId, UUID referrerId, UUID examTypeId, String patientName, UUID idempotencyKey) {
 
         return Referral.builder()
                 .referringInstitutionId(referringInstitutionId)
                 .referrerId(referrerId)
                 .examTypeId(examTypeId)
-                .currentReservationId(currentReservationId)
                 .referralStatus(ReferralStatus.PENDING)
                 .patientName(patientName)
                 .idempotencyKey(idempotencyKey)
                 .build();
+    }
+
+    public void assignReservation(UUID reservationId) {
+        validateReferralStatus(ReferralStatus.PENDING);
+        if (this.currentReservationId != null) {
+            throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
+        }
+        this.currentReservationId = reservationId;
     }
 
     // 상태 변경 confirm ~ complete
@@ -91,7 +97,6 @@ public class Referral extends BaseEntity {
         this.referralStatus = ReferralStatus.COMPLETED;
     }
 
-
     // 본인 확인
     public boolean isReferredBy(UUID userId) {
         return this.referrerId != null && this.referrerId.equals(userId);
@@ -99,9 +104,7 @@ public class Referral extends BaseEntity {
 
     // soft delete
     public void delete(UUID userId) {
-        if (this.referralStatus != ReferralStatus.COMPLETED) {
-            throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
-        }
+        validateReferralStatus(ReferralStatus.COMPLETED, ReferralStatus.FAILED, ReferralStatus.CANCELED);
         softDelete(userId);
     }
 

@@ -9,7 +9,11 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
 
     // referral
-    INVALID_REFERRAL_STATUS(HttpStatus.CONFLICT, "현재 상태에서는 처리할 수 없습니다."),
+    INVALID_REFERRAL_STATUS(HttpStatus.CONFLICT, "현재 의뢰상태에서는 처리할 수 없습니다."),
+
+    // reservation
+    INVALID_RESERVATION_STATUS(HttpStatus.CONFLICT, "현재 예약상태에서는 처리할 수 없습니다."),
+    INVALID_FAILURE_REASON(HttpStatus.BAD_REQUEST, "유효하지 않은 실패 사유입니다."),
 
     // common
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "유효성 검사에 실패했습니다."),
