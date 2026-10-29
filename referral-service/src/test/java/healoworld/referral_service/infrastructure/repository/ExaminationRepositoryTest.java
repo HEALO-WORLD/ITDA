@@ -77,6 +77,36 @@ class ExaminationRepositoryTest {
     }
 
     @Test
+    @DisplayName("referral_id가 없으면 NOT NULL 제약으로 거부된다")
+    void referralIdIsRequired() {
+
+        // 의뢰 ID를 null로 설정해 검사 생성을 시도한다
+        assertThatThrownBy(() ->
+                save(null, UUID.randomUUID())
+        )
+                // 필수값이 누락됐으므로 데이터 정합성 위반 예외가 발생해야 한다
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("exam_institution_id가 없으면 NOT NULL 제약으로 거부된다")
+    void examInstitutionIdIsRequired() {
+
+        // 검사기관 ID를 null로 설정해 검사 생성을 시도한다
+        assertThatThrownBy(() ->
+                examinationRepository.saveAndFlush(
+                        Examination.schedule(
+                                UUID.randomUUID(),
+                                UUID.randomUUID(),
+                                null
+                        )
+                )
+        )
+                // 검사기관 ID는 필수값이므로 저장이 거부되어야 한다
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     @DisplayName("시작은 SCHEDULED이고 검증한 예약에 연결돼 있을 때 한 번만 성공하며 started_at을 기록한다")
     void startIfScheduled() {
         UUID reservationId = UUID.randomUUID();
