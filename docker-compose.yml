@@ -41,6 +41,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
 
   kafka-ui:
     image: kafbat/kafka-ui:v1.5.0
@@ -52,6 +56,26 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     depends_on:
       - kafka
+
+  kafka-init:
+    image: apache/kafka:4.4.0
+    container_name: itda-kafka-init
+    depends_on:
+      - kafka
+    entrypoint: [ "/bin/bash", "-c" ]
+    command:
+      - |
+        until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list > /dev/null 2>&1; do
+          echo "Kafka 대기 중..."
+          sleep 2
+        done
+        for topic in slot-commands slot-results equipment-events \
+                     slot-commands.DLT slot-results.DLT equipment-events.DLT; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
+            --create --if-not-exists --topic "$$topic" \
+            --partitions 3 --replication-factor 1
+        done
+        echo "토픽 생성 완료"
 
   prometheus:
     image: prom/prometheus:v3.15.1
@@ -67,7 +91,7 @@ services:
     image: grafana/grafana:13.2.4
     container_name: itda-grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
     volumes:
@@ -80,3 +104,4 @@ volumes:
   postgres-data:
   redis-data:
   grafana-data:
+  kafka-data:
