@@ -1,16 +1,16 @@
 package healoworld.referral_service.presentation.dto.request;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
 
 import java.util.UUID;
 
-@Builder
-@Setter
 @Getter
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class CreateReferralRequest {
     @NotNull(message = "의뢰 기관 ID는 필수입니다.")
     private UUID referringInstitutionId;
@@ -20,4 +20,6 @@ public class CreateReferralRequest {
     private String patientName;
     @NotNull(message = "멱등 키는 필수입니다.")
     private UUID idempotencyKey;
+    @NotNull
+    private CreateReservationRequest reservation;
 }
