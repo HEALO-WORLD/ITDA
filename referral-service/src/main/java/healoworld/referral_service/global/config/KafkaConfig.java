@@ -13,7 +13,7 @@ public class KafkaConfig {
 
     @Bean
     public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<String, String> kafkaTemplate) {
-        // 실패한 메시지를 "원본토픽.DLT"의 같은 파티션으로 보낸다
+        // 실패한 메시지를 "원본토픽-dlt"의 같은 파티션으로 보낸다
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate);
 
         // 1초 간격으로 3번 재시도 (최초 시도 포함 총 4번)
