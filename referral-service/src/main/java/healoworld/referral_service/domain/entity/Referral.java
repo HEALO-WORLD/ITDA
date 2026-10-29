@@ -81,7 +81,7 @@ public class Referral extends BaseEntity {
 
     // 장비 장애 등으로 재조정이 필요할 때 변경
     public void requestReschedule() {
-        validateReferralStatus(ReferralStatus.CONFIRMED);
+        validateReferralStatus(ReferralStatus.PENDING, ReferralStatus.CONFIRMED);
         this.referralStatus = ReferralStatus.NEEDS_RESCHEDULE;
     }
 
@@ -92,10 +92,10 @@ public class Referral extends BaseEntity {
         this.currentReservationId = newReservationId;
     }
 
-    public void complete() {
-        validateReferralStatus(ReferralStatus.CONFIRMED);
-        this.referralStatus = ReferralStatus.COMPLETED;
-    }
+//    public void complete() {
+//        validateReferralStatus(ReferralStatus.CONFIRMED);
+//        this.referralStatus = ReferralStatus.COMPLETED;
+//    }
 
     // 본인 확인
     public boolean isReferredBy(UUID userId) {
@@ -104,7 +104,7 @@ public class Referral extends BaseEntity {
 
     // soft delete
     public void delete(UUID userId) {
-        validateReferralStatus(ReferralStatus.COMPLETED, ReferralStatus.FAILED, ReferralStatus.CANCELED);
+        validateReferralStatus(ReferralStatus.FAILED, ReferralStatus.CANCELED);
         softDelete(userId);
     }
 
