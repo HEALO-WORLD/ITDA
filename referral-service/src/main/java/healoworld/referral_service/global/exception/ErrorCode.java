@@ -9,9 +9,13 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
 
     // referral
+    REFERRAL_ACCESS_DENIED(HttpStatus.FORBIDDEN, "의뢰에 대한 권한이 없습니다."),
+    REFERRAL_NOT_FOUND(HttpStatus.NOT_FOUND, "의뢰를 찾을 수 없습니다."),
     INVALID_REFERRAL_STATUS(HttpStatus.CONFLICT, "현재 의뢰상태에서는 처리할 수 없습니다."),
 
     // reservation
+    RESERVATION_ACCESS_DENIED(HttpStatus.FORBIDDEN, "예약에 대한 권한이 없습니다."),
+    RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다."),
     INVALID_RESERVATION_STATUS(HttpStatus.CONFLICT, "현재 예약상태에서는 처리할 수 없습니다."),
     INVALID_FAILURE_REASON(HttpStatus.BAD_REQUEST, "유효하지 않은 실패 사유입니다."),
 
