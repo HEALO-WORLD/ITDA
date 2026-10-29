@@ -1,6 +1,7 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.Referral;
+import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
@@ -22,6 +23,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReferralService {
     private final ReferralRepository referralRepository;
+    private final ReservationService reservationService;
 
     public ReferralResponse createReferral(UUID userId, CreateReferralRequest createReferralRequest) {
         Optional<Referral> referral = referralRepository.findByIdempotencyKey(createReferralRequest.getIdempotencyKey());
@@ -31,7 +33,8 @@ public class ReferralService {
         Referral createdReferral = Referral.create(createReferralRequest.getReferringInstitutionId(), userId, createReferralRequest.getExamTypeId(), createReferralRequest.getPatientName(), createReferralRequest.getIdempotencyKey());
         referralRepository.save(createdReferral);
 
-        // Reservation 생성
+        Reservation reservation = reservationService.createReservation(createdReferral, createReferralRequest.getReservation());
+        createdReferral.assignReservation(reservation.getId());
         return ReferralResponse.from(createdReferral);
     }
 
