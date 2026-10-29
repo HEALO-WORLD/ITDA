@@ -15,6 +15,10 @@ public interface ExaminationRepository extends JpaRepository<Examination, UUID> 
 
     Optional<Examination> findByReferralId(UUID referralId);
 
+    // 특정 의뢰에 연결된 검사 기록의 개수를 조회한다
+    // 동시 생성 요청 이후 검사가 정확히 1건만 저장됐는지 검증하기 위해 사용한다
+    long countByReferralId(UUID referralId);
+
     // 아래 조건부 UPDATE는 WHERE 조건(현재 상태 등)이 맞을 때만 한 번 갱신하고, 갱신한 행 수(0 또는 1)를 돌려준다
     // 같은 행을 동시에 갱신하면 DB 행 잠금으로 순서가 정해지고, 뒤 요청은 바뀐 값으로 조건을 다시 검사해 0건이 된다
 

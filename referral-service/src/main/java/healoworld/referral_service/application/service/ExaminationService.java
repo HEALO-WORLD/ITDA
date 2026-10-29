@@ -10,15 +10,22 @@ import healoworld.referral_service.presentation.dto.response.ExaminationStatusCh
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import java.sql.SQLException;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ExaminationService {
+
+    // PostgreSQL의 UNIQUE 제약조건 위반을 나타내는 SQLSTATE
+    // 같은 의뢰의 검사가 동시에 생성될 때 발생하는 중복 저장 오류를 구분하기 위해 사용한다
+    private static final String UNIQUE_VIOLATION_SQL_STATE = "23505";
 
     private final ExaminationRepository examinationRepository;
 
@@ -35,14 +42,31 @@ public class ExaminationService {
             if (existing.get().isLinkedTo(reservationId, examInstitutionId)) {
                 return existing.get().getId();
             }
-            // 다른 예약으로 이미 검사가 있다면 재예약이므로 updateReservation을 호출해야 한다
+            // 다른 예약으로 검사가 존재한다면 신규 생성이 아닌 재예약 처리가 필요하다
             throw new BaseException(ErrorCode.EXAMINATION_ALREADY_EXISTS);
         }
 
-        // 조회와 저장 사이에 같은 의뢰의 검사가 동시에 저장되면 referral_id UNIQUE 제약이 막는다.
-        // saveAndFlush로 INSERT를 즉시 실행해 제약 위반이 커밋 시점이 아니라 이 메서드 안에서 드러나게 한다
-        return examinationRepository.saveAndFlush(
-                Examination.schedule(referralId, reservationId, examInstitutionId)).getId();
+        try {
+            // saveAndFlush()를 사용해 INSERT를 즉시 실행하여
+            // DB 제약조건 위반이 발생하면 이 메서드 안에서 감지할 수 있도록 한다
+            return examinationRepository.saveAndFlush(
+                    Examination.schedule(referralId, reservationId, examInstitutionId)
+            ).getId();
+        } catch (DataIntegrityViolationException e){
+
+            // 조회와 저장 사이에 다른 요청이 같은 의뢰의 검사를 먼저 생성했다면
+            // DB의 UNIQUE 제약조건에 의해 INSERT가 실패할 수 있다
+            if(isUniqueViolation(e)){
+
+                // DB 중복 오류를 프로젝트에서 사용하는 비즈니스 예외로 변환한다
+                // 실패한 트랜잭션에서 다시 조회하지 않고 예외를 던져 롤백한다
+                throw new BaseException(ErrorCode.EXAMINATION_ALREADY_EXISTS);
+            }
+
+            // UNIQUE 위반이 아닌 다른 DB 제약조건 오류는
+            // 중복 생성 오류로 잘못 처리하지 않고 원래 예외를 그대로 전달한다
+            throw e;
+        }
     }
 
     // 재예약 확정 시 의뢰·예약 Saga가 호출한다. 새 검사를 만들지 않고 기존 검사를 새 예약에 연결한다
@@ -106,5 +130,16 @@ public class ExaminationService {
     private Examination findByReferralId(UUID referralId) {
         return examinationRepository.findByReferralId(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.EXAMINATION_NOT_FOUND));
+    }
+
+    // DB 제약조건 위반 예외가 PostgreSQL의 UNIQUE 위반인지 확인한다.
+    private boolean isUniqueViolation(DataIntegrityViolationException e) {
+
+        // Spring 예외 내부에 감싸진 가장 구체적인 원인을 확인한다
+        // 실제 원인이 SQLException이면 PostgreSQL의 SQLSTATE를 가져올 수 있다
+        return NestedExceptionUtils.getMostSpecificCause(e) instanceof SQLException sqlException
+
+                // SQLSTATE가 23505이면 UNIQUE 제약조건 위반으로 판단한다
+                && UNIQUE_VIOLATION_SQL_STATE.equals(sqlException.getSQLState());
     }
 }
