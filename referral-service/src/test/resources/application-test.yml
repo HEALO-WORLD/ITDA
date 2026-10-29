@@ -1,0 +1,16 @@
+# 테스트 전용 설정 (@ActiveProfiles("test")일 때 main의 application.yml 위에 덮어써진다)
+# 접속 계정은 main 설정과 같은 .env 값(POSTGRES_USER/POSTGRES_PASSWORD)을 사용하고, 여기에는 비밀번호를 적지 않는다
+# DB 이름은 일부러 변수로 두지 않는다. 연결에 실패해도 개발 DB(referral_db)로 바뀌지 않고 테스트가 실패한다
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/itda_referral_test
+  jpa:
+    hibernate:
+      # 테이블이 없으면 만들고, 테스트가 끝나도 DROP하지 않는다
+      ddl-auto: update
+    show-sql: false
+
+# 테스트에서는 Eureka 서버에 등록·조회하지 않는다
+eureka:
+  client:
+    enabled: false
