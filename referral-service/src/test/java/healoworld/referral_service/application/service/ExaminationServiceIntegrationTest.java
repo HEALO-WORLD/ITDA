@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,16 +28,14 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // Service + 실제 PostgreSQL 통합 테스트 (Service의 @Transactional이 테스트 트랜잭션에 참여하고 테스트 후 롤백된다)
 @DataJpaTest
+@ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({ExaminationService.class, ExaminationResultService.class})
 class ExaminationServiceIntegrationTest {
