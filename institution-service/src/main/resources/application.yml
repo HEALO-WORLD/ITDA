@@ -32,7 +32,8 @@ spring:
       ack-mode: record
 
 eureka:
-  client:
+  instance:
+    prefer-ip-address: true
     service-url:
       defaultZone: http://localhost:8761/eureka/
 
@@ -44,3 +45,9 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 1h
+  dev-token:
+    enabled: ${DEV_TOKEN_ENABLED:false}
