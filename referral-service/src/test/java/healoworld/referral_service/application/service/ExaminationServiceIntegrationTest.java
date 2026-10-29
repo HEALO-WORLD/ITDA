@@ -419,4 +419,101 @@ class ExaminationServiceIntegrationTest {
             examinationRepository.deleteById(examination.getId());
         }
     }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DisplayName("같은 의뢰의 검사 생성 요청이 동시에 들어와도 검사는 1건만 저장된다")
+    void createScheduledConcurrently() throws Exception {
+
+        // 모든 요청에 동일한 의뢰·예약·검사기관 ID를 사용한다
+        UUID referralId = UUID.randomUUID();
+        UUID reservationId = UUID.randomUUID();
+        UUID institutionId = UUID.randomUUID();
+
+        int threadCount = 10;
+
+        // 동시에 실행할 스레드 10개 생성
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+
+        // 모든 스레드가 비슷한 시점에 요청하도록 대기시키는 장치
+        CountDownLatch start = new CountDownLatch(1);
+
+        List<Future<UUID>> results = new ArrayList<>();
+
+        try {
+            for (int i = 0; i < threadCount; i++) {
+                results.add(executor.submit(() -> {
+
+                    // 메인 스레드가 신호를 보낼 때까지 대기
+                    start.await();
+
+                    try {
+                        // 동일한 의뢰의 검사 생성 요청
+                        return examinationService.createScheduled(
+                                referralId,
+                                reservationId,
+                                institutionId
+                        );
+
+                    } catch (BaseException e) {
+
+                        // 동시에 INSERT하다 중복 충돌이 발생했다면
+                        // 예상한 비즈니스 예외로 처리됐는지 검증한다
+                        assertThat(e.getErrorCode())
+                                .isEqualTo(ErrorCode.EXAMINATION_ALREADY_EXISTS);
+
+                        return null;
+                    }
+                }));
+            }
+
+            // 대기 중인 스레드들이 요청을 시작하도록 신호 전달
+            start.countDown();
+
+            UUID returnedId = null;
+
+            // 모든 요청의 결과 확인
+            for (Future<UUID> future : results) {
+                UUID id = future.get();
+
+                if (id != null) {
+                    if (returnedId == null) {
+                        returnedId = id;
+                    } else {
+                        // 정상 반환된 검사 ID는 모두 동일해야 한다
+                        assertThat(id).isEqualTo(returnedId);
+                    }
+                }
+            }
+
+            // 최소 하나의 요청은 정상적으로 검사 ID를 반환해야 한다
+            assertThat(returnedId).isNotNull();
+
+            // DB에는 동일 의뢰의 검사가 정확히 1건만 존재해야 한다
+            assertThat(examinationRepository.countByReferralId(referralId))
+                    .isEqualTo(1);
+
+            // 저장된 검사 ID와 반환된 검사 ID가 일치하는지 확인한다
+            Examination saved = examinationRepository.findByReferralId(referralId)
+                    .orElseThrow();
+
+            assertThat(saved.getId()).isEqualTo(returnedId);
+
+        } finally {
+            // 예외가 발생해도 대기 중인 스레드가 실행될 수 있도록 해제
+            start.countDown();
+
+            // 모든 작업이 끝나도록 대기한 뒤 스레드 풀 종료
+            executor.shutdown();
+
+            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+
+            // 이번 테스트에서 생성한 검사 기록만 정리한다
+            // 테스트 전용 DB에 대해서만 실행해야 한다
+            examinationRepository.findByReferralId(referralId)
+                    .ifPresent(examinationRepository::delete);
+        }
+    }
 }

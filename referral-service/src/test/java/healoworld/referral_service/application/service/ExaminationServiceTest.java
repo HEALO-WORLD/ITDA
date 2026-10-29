@@ -12,8 +12,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.sql.SQLException;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -72,5 +74,73 @@ class ExaminationServiceTest {
         assertThatThrownBy(() -> examinationService.updateReservation(referralId, UUID.randomUUID(), UUID.randomUUID()))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE);
+    }
+
+    @Test
+    @DisplayName("동시 검사 생성 중 UNIQUE 충돌이 발생하면 EXAMINATION_ALREADY_EXISTS")
+    void createScheduledUniqueViolation() {
+
+        UUID referralId = UUID.randomUUID();
+        UUID reservationId = UUID.randomUUID();
+        UUID institutionId = UUID.randomUUID();
+
+        // 최초 조회에서는 검사가 존재하지 않는 상황을 만든다
+        given(examinationRepository.findByReferralId(referralId))
+                .willReturn(Optional.empty());
+
+        // 조회 이후 다른 요청이 먼저 검사를 생성했다고 가정한다
+        // PostgreSQL UNIQUE 위반 코드인 23505를 강제로 발생시킨다
+        DataIntegrityViolationException dbException =
+                new DataIntegrityViolationException(
+                        "중복 검사 생성",
+                        new SQLException("UNIQUE 제약조건 위반", "23505")
+                );
+
+        given(examinationRepository.saveAndFlush(any(Examination.class)))
+                .willThrow(dbException);
+
+        // DB 오류가 프로젝트의 비즈니스 예외로 변환되는지 확인한다
+        assertThatThrownBy(() ->
+                examinationService.createScheduled(
+                        referralId,
+                        reservationId,
+                        institutionId
+                )
+        )
+                .isInstanceOf(BaseException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.EXAMINATION_ALREADY_EXISTS);
+    }
+
+    @Test
+    @DisplayName("UNIQUE 위반이 아닌 DB 오류는 원래 예외를 유지한다")
+    void createScheduledOtherDatabaseViolation() {
+
+        UUID referralId = UUID.randomUUID();
+        UUID reservationId = UUID.randomUUID();
+        UUID institutionId = UUID.randomUUID();
+
+        given(examinationRepository.findByReferralId(referralId))
+                .willReturn(Optional.empty());
+
+        // PostgreSQL NOT NULL 위반 코드인 23502를 발생시킨다
+        DataIntegrityViolationException dbException =
+                new DataIntegrityViolationException(
+                        "필수 컬럼 누락",
+                        new SQLException("NOT NULL 제약조건 위반", "23502")
+                );
+
+        given(examinationRepository.saveAndFlush(any(Examination.class)))
+                .willThrow(dbException);
+
+        // UNIQUE 위반이 아니라면 원래 발생한 예외를 그대로 전달해야 한다
+        assertThatThrownBy(() ->
+                examinationService.createScheduled(
+                        referralId,
+                        reservationId,
+                        institutionId
+                )
+        )
+                .isSameAs(dbException);
     }
 }
