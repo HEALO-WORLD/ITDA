@@ -1,11 +1,13 @@
 package healoworld.referral_service.application.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.global.outbox.OutboxEventRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.request.ReservationSearchCondition;
@@ -22,6 +24,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReservationService {
     private final ReservationRepository reservationRepository;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper jsonMapper;
 
     public Reservation createReservation(Referral referral, CreateReservationRequest createReservationRequest) {
         int attemptNo = reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId())
@@ -32,6 +36,12 @@ public class ReservationService {
         reservationRepository.save(createdReservation);
 
         // HoldRequested 이벤트 발행 (Outbox 기록)
+//        String payloadJson = jsonMapper.writeValueAsString(ReservationEventPayload.from(createdReservation));
+//
+//        OutboxEvent outboxEvent = OutboxEvent.create(UUID.randomUUID(), "RESERVATION", createdReservation.getId(),
+//                "slot-commands", createdReservation.getSlotId().toString(), "HoldRequested", payloadJson);
+//        outboxEventRepository.save(outboxEvent);
+
         // referralHistory 기록
         return createdReservation;
     }
