@@ -1,9 +1,13 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.EquipmentIncident;
+import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.repository.AffectedReservation;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -16,6 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,13 +33,19 @@ public class EquipmentIncidentService {
     private static final int REASON_MAX_LENGTH = 500;
 
     private final EquipmentIncidentRepository equipmentIncidentRepository;
+    private final IncidentReservationRepository incidentReservationRepository;
+    private final IncidentReferralRepository incidentReferralRepository;
 
     // 항상 새 트랜잭션을 열어 실행한다. UNIQUE 위반으로 한 트랜잭션이 실패해도 다음 조회는 별도 트랜잭션에서 실행하기 위해 쓴다
     private final TransactionTemplate newTransaction;
 
     public EquipmentIncidentService(EquipmentIncidentRepository equipmentIncidentRepository,
+                                    IncidentReservationRepository incidentReservationRepository,
+                                    IncidentReferralRepository incidentReferralRepository,
                                     PlatformTransactionManager transactionManager) {
         this.equipmentIncidentRepository = equipmentIncidentRepository;
+        this.incidentReservationRepository = incidentReservationRepository;
+        this.incidentReferralRepository = incidentReferralRepository;
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -76,6 +87,58 @@ public class EquipmentIncidentService {
             EquipmentIncident saved = newTransaction.execute(status ->
                     equipmentIncidentRepository.findBySourceEventId(sourceEventId)).orElseThrow(() -> e);
             return verifySameEvent(saved, equipmentId, institutionId, occurred, start, end);
+        }
+    }
+
+    // 장애의 영향을 받는 확정 예약마다 후속 처리 작업(IncidentReferral, PENDING)을 만들고, 새로 만든 작업 수를 돌려준다
+    // 호출 순서: register()로 장애 ID를 받은 뒤 이 메서드를 호출한다. 같은 이벤트가 다시 와도 register()가 같은 장애 ID를
+    // 돌려주므로 이 메서드를 다시 실행하면 빠진 작업만 만들어진다 (이미 있는 작업은 건너뜀)
+    //
+    // 트랜잭션: 호출한 쪽 트랜잭션에 참여하지 않는다(NOT_SUPPORTED)
+    //  - [읽기 트랜잭션] 장애와 영향 예약을 조회한다
+    //  - [작업 1건당 트랜잭션] 이미 있는지 확인 → 없으면 저장. 동시에 같은 작업을 만든 요청이 먼저 커밋했다면
+    //    UNIQUE(incident_id, reservation_id) 위반으로 그 1건의 트랜잭션만 롤백되고 "이미 있음"으로 건너뛴다
+    //  - UNIQUE 위반이 아닌 오류는 그대로 던진다. 그 전에 커밋된 작업은 정상 PENDING 작업으로 남고,
+    //    다시 실행하면 나머지만 만들어지므로 실패를 성공으로 숨기지 않으면서도 재실행으로 복구된다
+    // TODO: Kafka Consumer가 정해지면 register() → createPendingReferrals() 순서로 호출한다
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public int createPendingReferrals(UUID incidentId) {
+        List<AffectedReservation> affected = newTransaction.execute(status -> {
+            EquipmentIncident incident = equipmentIncidentRepository.findById(incidentId)
+                    .orElseThrow(() -> new BaseException(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND));
+            return incidentReservationRepository.findAffected(incident.getEquipmentId(), incident.getStartAt(),
+                    incident.getEndAt());
+        });
+
+        int created = 0;
+        for (AffectedReservation reservation : affected) {
+            if (createPendingReferral(incidentId, reservation)) {
+                created++;
+            }
+        }
+        return created;
+    }
+
+    // 작업 1건을 별도 트랜잭션으로 만든다. 새로 만들었으면 true, 이미 있었으면 false
+    private boolean createPendingReferral(UUID incidentId, AffectedReservation reservation) {
+        try {
+            return Boolean.TRUE.equals(newTransaction.execute(status -> {
+                if (incidentReferralRepository.existsByIncident_IdAndReservationId(incidentId,
+                        reservation.reservationId())) {
+                    return false;
+                }
+                // 장애는 이미 저장돼 있으므로 SELECT 없이 FK 연결용 참조만 얻는다
+                incidentReferralRepository.saveAndFlush(IncidentReferral.pending(
+                        equipmentIncidentRepository.getReferenceById(incidentId),
+                        reservation.referralId(), reservation.reservationId()));
+                return true;
+            }));
+        } catch (DataIntegrityViolationException e) {
+            if (!isUniqueViolation(e)) {
+                throw e;
+            }
+            // 동시에 실행된 다른 요청이 같은 작업을 먼저 만들었다 (그 작업이 최종 1건)
+            return false;
         }
     }
 

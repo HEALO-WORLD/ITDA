@@ -3,7 +3,11 @@ package healoworld.referral_service.application.service;
 import healoworld.referral_service.domain.entity.EquipmentIncident;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.domain.entity.IncidentReferral;
+import healoworld.referral_service.infrastructure.repository.AffectedReservation;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +23,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,6 +33,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 // 입력 검증과 "조회 후 다른 요청이 먼저 저장한 경우"(UNIQUE 위반) 분기를 Mock으로 검증한다
 @ExtendWith(MockitoExtension.class)
@@ -39,6 +45,12 @@ class EquipmentIncidentServiceTest {
 
     @Mock
     private EquipmentIncidentRepository equipmentIncidentRepository;
+
+    @Mock
+    private IncidentReservationRepository incidentReservationRepository;
+
+    @Mock
+    private IncidentReferralRepository incidentReferralRepository;
 
     // TransactionTemplate이 사용할 트랜잭션 매니저. Mock이라 실제 트랜잭션 없이 콜백만 실행된다
     @Mock
@@ -156,5 +168,71 @@ class EquipmentIncidentServiceTest {
         assertErrorCode(() -> equipmentIncidentService.register(sourceEventId, equipmentId, institutionId, "사유",
                 END_AT.plusMinutes(1), START_AT, END_AT), ErrorCode.INVALID_EQUIPMENT_INCIDENT_PERIOD);
         then(equipmentIncidentRepository).shouldHaveNoInteractions();
+    }
+
+    // ===== 영향 작업(IncidentReferral) 생성 =====
+
+    private UUID givenIncidentWithAffected(AffectedReservation... affected) {
+        EquipmentIncident incident = savedIncident(equipmentId);
+        UUID incidentId = incident.getId();
+        given(equipmentIncidentRepository.findById(incidentId)).willReturn(Optional.of(incident));
+        given(incidentReservationRepository.findAffected(equipmentId, START_AT, END_AT)).willReturn(List.of(affected));
+        return incidentId;
+    }
+
+    private static AffectedReservation affected() {
+        return new AffectedReservation(UUID.randomUUID(), UUID.randomUUID());
+    }
+
+    @Test
+    @DisplayName("장애가 없으면 EQUIPMENT_INCIDENT_NOT_FOUND이고 예약을 조회하지 않는다")
+    void createPendingReferralsForUnknownIncident() {
+        UUID incidentId = UUID.randomUUID();
+        given(equipmentIncidentRepository.findById(incidentId)).willReturn(Optional.empty());
+
+        assertErrorCode(() -> equipmentIncidentService.createPendingReferrals(incidentId),
+                ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
+        then(incidentReservationRepository).shouldHaveNoInteractions();
+        then(incidentReferralRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("이미 있는 작업은 저장하지 않고 건너뛰며 새로 만든 수만 센다")
+    void existingReferralIsSkipped() {
+        AffectedReservation existing = affected();
+        AffectedReservation missing = affected();
+        UUID incidentId = givenIncidentWithAffected(existing, missing);
+        given(incidentReferralRepository.existsByIncident_IdAndReservationId(incidentId, existing.reservationId()))
+                .willReturn(true);
+        given(incidentReferralRepository.existsByIncident_IdAndReservationId(incidentId, missing.reservationId()))
+                .willReturn(false);
+
+        assertThat(equipmentIncidentService.createPendingReferrals(incidentId)).isEqualTo(1);
+        then(incidentReferralRepository).should(times(1)).saveAndFlush(any(IncidentReferral.class));
+    }
+
+    @Test
+    @DisplayName("동시 요청이 먼저 만든 작업(UNIQUE 위반)은 이미 있는 것으로 보고 다음 예약을 계속 처리한다")
+    void concurrentDuplicateReferralIsSkipped() {
+        UUID incidentId = givenIncidentWithAffected(affected(), affected());
+        given(incidentReferralRepository.saveAndFlush(any(IncidentReferral.class)))
+                .willThrow(new DataIntegrityViolationException("duplicate",
+                        new SQLException("duplicate key", "23505")))
+                .willReturn(null);
+
+        assertThat(equipmentIncidentService.createPendingReferrals(incidentId)).isEqualTo(1);
+        then(incidentReferralRepository).should(times(2)).saveAndFlush(any(IncidentReferral.class));
+    }
+
+    @Test
+    @DisplayName("UNIQUE가 아닌 DB 오류는 성공으로 숨기지 않고 던지며 이후 예약은 처리하지 않는다 (재실행으로 보충)")
+    void otherErrorStopsAndIsRethrown() {
+        UUID incidentId = givenIncidentWithAffected(affected(), affected());
+        given(incidentReferralRepository.saveAndFlush(any(IncidentReferral.class)))
+                .willThrow(new DataIntegrityViolationException("not null", new SQLException("null value", "23502")));
+
+        assertThatThrownBy(() -> equipmentIncidentService.createPendingReferrals(incidentId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        then(incidentReferralRepository).should(times(1)).saveAndFlush(any(IncidentReferral.class));
     }
 }
