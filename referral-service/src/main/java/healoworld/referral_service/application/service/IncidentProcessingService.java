@@ -5,11 +5,13 @@ import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
+import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.infrastructure.repository.IncidentAffectedReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -17,6 +19,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -183,12 +186,26 @@ public class IncidentProcessingService {
         return Outcome.FAILED;
     }
 
+    // last_error와 로그에 남길 실패 설명을 만든다
+    // ProcessingFailure는 이 클래스가 만든 문구(분류 + ID·상태값)라 그대로 쓴다
+    // 그 밖의 예외는 원본 메시지를 쓰지 않는다. PostgreSQL 제약 위반 메시지에는 "Failing row contains (...)"처럼
+    // 행의 실제 컬럼 값(환자 이름 등)이 들어갈 수 있기 때문이다. 대신 예외 종류와 진단용 코드만 남긴다
     private static String describe(RuntimeException cause) {
         if (cause instanceof ProcessingFailure) {
             return cause.getMessage();
         }
         // 예상하지 못한 오류(DB 일시 오류 등)는 재시도 대상으로 기록한다
-        return RETRYABLE + " " + cause.getClass().getSimpleName() + ": " + cause.getMessage();
+        StringBuilder description = new StringBuilder(RETRYABLE).append(' ').append(cause.getClass().getSimpleName());
+        if (cause instanceof BaseException baseException) {
+            // ErrorCode 이름은 고정된 상수라 개인정보가 들어가지 않는다
+            description.append(" errorCode=").append(baseException.getErrorCode().name());
+        }
+        if (NestedExceptionUtils.getMostSpecificCause(cause) instanceof SQLException sqlException
+                && sqlException.getSQLState() != null) {
+            // SQLState는 오류 종류 코드(예: 23502 NOT NULL 위반)만 담는다
+            description.append(" sqlState=").append(sqlException.getSQLState());
+        }
+        return description.toString();
     }
 
     // VARCHAR(500)은 문자 수 기준이므로 코드 포인트 단위로 자른다

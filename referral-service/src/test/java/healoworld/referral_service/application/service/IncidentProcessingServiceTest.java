@@ -17,8 +17,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import healoworld.referral_service.global.exception.BaseException;
+import healoworld.referral_service.global.exception.ErrorCode;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
+
+import java.sql.SQLException;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -35,7 +42,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
 // 상태 판단 분기, 성공·실패 기록, 잠금 상실 처리를 Mock으로 검증한다 (트랜잭션 매니저도 Mock이라 실제 트랜잭션은 없다)
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class IncidentProcessingServiceTest {
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 2, 14, 0, 0, 123_456_789);
@@ -215,8 +222,8 @@ class IncidentProcessingServiceTest {
         givenMarkFailed(1);
 
         assertThat(service.process(taskId, NOW)).isEqualTo(Outcome.FAILED);
-        assertThat(capturedLastError()).startsWith(IncidentProcessingService.RETRYABLE)
-                .contains("IllegalStateException", "가상 DB 오류");
+        // 예외 종류는 남기지만 예외 원본 메시지는 남기지 않는다
+        assertThat(capturedLastError()).isEqualTo(IncidentProcessingService.RETRYABLE + " IllegalStateException");
 
         ArgumentCaptor<LocalDateTime> nextRetryAt = ArgumentCaptor.forClass(LocalDateTime.class);
         ArgumentCaptor<LocalDateTime> failedAt = ArgumentCaptor.forClass(LocalDateTime.class);
@@ -310,8 +317,8 @@ class IncidentProcessingServiceTest {
     }
 
     @Test
-    @DisplayName("실패 원인이 500자를 넘으면 500자로 잘라 기록한다")
-    void lastErrorIsTruncated() {
+    @DisplayName("예외 메시지가 아무리 길어도 기록하지 않으므로 last_error는 500자 이내다")
+    void longExceptionMessageIsNotStored() {
         givenState(ReferralStatus.CONFIRMED, ReservationStatus.CONFIRMED);
         givenLockedRows();
         given(incidentReferralRepository.markSucceeded(any(), any(), any(), any()))
@@ -320,6 +327,63 @@ class IncidentProcessingServiceTest {
 
         service.process(taskId, NOW);
 
-        assertThat(capturedLastError()).hasSize(500);
+        assertThat(capturedLastError()).hasSizeLessThanOrEqualTo(500).doesNotContain("가가");
+    }
+
+    // ===== 개인정보 보호 =====
+
+    // PostgreSQL NOT NULL 위반 시 실제로 나오는 형태: 실패한 행의 컬럼 값 전체가 메시지에 들어간다
+    private static final String PATIENT_NAME = "가상환자홍길동";
+    private static final String FAILING_ROW_MESSAGE = "ERROR: null value in column \"referral_status\" of relation "
+            + "\"p_referrals\" violates not-null constraint\n  Detail: Failing row contains "
+            + "(9b2f..., " + PATIENT_NAME + ", null, ...)";
+
+    @Test
+    @DisplayName("DB 제약 위반 메시지에 환자 이름이 있어도 last_error에는 예외 종류와 SQLState만 남는다")
+    void constraintViolationMessageIsNotStored() {
+        givenState(ReferralStatus.CONFIRMED, ReservationStatus.CONFIRMED);
+        givenLockedRows();
+        given(incidentReferralRepository.markSucceeded(any(), any(), any(), any()))
+                .willThrow(new DataIntegrityViolationException("could not execute statement [" + FAILING_ROW_MESSAGE
+                        + "]", new SQLException(FAILING_ROW_MESSAGE, "23502")));
+        givenMarkFailed(1);
+
+        assertThat(service.process(taskId, NOW)).isEqualTo(Outcome.FAILED);
+
+        assertThat(capturedLastError())
+                .isEqualTo(IncidentProcessingService.RETRYABLE + " DataIntegrityViolationException sqlState=23502")
+                .doesNotContain(PATIENT_NAME, "Failing row", "p_referrals");
+    }
+
+    @Test
+    @DisplayName("도메인 예외(BaseException)는 고정된 ErrorCode 이름만 남긴다")
+    void baseExceptionKeepsOnlyErrorCode() {
+        givenState(ReferralStatus.CONFIRMED, ReservationStatus.CONFIRMED);
+        givenLockedRows();
+        given(incidentReferralRepository.markSucceeded(any(), any(), any(), any()))
+                .willThrow(new BaseException(ErrorCode.INVALID_RESERVATION_STATUS));
+        givenMarkFailed(1);
+
+        service.process(taskId, NOW);
+
+        assertThat(capturedLastError()).isEqualTo(IncidentProcessingService.RETRYABLE
+                + " BaseException errorCode=INVALID_RESERVATION_STATUS");
+    }
+
+    @Test
+    @DisplayName("실패 로그(log.warn)에도 환자 이름·DB 행 값이 남지 않는다")
+    void failureLogHasNoPersonalData(CapturedOutput output) {
+        givenState(ReferralStatus.CONFIRMED, ReservationStatus.CONFIRMED);
+        givenLockedRows();
+        given(incidentReferralRepository.markSucceeded(any(), any(), any(), any()))
+                .willThrow(new DataIntegrityViolationException("could not execute statement [" + FAILING_ROW_MESSAGE
+                        + "]", new SQLException(FAILING_ROW_MESSAGE, "23502")));
+        givenMarkFailed(1);
+
+        service.process(taskId, NOW);
+
+        assertThat(output.getOut() + output.getErr())
+                .contains("장애 후속 처리 실패", taskId.toString(), "sqlState=23502")
+                .doesNotContain(PATIENT_NAME, "Failing row");
     }
 }

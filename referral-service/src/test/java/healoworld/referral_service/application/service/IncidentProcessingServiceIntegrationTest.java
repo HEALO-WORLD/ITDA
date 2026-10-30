@@ -23,6 +23,10 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -35,6 +39,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -60,6 +65,7 @@ import static org.mockito.Mockito.reset;
  *   Kafka·Gateway를 거치는 E2E 검증은 이 테스트의 범위가 아니다.
  */
 @DataJpaTest
+@ExtendWith(OutputCaptureExtension.class)
 @Import({IncidentProcessingService.class, ExaminationService.class, QuerydslConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -324,10 +330,41 @@ class IncidentProcessingServiceIntegrationTest {
         assertUnchanged(booking);
         IncidentReferral failed = task(taskId);
         assertThat(failed.getProcessingStatus()).isEqualTo(IncidentProcessingStatus.FAILED);
-        assertThat(failed.getLastError()).contains("주입된 오류");
+        assertThat(failed.getLastError()).isEqualTo(IncidentProcessingService.RETRYABLE + " IllegalStateException")
+                .doesNotContain("주입된 오류");
         assertThat(failed.getNextRetryAt()).isNotNull();
         assertThat(failed.getLockedUntil()).isNull();
         assertThat(failed.getResultCode()).isNull();
+    }
+
+    @Test
+    @DisplayName("환자 이름이 담긴 DB 제약 위반이 나도 last_error·로그에는 개인정보가 남지 않고 FAILED·재시도 정보는 저장된다")
+    void personalDataIsNotStoredOrLogged(CapturedOutput output) {
+        Booking booking = confirmedBooking();
+        UUID taskId = pendingTask(booking);
+        String patientName = "가상환자";   // confirmedBooking()이 의뢰에 저장한 가상 환자 이름
+        String failingRow = "ERROR: null value in column \"referral_status\" of relation \"p_referrals\" violates "
+                + "not-null constraint\n  Detail: Failing row contains (" + booking.referralId() + ", " + patientName
+                + ", null, ...)";
+        doAnswer(invocation -> {
+            entityManager.flush();
+            throw new DataIntegrityViolationException("could not execute statement [" + failingRow + "]",
+                    new SQLException(failingRow, "23502"));
+        }).when(incidentReferralRepository).markSucceeded(any(), any(), any(), any());
+
+        assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.FAILED);
+
+        assertUnchanged(booking);
+        IncidentReferral failed = task(taskId);
+        assertThat(failed.getProcessingStatus()).isEqualTo(IncidentProcessingStatus.FAILED);
+        assertThat(failed.getNextRetryAt()).isNotNull();
+        assertThat(failed.getLockedUntil()).isNull();
+        assertThat(failed.getLastError())
+                .isEqualTo(IncidentProcessingService.RETRYABLE + " DataIntegrityViolationException sqlState=23502")
+                .doesNotContain(patientName, "Failing row");
+        assertThat(output.getOut() + output.getErr())
+                .contains("장애 후속 처리 실패", taskId.toString())
+                .doesNotContain(patientName, "Failing row");
     }
 
     @Test
