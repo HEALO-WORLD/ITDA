@@ -26,8 +26,9 @@ public record IncidentReferralResponse(
         String resultCode,
         @Schema(description = "후속 처리 성공 시각 (성공 전에는 null)") LocalDateTime processedAt) {
 
-    // includeLastError가 false이면 lastError를 null로 내보낸다 (DB에 저장된 원본은 그대로 둔다)
-    // lastError에는 내부 예외 클래스명·메시지가 들어갈 수 있어 노출 여부를 호출하는 쪽이 반드시 정하게 한다
+    // includeLastError가 false이면 lastError를 null로 내보낸다 (DB에 저장된 값은 그대로 둔다)
+    // lastError에는 예외 원문 대신 실패 분류와 진단 정보(예외 종류·오류 코드·SQLState 또는 ID·상태값)만 저장된다
+    // 그래도 내부 운영 정보이므로 노출 여부를 호출하는 쪽이 반드시 정하게 한다
     public static IncidentReferralResponse from(IncidentReferral task, boolean includeLastError) {
         return new IncidentReferralResponse(task.getId(), task.getIncident().getId(), task.getReferralId(),
                 task.getReservationId(), task.getProcessingStatus(), task.getRetryCount(), task.getNextRetryAt(),

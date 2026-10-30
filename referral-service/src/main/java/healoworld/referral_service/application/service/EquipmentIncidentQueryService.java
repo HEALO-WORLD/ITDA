@@ -26,7 +26,7 @@ import java.util.UUID;
 // 권한 (Gateway가 JWT에서 꺼내 전달하는 X-Role, X-Institution-Id 기준)
 //  - ADMIN: 모든 기관의 장애를 조회한다. 목록은 institutionId로 좁힐 수 있다
 //  - EXAMINER: 자기 기관(X-Institution-Id)의 장애만 조회한다. 다른 기관 장애는 존재 여부도 알리지 않도록 404로 응답한다
-//              영향 의뢰의 lastError(내부 오류 원문)는 받지 않는다 (null)
+//              영향 의뢰의 lastError(실패 분류와 진단 정보)는 받지 않는다 (null)
 //  - REQUESTER: 장애 조회 권한이 없다 (403)
 @Service
 @RequiredArgsConstructor
@@ -66,7 +66,7 @@ public class EquipmentIncidentQueryService {
                 ? incidentReferralRepository.findByIncident_Id(incidentId, cond.toPageable())
                 : incidentReferralRepository.findByIncident_IdAndProcessingStatus(incidentId, cond.status(),
                 cond.toPageable());
-        // lastError(내부 예외 클래스명·메시지)는 ADMIN에게만 보여준다. EXAMINER는 처리 상태·결과 코드·재시도 정보만 받는다
+        // lastError(실패 분류와 진단 정보)는 ADMIN에게만 보여준다. EXAMINER는 처리 상태·결과 코드·재시도 정보만 받는다
         boolean includeLastError = role == RoleType.ADMIN;
         return PagedResponse.from(page.map(task -> IncidentReferralResponse.from(task, includeLastError)));
     }

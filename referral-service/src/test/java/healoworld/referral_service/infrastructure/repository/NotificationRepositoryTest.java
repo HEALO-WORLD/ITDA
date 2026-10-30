@@ -1,6 +1,7 @@
 package healoworld.referral_service.infrastructure.repository;
 
 import healoworld.referral_service.domain.entity.Notification;
+import healoworld.referral_service.presentation.dto.request.NotificationPageRequest;
 import healoworld.referral_service.support.RepositoryTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -91,6 +93,23 @@ class NotificationRepositoryTest extends RepositoryTestSupport {
                 notificationRepository.findAll(NotificationSpecifications.searchMine(me, referralA, false), pageable);
         assertThat(unreadOfA.getTotalElements()).isEqualTo(1);
         assertThat(unreadOfA.getContent().getFirst().isRead()).isFalse();
+    }
+
+    @Test
+    @DisplayName("허용된 정렬 필드(readAt, createdAt)로 실제 DB에서 다중 정렬된다")
+    void sortByAllowedFields() {
+        UUID me = UUID.randomUUID();
+        Notification readEarlier = save(me, UUID.randomUUID());
+        Notification readLater = save(me, UUID.randomUUID());
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        notificationRepository.markAsReadIfUnread(readEarlier.getId(), me, now);
+        notificationRepository.markAsReadIfUnread(readLater.getId(), me, now.plusMinutes(1));
+
+        Pageable pageable = NotificationPageRequest.of(null, null, new String[]{"readAt,desc", "createdAt,asc"});
+
+        assertThat(notificationRepository.findAll(NotificationSpecifications.searchMine(me, null, null), pageable)
+                .getContent()).extracting(Notification::getId)
+                .containsExactly(readLater.getId(), readEarlier.getId());
     }
 
     @Test

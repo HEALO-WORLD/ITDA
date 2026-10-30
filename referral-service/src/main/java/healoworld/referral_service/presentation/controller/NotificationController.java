@@ -2,18 +2,20 @@ package healoworld.referral_service.presentation.controller;
 
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
+import healoworld.referral_service.presentation.dto.request.NotificationPageRequest;
 import healoworld.referral_service.presentation.dto.response.NotificationReadResponse;
 import healoworld.referral_service.presentation.dto.response.NotificationResponse;
 import healoworld.referral_service.presentation.dto.response.UnreadCountResponse;
 import healoworld.referral_service.application.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -39,18 +41,32 @@ public class NotificationController {
     @Operation(summary = "내 알림 목록 조회",
             description = """
                     요청자 본인의 알림만 조회합니다. referralId와 isRead로 필터링할 수 있습니다.
-                    page는 0부터 시작하는 페이지 번호, size는 페이지 크기, sort는 "필드,asc" 또는 "필드,desc" 형식의 정렬 조건입니다.
-                    기본값은 page=0, size=10, sort=createdAt,desc입니다.
 
                     - 400 MISSING_HEADER: X-User-Id 누락
-                    - 400 INVALID_INPUT: 헤더 또는 검색 조건의 형식이 잘못되었거나 정렬 필드가 없음
-                    """)
+                    - 400 INVALID_INPUT: 헤더 또는 검색 조건의 형식이 잘못되었거나 정렬 조건이 허용되지 않음
+                    """,
+            parameters = {
+                    @Parameter(name = "page", in = ParameterIn.QUERY,
+                            description = "페이지 번호 (0부터). 숫자가 아니거나 음수이면 0",
+                            schema = @Schema(type = "integer", defaultValue = "0")),
+                    @Parameter(name = "size", in = ParameterIn.QUERY,
+                            description = "페이지 크기 (10, 30, 50 외에는 10)",
+                            schema = @Schema(type = "integer", defaultValue = "10")),
+                    @Parameter(name = "sort", in = ParameterIn.QUERY,
+                            description = """
+                                    정렬 조건. 필드는 createdAt, readAt, 방향은 asc, desc만 허용합니다. 방향을 생략하면 asc입니다.
+                                    sort를 여러 번 보내면 순서대로 적용하며, 하나라도 잘못되면 400 INVALID_INPUT입니다. 생략하면 createdAt,desc입니다.
+                                    """,
+                            array = @ArraySchema(schema = @Schema(type = "string", example = "createdAt,desc")))
+            })
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<NotificationResponse>>> getMyNotifications(
             @Parameter(description = "요청자 ID") @RequestHeader(USER_ID_HEADER) UUID userId,
             @Parameter(description = "의뢰 ID. 해당 의뢰의 알림만 조회") @RequestParam(required = false) UUID referralId,
             @Parameter(description = "읽음 여부. 생략하면 전체 조회") @RequestParam(required = false) Boolean isRead,
-            @ParameterObject @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @Parameter(hidden = true) HttpServletRequest request) {
+        Pageable pageable = NotificationPageRequest.of(request.getParameter("page"), request.getParameter("size"),
+                request.getParameterValues("sort"));
         return ResponseEntity.ok(ApiResponse.ok("알림 목록 조회 성공",
                 notificationService.getMyNotifications(userId, referralId, isRead, pageable)));
     }

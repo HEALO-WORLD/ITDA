@@ -30,14 +30,16 @@ public class GlobalExceptionHandler {
                         ErrorCode.MISSING_HEADER.getMessage() + " (" + e.getHeaderName() + ")"));
     }
 
-    // @Valid @RequestBody DTO가 검증 어노테이션을 통과 못 할 때
+    // @Valid @RequestBody DTO가 검증 어노테이션을 통과 못 할 때, @ModelAttribute 값을 타입으로 변환하지 못할 때
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException e){
 
+        // 타입 변환 실패(isBindingFailure)의 기본 메시지에는 내부 클래스명과 예외 원문이 들어가므로 응답에 쓰지 않는다
         String message = e.getBindingResult()
                 .getFieldErrors()
                 .stream()
                 .findFirst()
+                .filter(fieldError -> !fieldError.isBindingFailure())
                 .map(DefaultMessageSourceResolvable::getDefaultMessage)
                 .orElse(ErrorCode.VALIDATION_FAILED.getMessage());
 
