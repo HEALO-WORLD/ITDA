@@ -146,6 +146,20 @@ class ExaminationServiceIntegrationTest {
             boolean confirmReservation,
             boolean sameReservation
     ) {
+        return createExaminationForStartTest(
+                confirmReferral,
+                confirmReservation,
+                sameReservation,
+                true
+        );
+    }
+
+    private UUID createExaminationForStartTest(
+            boolean confirmReferral,
+            boolean confirmReservation,
+            boolean sameReservation,
+            boolean sameInstitution
+    ) {
 
         UUID examInstitutionId = UUID.randomUUID();
 
@@ -201,10 +215,14 @@ class ExaminationServiceIntegrationTest {
         referralRepository.saveAndFlush(referral);
 
         // 7. 검사 생성 (SCHEDULED)
+        UUID examinationInstitutionId = sameInstitution
+                ? examInstitutionId
+                : UUID.randomUUID();
+
         return examinationService.createScheduled(
                 referral.getId(),
                 reservation.getId(),
-                examInstitutionId
+                examinationInstitutionId
         );
     }
 
@@ -596,6 +614,37 @@ class ExaminationServiceIntegrationTest {
 
         assertThat(second.getUpdatedAt())
                 .isEqualTo(updatedAt);
+    }
+
+    @Test
+    @DisplayName("예약과 검사의 검사기관이 다르면 검사 시작을 거부한다")
+    void rejectStartWhenExamInstitutionMismatch() {
+
+        // given: 의뢰·예약은 확정됐지만 검사기관 ID가 다름
+        UUID examinationId = createExaminationForStartTest(
+                true,
+                true,
+                true,
+                false
+        );
+
+        // when & then: 검사 시작 거부
+        assertErrorCode(
+                () -> examinationService.changeStatus(
+                        examinationId,
+                        ExaminationStatus.IN_PROGRESS
+                ),
+                ErrorCode.EXAMINATION_START_NOT_ALLOWED
+        );
+
+        // 상태가 변경되지 않았는지 확인
+        Examination examination = reload(examinationId);
+
+        assertThat(examination.getStatus())
+                .isEqualTo(ExaminationStatus.SCHEDULED);
+
+        assertThat(examination.getStartedAt())
+                .isNull();
     }
 
     // =========================================================
