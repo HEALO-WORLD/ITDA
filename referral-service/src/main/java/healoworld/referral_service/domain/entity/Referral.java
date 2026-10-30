@@ -87,7 +87,7 @@ public class Referral extends BaseEntity {
 
     // 새 예약으로 재조정을 요청할 때 변경
     public void reschedule(UUID newReservationId) {
-        validateReferralStatus(ReferralStatus.NEEDS_RESCHEDULE);
+        validateReschedulable();
         this.referralStatus = ReferralStatus.PENDING;
         this.currentReservationId = newReservationId;
     }
@@ -100,6 +100,10 @@ public class Referral extends BaseEntity {
     // 본인 확인
     public boolean isReferredBy(UUID userId) {
         return this.referrerId != null && this.referrerId.equals(userId);
+    }
+
+    public void validateReschedulable() {
+        validateReferralStatus(ReferralStatus.NEEDS_RESCHEDULE);
     }
 
     // soft delete

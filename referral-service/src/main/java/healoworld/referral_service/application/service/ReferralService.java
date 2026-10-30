@@ -73,6 +73,12 @@ public class ReferralService {
     public ReservationResponse createRescheduledReservation(UUID userId, RoleType role, UUID referralId, CreateReservationRequest request) {
         Referral referral = referralRepository.findById(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
+
+        if (!(userId.equals(referral.getReferrerId()) || role == RoleType.ADMIN)) {
+            throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
+        }
+
+        referral.validateReschedulable();
         Reservation reservation = reservationService.createReservation(referral, request);
         referral.reschedule(reservation.getId());
         return ReservationResponse.from(reservation);

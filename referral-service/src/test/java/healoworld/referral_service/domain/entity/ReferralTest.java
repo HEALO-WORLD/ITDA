@@ -149,6 +149,25 @@ class ReferralTest {
 
             assertInvalidStatus(() -> referral.reschedule(UUID.randomUUID()));
         }
+
+        @Test
+        @DisplayName("NEEDS_RESCHEDULE면 재예약 사전 검증을 통과하고 상태는 바뀌지 않는다")
+        void validateReschedulable() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+
+            referral.validateReschedulable();
+
+            assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = ReferralStatus.class, names = "NEEDS_RESCHEDULE", mode = EXCLUDE)
+        @DisplayName("NEEDS_RESCHEDULE가 아니면 재예약 사전 검증에 실패한다")
+        void validateReschedulableInvalidStatus(ReferralStatus status) {
+            Referral referral = referralIn(status, USER_ID);
+
+            assertInvalidStatus(referral::validateReschedulable);
+        }
     }
 
     @Nested

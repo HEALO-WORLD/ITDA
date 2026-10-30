@@ -9,6 +9,7 @@ import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
+import healoworld.referral_service.presentation.dto.response.ReservationResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -167,6 +168,74 @@ class ReferralServiceTest {
 
             assertErrorCode(() -> referralService.deleteReferral(USER_ID, referral.getId(), RoleType.USER),
                     ErrorCode.INVALID_REFERRAL_STATUS);
+        }
+    }
+
+    @Nested
+    @DisplayName("createRescheduledReservation")
+    class CreateRescheduledReservation {
+        @Test
+        @DisplayName("본인의 재조정 필요 의뢰는 새 예약을 만들고 PENDING으로 돌아간다")
+        void success() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            CreateReservationRequest request = reservationRequest();
+            Reservation newReservation = reservation(referral, 2);
+            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+            given(reservationService.createReservation(referral, request)).willReturn(newReservation);
+
+            ReservationResponse response =
+                    referralService.createRescheduledReservation(USER_ID, RoleType.USER, referral.getId(), request);
+
+            assertThat(response.getId()).isEqualTo(newReservation.getId());
+            assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
+            assertThat(referral.getCurrentReservationId()).isEqualTo(newReservation.getId());
+        }
+
+        @Test
+        @DisplayName("관리자는 다른 사람의 의뢰도 재예약할 수 있다")
+        void admin() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, OTHER_USER_ID);
+            CreateReservationRequest request = reservationRequest();
+            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+            given(reservationService.createReservation(referral, request)).willReturn(reservation(referral, 2));
+
+            referralService.createRescheduledReservation(USER_ID, RoleType.ADMIN, referral.getId(), request);
+
+            assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("다른 사람의 의뢰는 재예약할 수 없고 예약도 만들지 않는다")
+        void otherUser() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, OTHER_USER_ID);
+            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, RoleType.USER, referral.getId(), reservationRequest()), ErrorCode.REFERRAL_NOT_FOUND);
+            verifyNoInteractions(reservationService);
+            assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        }
+
+        @Test
+        @DisplayName("재조정 필요 상태가 아니면 예약을 만들기 전에 실패한다")
+        void invalidStatus() {
+            Referral referral = referralIn(ReferralStatus.PENDING, USER_ID);
+            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, RoleType.USER, referral.getId(), reservationRequest()), ErrorCode.INVALID_REFERRAL_STATUS);
+            verifyNoInteractions(reservationService);
+        }
+
+        @Test
+        @DisplayName("의뢰가 없으면 REFERRAL_NOT_FOUND")
+        void notFound() {
+            UUID referralId = UUID.randomUUID();
+            given(referralRepository.findById(referralId)).willReturn(Optional.empty());
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, RoleType.ADMIN, referralId, reservationRequest()), ErrorCode.REFERRAL_NOT_FOUND);
+            verifyNoInteractions(reservationService);
         }
     }
 
