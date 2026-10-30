@@ -17,11 +17,23 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: institution-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
 
 eureka:
   instance:
     prefer-ip-address: true
-  client:
     service-url:
       defaultZone: http://localhost:8761/eureka/
 
@@ -33,3 +45,9 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 1h
+  dev-token:
+    enabled: ${DEV_TOKEN_ENABLED:false}
