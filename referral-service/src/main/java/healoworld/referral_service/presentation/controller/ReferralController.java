@@ -1,5 +1,6 @@
 package healoworld.referral_service.presentation.controller;
 
+import healoworld.referral_service.application.service.ReferralHistoryService;
 import healoworld.referral_service.application.service.ReferralService;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.ApiResponse;
@@ -7,6 +8,7 @@ import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.request.ReferralSearchCondition;
+import healoworld.referral_service.presentation.dto.response.ReferralHistoryResponse;
 import healoworld.referral_service.presentation.dto.response.ReferralResponse;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
 import jakarta.validation.Valid;
@@ -15,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -22,6 +25,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReferralController {
     private final ReferralService referralService;
+    private final ReferralHistoryService referralHistoryService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<ReferralResponse>> createReferralWithReservation(
@@ -62,6 +66,16 @@ public class ReferralController {
     ) {
         PagedResponse<ReferralResponse> response = referralService.getReferrals(institutionId, cond, role);
         return ResponseEntity.ok(ApiResponse.ok("의뢰 목록 조회가 완료되었습니다.", response));
+    }
+
+    @GetMapping("/{referralId}/histories")
+    public ResponseEntity<ApiResponse<List<ReferralHistoryResponse>>> getReferralHistories(
+            @RequestHeader("X-Institution-Id") UUID institutionId,
+            @RequestHeader("X-User-Role") RoleType role,
+            @PathVariable("referralId") UUID referralId
+    ) {
+        List<ReferralHistoryResponse> response = referralHistoryService.getReferralHistories(institutionId, referralId, role);
+        return ResponseEntity.ok(ApiResponse.ok("의뢰 변경 목록 조회가 완료되었습니다.", response));
     }
 
     @DeleteMapping("/{referralId}")

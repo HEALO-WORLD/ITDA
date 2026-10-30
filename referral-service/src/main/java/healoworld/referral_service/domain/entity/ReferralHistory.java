@@ -30,7 +30,6 @@ public class ReferralHistory extends BaseEntity {
     @JoinColumn(name = "reservation_id", nullable = false)
     private Reservation reservation;
 
-    @Column(nullable = false)
     private UUID eventId;
 
     @Column(length = 20)
@@ -41,21 +40,24 @@ public class ReferralHistory extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private ReferralStatus toStatus;
 
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 30)
     @Enumerated(EnumType.STRING)
     private Reason reason;
 
+    @Column(nullable = false)
     private LocalDateTime occurredAt;
+    private UUID changedBy;
 
-    public static ReferralHistory create(Referral referral, Reservation reservation, ReferralStatus fromStatus, ReferralStatus toStatus, Reason reason, UUID eventId) {
-         return ReferralHistory.builder()
-                 .referral(referral)
-                 .reservation(reservation)
-                 .eventId(eventId)
-                 .fromStatus(fromStatus)
-                 .toStatus(toStatus)
-                 .reason(reason)
-                 .occurredAt(LocalDateTime.now())
-                 .build();
+    public static ReferralHistory create(Referral referral, Reservation reservation, ReferralStatus fromStatus, ReferralStatus toStatus, Reason reason, UUID eventId, UUID userId) {
+        return ReferralHistory.builder()
+                .referral(referral)
+                .reservation(reservation)
+                .eventId(eventId)
+                .fromStatus(fromStatus)
+                .toStatus(toStatus)
+                .reason(reason)
+                .occurredAt(LocalDateTime.now())
+                .changedBy(userId)
+                .build();
     }
 }

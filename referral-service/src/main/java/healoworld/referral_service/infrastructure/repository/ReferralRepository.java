@@ -1,7 +1,6 @@
 package healoworld.referral_service.infrastructure.repository;
 
 import healoworld.referral_service.domain.entity.Referral;
-import jakarta.validation.constraints.NotNull;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

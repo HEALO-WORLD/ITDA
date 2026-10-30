@@ -7,6 +7,5 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ReservationRepository extends JpaRepository<Reservation, UUID>, ReservationRepositoryCustom {
-    Optional<Reservation> findByReferralId(UUID referralId);
     Optional<Reservation> findTopByReferralIdOrderByAttemptNoDesc(UUID referralId);
 }

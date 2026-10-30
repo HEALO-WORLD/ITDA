@@ -3,7 +3,6 @@ package healoworld.referral_service.infrastructure.repository;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.presentation.dto.request.ReservationSearchCondition;
-import healoworld.referral_service.presentation.dto.response.ReservationResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
