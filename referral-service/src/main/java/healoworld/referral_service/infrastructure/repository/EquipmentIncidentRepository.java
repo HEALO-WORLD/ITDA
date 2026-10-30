@@ -8,7 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface EquipmentIncidentRepository extends JpaRepository<EquipmentIncident, UUID> {
+public interface EquipmentIncidentRepository extends JpaRepository<EquipmentIncident, UUID>,
+        EquipmentIncidentRepositoryCustom {
 
     // 같은 Kafka 이벤트가 이미 사건으로 저장됐는지 확인 (중복 수신 시 기존 사건을 그대로 쓰기 위함)
     // 최종 중복 방지는 source_event_id UNIQUE 제약이 담당하고, 이 조회는 빠른 사전 확인용이다
