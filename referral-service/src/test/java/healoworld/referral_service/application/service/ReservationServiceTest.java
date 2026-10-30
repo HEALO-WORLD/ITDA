@@ -1,0 +1,172 @@
+package healoworld.referral_service.application.service;
+
+import healoworld.referral_service.domain.entity.Referral;
+import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.ReferralStatus;
+import healoworld.referral_service.domain.enums.ReservationStatus;
+import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.exception.BaseException;
+import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.repository.ReservationRepository;
+import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
+import healoworld.referral_service.presentation.dto.response.ReservationResponse;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Optional;
+import java.util.UUID;
+
+import static healoworld.referral_service.support.DomainFixtures.referralIn;
+import static healoworld.referral_service.support.DomainFixtures.reservation;
+import static healoworld.referral_service.support.DomainFixtures.reservationIn;
+import static healoworld.referral_service.support.DomainFixtures.reservationRequest;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+
+@ExtendWith(MockitoExtension.class)
+class ReservationServiceTest {
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID OTHER_USER_ID = UUID.randomUUID();
+
+    @Mock
+    private ReservationRepository reservationRepository;
+
+    @InjectMocks
+    private ReservationService reservationService;
+
+    private Referral referral;
+
+    @BeforeEach
+    void setUp() {
+        referral = referralIn(ReferralStatus.PENDING, USER_ID);
+    }
+
+    @Nested
+    @DisplayName("createReservation")
+    class CreateReservation {
+        @Test
+        @DisplayName("첫 예약이면 attemptNo는 1이다")
+        void firstAttempt() {
+            CreateReservationRequest request = reservationRequest();
+            given(reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId())).willReturn(Optional.empty());
+
+            Reservation created = reservationService.createReservation(referral, request);
+
+            assertThat(created.getAttemptNo()).isEqualTo(1);
+            assertThat(created.getReservationStatus()).isEqualTo(ReservationStatus.REQUESTED);
+            assertThat(created.getReferral()).isSameAs(referral);
+            assertThat(created.getSlotId()).isEqualTo(request.getSlotId());
+            assertThat(created.getEquipmentId()).isEqualTo(request.getEquipmentId());
+            verify(reservationRepository).save(created);
+        }
+
+        @Test
+        @DisplayName("이전 예약이 있으면 마지막 attemptNo + 1")
+        void nextAttempt() {
+            given(reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId()))
+                    .willReturn(Optional.of(reservation(referral, 2)));
+
+            Reservation created = reservationService.createReservation(referral, reservationRequest());
+
+            assertThat(created.getAttemptNo()).isEqualTo(3);
+        }
+    }
+
+    @Nested
+    @DisplayName("getReservation")
+    class GetReservation {
+        @Test
+        @DisplayName("본인 의뢰의 예약은 조회되고 referralId가 응답에 담긴다")
+        void owner() {
+            Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
+            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+
+            ReservationResponse response = reservationService.getReservation(USER_ID, reservation.getId(), RoleType.USER);
+
+            assertThat(response.getId()).isEqualTo(reservation.getId());
+            assertThat(response.getReferralId()).isEqualTo(referral.getId());
+        }
+
+        @Test
+        @DisplayName("관리자는 다른 사람의 예약도 조회할 수 있다")
+        void admin() {
+            Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
+            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+
+            ReservationResponse response = reservationService.getReservation(OTHER_USER_ID, reservation.getId(), RoleType.ADMIN);
+
+            assertThat(response.getId()).isEqualTo(reservation.getId());
+        }
+
+        @Test
+        @DisplayName("다른 사람의 예약은 NOT_FOUND")
+        void otherUser() {
+            Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
+            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+
+            assertErrorCode(() -> reservationService.getReservation(OTHER_USER_ID, reservation.getId(), RoleType.USER),
+                    ErrorCode.RESERVATION_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("없는 예약이면 NOT_FOUND")
+        void notFound() {
+            UUID reservationId = UUID.randomUUID();
+            given(reservationRepository.findById(reservationId)).willReturn(Optional.empty());
+
+            assertErrorCode(() -> reservationService.getReservation(USER_ID, reservationId, RoleType.USER),
+                    ErrorCode.RESERVATION_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("deleteReservation")
+    class DeleteReservation {
+        @Test
+        @DisplayName("본인의 종료된 예약은 soft delete된다")
+        void success() {
+            Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
+            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+
+            reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.USER);
+
+            assertThat(reservation.getDeletedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("다른 사람의 예약은 삭제할 수 없다")
+        void otherUser() {
+            Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
+            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+
+            assertErrorCode(() -> reservationService.deleteReservation(OTHER_USER_ID, reservation.getId(), RoleType.USER),
+                    ErrorCode.RESERVATION_NOT_FOUND);
+            assertThat(reservation.getDeletedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("진행 중인 예약은 삭제할 수 없다")
+        void invalidStatus() {
+            Reservation reservation = reservationIn(ReservationStatus.CONFIRMED, referral);
+            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+
+            assertErrorCode(() -> reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.USER),
+                    ErrorCode.INVALID_RESERVATION_STATUS);
+        }
+    }
+
+    private void assertErrorCode(Runnable action, ErrorCode errorCode) {
+        assertThatThrownBy(action::run)
+                .isInstanceOf(BaseException.class)
+                .extracting("errorCode")
+                .isEqualTo(errorCode);
+    }
+}

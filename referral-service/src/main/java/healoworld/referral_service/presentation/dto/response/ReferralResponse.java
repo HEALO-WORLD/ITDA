@@ -3,9 +3,11 @@ package healoworld.referral_service.presentation.dto.response;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import lombok.Builder;
+import lombok.Getter;
 
 import java.util.UUID;
 
+@Getter
 @Builder
 public class ReferralResponse {
     private UUID id;

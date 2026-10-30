@@ -21,5 +21,6 @@ public class CreateReferralRequest {
     @NotNull(message = "멱등 키는 필수입니다.")
     private UUID idempotencyKey;
     @NotNull
+    @Valid
     private CreateReservationRequest reservation;
 }
