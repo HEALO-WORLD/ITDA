@@ -24,7 +24,9 @@ public enum ErrorCode {
     SLOT_INVALID_SEARCH_RANGE(HttpStatus.BAD_REQUEST, "검색 종료 일시는 시작 일시보다 이후여야 합니다."),
     SLOT_SEARCH_RANGE_EXCEEDED(HttpStatus.BAD_REQUEST, "검색 기간은 최대 31일입니다."),
     SLOT_INVALID_SEARCH_STATUS(HttpStatus.BAD_REQUEST, "검색 모드에서는 AVAILABLE 상태만 조회할 수 있습니다."),
-    REFERENCE_DATA_NOT_READY(HttpStatus.CONFLICT, "조회에 필요한 기관·협약 정보가 준비되지 않았습니다.");
+    REFERENCE_DATA_NOT_READY(HttpStatus.CONFLICT, "조회에 필요한 기관·협약 정보가 준비되지 않았습니다."),
+    SLOT_NOT_FOUND(HttpStatus.NOT_FOUND, "슬롯을 찾을 수 없습니다."),
+    SLOT_NOT_AVAILABLE(HttpStatus.CONFLICT, "확보할 수 없는 상태의 슬롯입니다.");
 
     private final HttpStatus status;
     private final String message;
