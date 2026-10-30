@@ -32,7 +32,7 @@ public class ReservationService {
         reservationRepository.save(createdReservation);
 
         // HoldRequested 이벤트 발행 (Outbox 기록)
-
+        // referralHistory 기록
         return createdReservation;
     }
 
@@ -47,6 +47,7 @@ public class ReservationService {
         // reservation status FAILED 변경
         // failureReason SLOT_CONFLICT 변경
         // referral status FAILED or NEEDS_RESCHEDULE 변경
+        // referralHistory 기록
     }
 
     // SlotBooked 이벤트 수신
@@ -54,6 +55,7 @@ public class ReservationService {
         // reservation status CONFIRMED 변경
         // reservation confirmedAt 기록
         // referral status CONFIRMED 변경
+        // referralHistory 기록
         // 검사 생성
     }
 
@@ -63,6 +65,7 @@ public class ReservationService {
         // reservation status FAILED 변경
         // failureReason CONFIRM_FAILED 변경
         // referral status FAILED or NEEDS_RESCHEDULE 변경
+        // referralHistory 기록
     }
 
     // HoldExpired 이벤트 수신
@@ -71,6 +74,7 @@ public class ReservationService {
         // reservation status FAILED 변경
         // failureReason HOLD_EXPIRED 변경
         // referral status FAILED or NEEDS_RESCHEDULE 변경
+        // referralHistory 기록
     }
 
     // SlotsBlocked 이벤트 수신
@@ -78,6 +82,7 @@ public class ReservationService {
         // reservation status BLOCKED 변경
         // failureReason EQUIPMENT_FAILURE 변경
         // referral status NEEDS_RESCHEDULE 변경
+        // referralHistory 기록
     }
 
     @Transactional(readOnly = true)
@@ -124,5 +129,6 @@ public class ReservationService {
         // reservation status CANCELED 변경
         // failureReason CANCELED_BY_REQUESTER 변경
         // referral status CANCELED 변경
+        // referralHistory 기록
     }
 }
