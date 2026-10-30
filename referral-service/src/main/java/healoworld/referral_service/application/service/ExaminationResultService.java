@@ -29,14 +29,21 @@ public class ExaminationResultService {
     private final ExaminationResultRepository examinationResultRepository;
 
     // 완료된 검사에만 결과를 한 번 등록한다. 검사·의뢰·예약 상태는 바꾸지 않는다
+    // institutionId는 요청한 사용자의 소속 기관 ID (Gateway가 JWT에서 꺼내 X-Institution-Id 헤더로 전달)
     @Transactional
-    public ExaminationResultCreateResponse register(UUID examinationId, String summary, String notes) {
+    public ExaminationResultCreateResponse register(UUID examinationId, UUID institutionId,
+                                                    String summary, String notes) {
         if (summary == null || summary.isBlank()) {
             throw new BaseException(ErrorCode.VALIDATION_FAILED);
         }
 
         Examination examination = examinationRepository.findById(examinationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.EXAMINATION_NOT_FOUND));
+        // 검사를 수행하는 검사기관 소속 사용자만 등록할 수 있다.
+        // 권한이 없는 사용자에게 검사 진행 상태가 드러나지 않도록 상태 검증보다 먼저 확인한다
+        if (!examination.getExamInstitutionId().equals(institutionId)) {
+            throw new BaseException(ErrorCode.EXAMINATION_RESULT_ACCESS_DENIED);
+        }
         if (examination.getStatus() != ExaminationStatus.COMPLETED) {
             throw new BaseException(ErrorCode.EXAMINATION_NOT_COMPLETED);
         }

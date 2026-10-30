@@ -780,6 +780,7 @@ class ExaminationServiceIntegrationTest {
         ExaminationResultCreateResponse response =
                 examinationResultService.register(
                         examination.getId(),
+                        examination.getExamInstitutionId(),
                         "가상 결과 요약",
                         "가상 추가 소견"
                 );
@@ -820,6 +821,7 @@ class ExaminationServiceIntegrationTest {
         ExaminationResultCreateResponse response =
                 examinationResultService.register(
                         examination.getId(),
+                        examination.getExamInstitutionId(),
                         "요약",
                         null
                 );
@@ -845,6 +847,7 @@ class ExaminationServiceIntegrationTest {
         assertErrorCode(
                 () -> examinationResultService.register(
                         examination.getId(),
+                        examination.getExamInstitutionId(),
                         "요약",
                         null
                 ),
@@ -865,11 +868,37 @@ class ExaminationServiceIntegrationTest {
         assertErrorCode(
                 () -> examinationResultService.register(
                         UUID.randomUUID(),
+                        UUID.randomUUID(),
                         "요약",
                         null
                 ),
                 ErrorCode.EXAMINATION_NOT_FOUND
         );
+    }
+
+    @Test
+    @DisplayName("검사를 수행하는 검사기관이 아닌 기관은 결과를 등록할 수 없고 결과가 저장되지 않는다")
+    void registerResultByOtherInstitution() {
+
+        Examination examination = examinationIn(
+                ExaminationStatus.COMPLETED
+        );
+
+        assertErrorCode(
+                () -> examinationResultService.register(
+                        examination.getId(),
+                        UUID.randomUUID(),
+                        "요약",
+                        null
+                ),
+                ErrorCode.EXAMINATION_RESULT_ACCESS_DENIED
+        );
+
+        assertThat(
+                examinationResultRepository.existsByExaminationId(
+                        examination.getId()
+                )
+        ).isFalse();
     }
 
     @Test
@@ -883,6 +912,7 @@ class ExaminationServiceIntegrationTest {
         assertErrorCode(
                 () -> examinationResultService.register(
                         examination.getId(),
+                        examination.getExamInstitutionId(),
                         null,
                         null
                 ),
@@ -892,6 +922,7 @@ class ExaminationServiceIntegrationTest {
         assertErrorCode(
                 () -> examinationResultService.register(
                         examination.getId(),
+                        examination.getExamInstitutionId(),
                         "   ",
                         null
                 ),
@@ -910,6 +941,7 @@ class ExaminationServiceIntegrationTest {
         ExaminationResultCreateResponse first =
                 examinationResultService.register(
                         examination.getId(),
+                        examination.getExamInstitutionId(),
                         "첫 결과",
                         null
                 );
@@ -917,6 +949,7 @@ class ExaminationServiceIntegrationTest {
         assertErrorCode(
                 () -> examinationResultService.register(
                         examination.getId(),
+                        examination.getExamInstitutionId(),
                         "덮어쓰기 시도",
                         null
                 ),
@@ -965,6 +998,7 @@ class ExaminationServiceIntegrationTest {
                     try {
                         examinationResultService.register(
                                 examination.getId(),
+                                examination.getExamInstitutionId(),
                                 summary,
                                 null
                         );
