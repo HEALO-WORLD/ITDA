@@ -2,6 +2,10 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.1.2'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.jetbrains.kotlin.jvm' version '2.4.21'
+	id "org.jetbrains.kotlin.plugin.jpa" version '2.4.20'
+	id "org.jetbrains.kotlin.plugin.lombok" version '2.4.20'
+	id "org.jetbrains.kotlin.plugin.spring" version '2.4.20'
 }
 
 group = 'healoworld'
@@ -34,6 +38,7 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.jetbrains.kotlin:kotlin-test'
 }
 
 tasks.named('test') {
