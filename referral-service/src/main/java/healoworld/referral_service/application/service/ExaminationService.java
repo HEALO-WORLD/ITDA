@@ -13,6 +13,15 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import healoworld.referral_service.domain.entity.Referral;
+import healoworld.referral_service.domain.entity.Reservation;
+
+import healoworld.referral_service.domain.enums.ReferralStatus;
+import healoworld.referral_service.domain.enums.ReservationStatus;
+
+import healoworld.referral_service.infrastructure.repository.ReferralRepository;
+import healoworld.referral_service.infrastructure.repository.ReservationRepository;
+
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +37,9 @@ public class ExaminationService {
     private static final String UNIQUE_VIOLATION_SQL_STATE = "23505";
 
     private final ExaminationRepository examinationRepository;
+
+    private final ReferralRepository referralRepository;
+    private final ReservationRepository reservationRepository;
 
     public ExaminationResponse getByReferralId(UUID referralId) {
         return ExaminationResponse.from(findByReferralId(referralId));
@@ -92,34 +104,76 @@ public class ExaminationService {
 
     // 검사 상태 변경. 같은 상태 요청은 DB를 바꾸지 않고 현재 상태를 그대로 돌려준다 (멱등)
     @Transactional
-    public ExaminationStatusChangeResponse changeStatus(UUID examinationId, ExaminationStatus requestedStatus) {
+    public ExaminationStatusChangeResponse changeStatus(
+            UUID examinationId,
+            ExaminationStatus requestedStatus
+    ) {
         Examination examination = findById(examinationId);
         ExaminationStatus previousStatus = examination.getStatus();
 
+        // 같은 상태 요청은 변경하지 않음 (멱등성)
         if (previousStatus == requestedStatus) {
             return ExaminationStatusChangeResponse.unchanged(examination);
         }
+
+        // 허용되지 않는 상태 전이 차단
         if (!previousStatus.canTransitionTo(requestedStatus)) {
-            throw new BaseException(ErrorCode.INVALID_EXAMINATION_STATUS_TRANSITION);
+            throw new BaseException(
+                    ErrorCode.INVALID_EXAMINATION_STATUS_TRANSITION
+            );
         }
+
+        LocalDateTime now = LocalDateTime.now();
+        int updated;
+
         if (requestedStatus == ExaminationStatus.IN_PROGRESS) {
-            // 시작 조건(의뢰 CONFIRMED, 예약 CONFIRMED, 의뢰의 현재 예약 = 검사의 예약)은
-            // Referral·Reservation 엔티티가 병합된 뒤 연동한다. 검증할 수 없는 동안에는 시작을 허용하지 않는다
-            throw new BaseException(ErrorCode.EXAMINATION_START_NOT_ALLOWED);
+
+            // 검사를 시작할 수 있는 유효한 예약인지 확인
+            validateCanStart(examination);
+
+            // SCHEDULED → IN_PROGRESS
+            updated = examinationRepository.startIfScheduled(
+                    examinationId,
+                    examination.getReservationId(),
+                    now
+            );
+
+        } else {
+
+            // IN_PROGRESS → COMPLETED
+            updated = examinationRepository.completeIfInProgress(
+                    examinationId,
+                    now
+            );
         }
 
-        int updated = examinationRepository.completeIfInProgress(examinationId, LocalDateTime.now());
-
-        // 조건부 UPDATE는 영속성 컨텍스트를 거치지 않으므로 DB의 최신 값을 다시 읽는다
+        // 조건부 UPDATE 이후 최신 상태 조회
         Examination current = findById(examinationId);
+
         if (updated == 1) {
-            return ExaminationStatusChangeResponse.of(previousStatus, current);
+            return ExaminationStatusChangeResponse.of(
+                    previousStatus,
+                    current
+            );
         }
-        // 동시에 들어온 같은 요청이 먼저 완료 처리했다면 중복 요청으로 보고 현재 상태를 돌려준다
+
+        // 동시 요청으로 이미 동일 상태가 된 경우
         if (current.getStatus() == requestedStatus) {
             return ExaminationStatusChangeResponse.unchanged(current);
         }
-        throw new BaseException(ErrorCode.INVALID_EXAMINATION_STATUS_TRANSITION);
+
+        // 검사를 시작하려는 동안 예약 연결이 변경된 경우
+        if (requestedStatus == ExaminationStatus.IN_PROGRESS
+                && !current.getReservationId()
+                .equals(examination.getReservationId())) {
+            throw new BaseException(
+                    ErrorCode.EXAMINATION_START_NOT_ALLOWED
+            );
+        }
+
+        throw new BaseException(
+                ErrorCode.INVALID_EXAMINATION_STATUS_TRANSITION
+        );
     }
 
     private Examination findById(UUID examinationId) {
@@ -141,5 +195,58 @@ public class ExaminationService {
 
                 // SQLSTATE가 23505이면 UNIQUE 제약조건 위반으로 판단한다
                 && UNIQUE_VIOLATION_SQL_STATE.equals(sqlException.getSQLState());
+    }
+
+    // 검증 메서드
+    private void validateCanStart(Examination examination) {
+
+        // 1. 검사에 연결된 의뢰 조회
+        Referral referral = referralRepository
+                .findById(examination.getReferralId())
+                .orElseThrow(() -> new BaseException(
+                        ErrorCode.EXAMINATION_START_NOT_ALLOWED
+                ));
+
+        UUID currentReservationId = referral.getCurrentReservationId();
+
+        // 2. 의뢰 상태 및 현재 예약 ID 확인
+        if (referral.getReferralStatus() != ReferralStatus.CONFIRMED
+                || currentReservationId == null
+                || !currentReservationId.equals(examination.getReservationId())) {
+
+            throw new BaseException(
+                    ErrorCode.EXAMINATION_START_NOT_ALLOWED
+            );
+        }
+
+        // 3. 현재 예약 조회
+        Reservation reservation = reservationRepository
+                .findById(currentReservationId)
+                .orElseThrow(() -> new BaseException(
+                        ErrorCode.EXAMINATION_START_NOT_ALLOWED
+                ));
+
+        // 4. 예약 상태 확인
+        if (reservation.getReservationStatus() != ReservationStatus.CONFIRMED) {
+            throw new BaseException(
+                    ErrorCode.EXAMINATION_START_NOT_ALLOWED
+            );
+        }
+
+        // 5. 예약과 의뢰의 연결 확인
+        if (!reservation.getReferral().getId().equals(referral.getId())) {
+            throw new BaseException(
+                    ErrorCode.EXAMINATION_START_NOT_ALLOWED
+            );
+        }
+
+        // 6. 검사기관 일치 여부 확인
+        if (!reservation.getExamInstitutionId()
+                .equals(examination.getExamInstitutionId())) {
+
+            throw new BaseException(
+                    ErrorCode.EXAMINATION_START_NOT_ALLOWED
+            );
+        }
     }
 }
