@@ -35,7 +35,7 @@ public class ReservationController {
     @GetMapping("/{reservationId}")
     public ResponseEntity<ApiResponse<ReservationResponse>> getReservation(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-User-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
             @Parameter(description = "예약 ID") @PathVariable("reservationId") UUID reservationId
     ) {
         ReservationResponse response = reservationService.getReservation(institutionId, reservationId, role);
@@ -50,7 +50,7 @@ public class ReservationController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<ReservationResponse>>> getReservations(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-User-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
             @ParameterObject @ModelAttribute ReservationSearchCondition cond
     ) {
         PagedResponse<ReservationResponse> response = reservationService.getReservations(institutionId, cond, role);
@@ -68,7 +68,7 @@ public class ReservationController {
     @DeleteMapping("/{reservationId}")
     public ResponseEntity<ApiResponse<Void>> deleteReservation(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-User-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
             @Parameter(description = "예약 ID") @PathVariable("reservationId") UUID reservationId
     ) {
         reservationService.deleteReservation(userId, reservationId, role);

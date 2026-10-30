@@ -22,7 +22,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(e.getStatus()).body(ErrorResponse.of(e.getErrorCode()));
     }
 
-    // @RequestHeader로 받기로 한 헤더(X-User-Id, X-User-Role)가 요청에 없을 때
+    // @RequestHeader로 받기로 한 헤더(X-User-Id, X-Role 등)가 요청에 없을 때
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ResponseEntity<ErrorResponse> handleMissingHeader(MissingRequestHeaderException e) {
         return ResponseEntity.status(ErrorCode.MISSING_HEADER.getStatus())

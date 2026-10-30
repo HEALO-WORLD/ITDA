@@ -59,25 +59,25 @@ class ReservationRepositorySearchTest extends RepositoryTestSupport {
     @Test
     @DisplayName("의뢰기관은 자기 기관 의뢰의 예약을 조회한다")
     void referringInstitution() {
-        assertThat(ids(search(condition(), REFERRING_A, RoleType.USER)))
+        assertThat(ids(search(condition(), REFERRING_A, RoleType.REQUESTER)))
                 .containsExactlyInAnyOrder(a1AtX.getId(), a2AtY.getId());
-        assertThat(ids(search(condition(), REFERRING_B, RoleType.USER)))
+        assertThat(ids(search(condition(), REFERRING_B, RoleType.REQUESTER)))
                 .containsExactly(b1AtX.getId());
     }
 
     @Test
     @DisplayName("검사기관은 자기 기관에서 진행하는 예약을 조회한다")
     void examInstitution() {
-        assertThat(ids(search(condition(), EXAM_X, RoleType.USER)))
+        assertThat(ids(search(condition(), EXAM_X, RoleType.EXAMINER)))
                 .containsExactlyInAnyOrder(a1AtX.getId(), b1AtX.getId());
-        assertThat(ids(search(condition(), EXAM_Y, RoleType.USER)))
+        assertThat(ids(search(condition(), EXAM_Y, RoleType.EXAMINER)))
                 .containsExactly(a2AtY.getId());
     }
 
     @Test
     @DisplayName("관계없는 기관은 아무 예약도 조회되지 않는다")
     void unrelatedInstitution() {
-        Page<Reservation> result = search(condition(), UUID.randomUUID(), RoleType.USER);
+        Page<Reservation> result = search(condition(), UUID.randomUUID(), RoleType.REQUESTER);
 
         assertThat(result.getContent()).isEmpty();
         assertThat(result.getTotalElements()).isZero();
@@ -89,9 +89,9 @@ class ReservationRepositorySearchTest extends RepositoryTestSupport {
         ReservationSearchCondition byA1 = condition(null, USER_A1, null, null);
         ReservationSearchCondition byB1 = condition(null, USER_B1, null, null);
 
-        assertThat(ids(search(byA1, REFERRING_A, RoleType.USER))).containsExactly(a1AtX.getId());
-        assertThat(ids(search(byB1, REFERRING_A, RoleType.USER))).isEmpty();
-        assertThat(ids(search(byB1, EXAM_X, RoleType.USER))).containsExactly(b1AtX.getId());
+        assertThat(ids(search(byA1, REFERRING_A, RoleType.REQUESTER))).containsExactly(a1AtX.getId());
+        assertThat(ids(search(byB1, REFERRING_A, RoleType.REQUESTER))).isEmpty();
+        assertThat(ids(search(byB1, EXAM_X, RoleType.EXAMINER))).containsExactly(b1AtX.getId());
     }
 
     @Test
@@ -110,7 +110,7 @@ class ReservationRepositorySearchTest extends RepositoryTestSupport {
         em.flush();
         em.clear();
 
-        Page<Reservation> result = search(condition(a1Referral.getId(), null, null, null), REFERRING_A, RoleType.USER);
+        Page<Reservation> result = search(condition(a1Referral.getId(), null, null, null), REFERRING_A, RoleType.REQUESTER);
 
         assertThat(ids(result)).containsExactlyInAnyOrder(a1AtX.getId(), retry.getId());
     }
