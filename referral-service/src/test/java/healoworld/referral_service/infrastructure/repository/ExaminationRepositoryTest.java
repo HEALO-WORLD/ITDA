@@ -2,6 +2,8 @@ package healoworld.referral_service.infrastructure.repository;
 
 import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.global.config.QuerydslConfig;
+import org.springframework.context.annotation.Import;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(QuerydslConfig.class)
 class ExaminationRepositoryTest {
 
     @Autowired

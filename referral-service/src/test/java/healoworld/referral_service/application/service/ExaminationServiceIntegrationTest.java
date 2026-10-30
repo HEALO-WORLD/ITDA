@@ -9,6 +9,7 @@ import healoworld.referral_service.infrastructure.repository.ExaminationResultRe
 import healoworld.referral_service.presentation.dto.response.ExaminationResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationResultCreateResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationStatusChangeResponse;
+import healoworld.referral_service.global.config.QuerydslConfig;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,7 +38,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({ExaminationService.class, ExaminationResultService.class})
+@Import({
+        ExaminationService.class,
+        ExaminationResultService.class,
+        QuerydslConfig.class
+})
 class ExaminationServiceIntegrationTest {
 
     @Autowired
