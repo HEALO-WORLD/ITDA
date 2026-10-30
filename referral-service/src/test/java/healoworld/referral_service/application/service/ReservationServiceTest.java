@@ -84,35 +84,48 @@ class ReservationServiceTest {
     @DisplayName("getReservation")
     class GetReservation {
         @Test
-        @DisplayName("본인 의뢰의 예약은 조회되고 referralId가 응답에 담긴다")
-        void owner() {
+        @DisplayName("의뢰기관은 조회할 수 있고 referralId가 응답에 담긴다")
+        void referringInstitution() {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
 
-            ReservationResponse response = reservationService.getReservation(USER_ID, reservation.getId(), RoleType.USER);
+            ReservationResponse response = reservationService.getReservation(
+                    referral.getReferringInstitutionId(), reservation.getId(), RoleType.USER);
 
             assertThat(response.getId()).isEqualTo(reservation.getId());
             assertThat(response.getReferralId()).isEqualTo(referral.getId());
         }
 
         @Test
-        @DisplayName("관리자는 다른 사람의 예약도 조회할 수 있다")
-        void admin() {
+        @DisplayName("검사기관은 조회할 수 있다")
+        void examInstitution() {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
 
-            ReservationResponse response = reservationService.getReservation(OTHER_USER_ID, reservation.getId(), RoleType.ADMIN);
+            ReservationResponse response = reservationService.getReservation(
+                    reservation.getExamInstitutionId(), reservation.getId(), RoleType.USER);
 
             assertThat(response.getId()).isEqualTo(reservation.getId());
         }
 
         @Test
-        @DisplayName("다른 사람의 예약은 NOT_FOUND")
-        void otherUser() {
+        @DisplayName("관리자는 관계없는 기관이어도 조회할 수 있다")
+        void admin() {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
 
-            assertErrorCode(() -> reservationService.getReservation(OTHER_USER_ID, reservation.getId(), RoleType.USER),
+            ReservationResponse response = reservationService.getReservation(UUID.randomUUID(), reservation.getId(), RoleType.ADMIN);
+
+            assertThat(response.getId()).isEqualTo(reservation.getId());
+        }
+
+        @Test
+        @DisplayName("의뢰기관도 검사기관도 아니면 NOT_FOUND")
+        void otherInstitution() {
+            Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
+            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+
+            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservation.getId(), RoleType.USER),
                     ErrorCode.RESERVATION_NOT_FOUND);
         }
 
@@ -122,7 +135,7 @@ class ReservationServiceTest {
             UUID reservationId = UUID.randomUUID();
             given(reservationRepository.findById(reservationId)).willReturn(Optional.empty());
 
-            assertErrorCode(() -> reservationService.getReservation(USER_ID, reservationId, RoleType.USER),
+            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservationId, RoleType.USER),
                     ErrorCode.RESERVATION_NOT_FOUND);
         }
     }

@@ -27,9 +27,10 @@ public class ReferralRepositoryCustomImpl implements ReferralRepositoryCustom {
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public Page<Referral> search(ReferralSearchCondition cond, UUID userId, RoleType role, Pageable pageable) {
+    public Page<Referral> search(ReferralSearchCondition cond, UUID institutionId, RoleType role, Pageable pageable) {
         BooleanExpression[] conditions = {
-                accessibleBy(userId, role, cond.referrerId()),
+                institutionScope(institutionId, role),
+                referrerIdEq(cond.referrerId()),
                 statusEq(cond.status()),
                 referringInstitutionIdEq(cond.referringInstitutionId()),
                 examTypeIdEq(cond.examTypeId()),
@@ -52,11 +53,12 @@ public class ReferralRepositoryCustomImpl implements ReferralRepositoryCustom {
         return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
     }
 
-    // 관리자가 아니면 본인 의뢰만 조회
-    private BooleanExpression accessibleBy(UUID userId, RoleType role, UUID referrerId) {
-        if (role != RoleType.ADMIN) {
-            return referral.referrerId.eq(userId);
-        }
+    // 관리자가 아니면 본인 기관 의뢰만 조회
+    private BooleanExpression institutionScope(UUID institutionId, RoleType role) {
+        return role == RoleType.ADMIN ? null : referral.referringInstitutionId.eq(institutionId);
+    }
+
+    private BooleanExpression referrerIdEq(UUID referrerId) {
         return referrerId != null ? referral.referrerId.eq(referrerId) : null;
     }
 

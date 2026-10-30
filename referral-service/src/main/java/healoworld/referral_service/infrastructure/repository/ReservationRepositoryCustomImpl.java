@@ -28,9 +28,10 @@ public class ReservationRepositoryCustomImpl implements ReservationRepositoryCus
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public Page<Reservation> search(ReservationSearchCondition cond, UUID userId, RoleType role, Pageable pageable) {
+    public Page<Reservation> search(ReservationSearchCondition cond, UUID institutionId, RoleType role, Pageable pageable) {
         BooleanExpression[] conditions = {
-                accessibleBy(userId, role, cond.referrerId()),
+                institutionScope(institutionId, role),
+                referrerIdEq(cond.referrerId()),
                 statusEq(cond.status()),
                 failureReasonEq(cond.failureReason()),
                 referralIdEq(cond.referralId()),
@@ -56,11 +57,13 @@ public class ReservationRepositoryCustomImpl implements ReservationRepositoryCus
         return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
     }
 
-    // 관리자가 아니면 본인 의뢰만 조회
-    private BooleanExpression accessibleBy(UUID userId, RoleType role, UUID referrerId) {
-        if (role != RoleType.ADMIN) {
-            return reservation.referral.referrerId.eq(userId);
-        }
+    // 관리자가 아니면 의뢰기관 또는 검사기관이 본인 기관인 예약만 조회
+    private BooleanExpression institutionScope(UUID institutionId, RoleType role) {
+        return role == RoleType.ADMIN ? null : reservation.referral.referringInstitutionId.eq(institutionId)
+                .or(reservation.examInstitutionId.eq(institutionId));
+    }
+
+    private BooleanExpression referrerIdEq(UUID referrerId) {
         return referrerId != null ? reservation.referral.referrerId.eq(referrerId) : null;
     }
 

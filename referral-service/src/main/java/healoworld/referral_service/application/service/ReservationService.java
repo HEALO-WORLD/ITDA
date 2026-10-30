@@ -81,19 +81,22 @@ public class ReservationService {
     }
 
     @Transactional(readOnly = true)
-    public ReservationResponse getReservation(UUID userId, UUID reservationId, RoleType role) {
+    public ReservationResponse getReservation(UUID institutionId, UUID reservationId, RoleType role) {
         Reservation reservation = reservationRepository.findById(reservationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
 
-        if (!(userId.equals(reservation.getReferral().getReferrerId()) || role == RoleType.ADMIN)) {
+        if (!(institutionId.equals(reservation.getReferral().getReferringInstitutionId())
+                || role == RoleType.ADMIN
+                || institutionId.equals(reservation.getExamInstitutionId()))
+        ) {
             throw new BaseException(ErrorCode.RESERVATION_NOT_FOUND);
         }
         return ReservationResponse.from(reservation);
     }
 
     @Transactional(readOnly = true)
-    public PagedResponse<ReservationResponse> getReservations(UUID userId, ReservationSearchCondition cond, RoleType role) {
-        Page<ReservationResponse> page = reservationRepository.search(cond, userId, role, cond.toPageable())
+    public PagedResponse<ReservationResponse> getReservations(UUID institutionId, ReservationSearchCondition cond, RoleType role) {
+        Page<ReservationResponse> page = reservationRepository.search(cond, institutionId, role, cond.toPageable())
                 .map(ReservationResponse::from);
         return PagedResponse.from(page);
     }

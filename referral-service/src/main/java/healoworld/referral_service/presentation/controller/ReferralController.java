@@ -46,21 +46,21 @@ public class ReferralController {
 
     @GetMapping("/{referralId}")
     public ResponseEntity<ApiResponse<ReferralResponse>> getReferral(
-            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader("X-Institution-Id") UUID institutionId,
             @RequestHeader("X-User-Role") RoleType role,
             @PathVariable("referralId") UUID referralId
     ) {
-        ReferralResponse response = referralService.getReferral(userId, referralId, role);
+        ReferralResponse response = referralService.getReferral(institutionId, referralId, role);
         return ResponseEntity.ok(ApiResponse.ok("의뢰 조회가 완료되었습니다.", response));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<ReferralResponse>>> getReferrals(
-            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader("X-Institution-Id") UUID institutionId,
             @RequestHeader("X-User-Role") RoleType role,
             @ModelAttribute ReferralSearchCondition cond
     ) {
-        PagedResponse<ReferralResponse> response = referralService.getReferrals(userId, cond, role);
+        PagedResponse<ReferralResponse> response = referralService.getReferrals(institutionId, cond, role);
         return ResponseEntity.ok(ApiResponse.ok("의뢰 목록 조회가 완료되었습니다.", response));
     }
 

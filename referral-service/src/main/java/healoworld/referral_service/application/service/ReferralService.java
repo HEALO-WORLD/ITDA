@@ -42,19 +42,19 @@ public class ReferralService {
     }
 
     @Transactional(readOnly = true)
-    public ReferralResponse getReferral(UUID userId, UUID referralId, RoleType role) {
+    public ReferralResponse getReferral(UUID institutionId, UUID referralId, RoleType role) {
         Referral referral = referralRepository.findById(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
 
-        if (!(userId.equals(referral.getReferrerId()) || role == RoleType.ADMIN)) {
+        if (!(institutionId.equals(referral.getReferringInstitutionId()) || role == RoleType.ADMIN)) {
             throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
         }
         return ReferralResponse.from(referral);
     }
 
     @Transactional(readOnly = true)
-    public PagedResponse<ReferralResponse> getReferrals(UUID userId, ReferralSearchCondition cond, RoleType role) {
-        Page<ReferralResponse> page = referralRepository.search(cond, userId, role, cond.toPageable())
+    public PagedResponse<ReferralResponse> getReferrals(UUID institutionId, ReferralSearchCondition cond, RoleType role) {
+        Page<ReferralResponse> page = referralRepository.search(cond, institutionId, role, cond.toPageable())
                 .map(ReferralResponse::from);
         return PagedResponse.from(page);
     }

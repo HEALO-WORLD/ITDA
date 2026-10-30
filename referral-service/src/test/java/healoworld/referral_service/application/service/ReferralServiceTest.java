@@ -93,32 +93,32 @@ class ReferralServiceTest {
     @DisplayName("getReferral")
     class GetReferral {
         @Test
-        @DisplayName("본인 의뢰는 조회된다")
-        void owner() {
+        @DisplayName("의뢰기관 소속이면 다른 사람이 올린 의뢰도 조회된다")
+        void sameInstitution() {
+            Referral referral = referralIn(ReferralStatus.PENDING, OTHER_USER_ID);
+            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+
+            assertThatCode(() -> referralService.getReferral(referral.getReferringInstitutionId(), referral.getId(), RoleType.USER))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("관리자는 다른 기관의 의뢰도 조회할 수 있다")
+        void admin() {
             Referral referral = referralIn(ReferralStatus.PENDING, USER_ID);
             given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
 
-            assertThatCode(() -> referralService.getReferral(USER_ID, referral.getId(), RoleType.USER))
+            assertThatCode(() -> referralService.getReferral(UUID.randomUUID(), referral.getId(), RoleType.ADMIN))
                     .doesNotThrowAnyException();
         }
 
         @Test
-        @DisplayName("관리자는 다른 사람의 의뢰도 조회할 수 있다")
-        void admin() {
-            Referral referral = referralIn(ReferralStatus.PENDING, OTHER_USER_ID);
+        @DisplayName("다른 기관의 의뢰는 존재를 숨기고 NOT_FOUND로 응답한다")
+        void otherInstitution() {
+            Referral referral = referralIn(ReferralStatus.PENDING, USER_ID);
             given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
 
-            assertThatCode(() -> referralService.getReferral(USER_ID, referral.getId(), RoleType.ADMIN))
-                    .doesNotThrowAnyException();
-        }
-
-        @Test
-        @DisplayName("다른 사람의 의뢰는 존재를 숨기고 NOT_FOUND로 응답한다")
-        void otherUser() {
-            Referral referral = referralIn(ReferralStatus.PENDING, OTHER_USER_ID);
-            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
-
-            assertErrorCode(() -> referralService.getReferral(USER_ID, referral.getId(), RoleType.USER),
+            assertErrorCode(() -> referralService.getReferral(UUID.randomUUID(), referral.getId(), RoleType.USER),
                     ErrorCode.REFERRAL_NOT_FOUND);
         }
 
@@ -128,7 +128,7 @@ class ReferralServiceTest {
             UUID referralId = UUID.randomUUID();
             given(referralRepository.findById(referralId)).willReturn(Optional.empty());
 
-            assertErrorCode(() -> referralService.getReferral(USER_ID, referralId, RoleType.USER),
+            assertErrorCode(() -> referralService.getReferral(UUID.randomUUID(), referralId, RoleType.USER),
                     ErrorCode.REFERRAL_NOT_FOUND);
         }
     }

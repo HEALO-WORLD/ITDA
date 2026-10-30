@@ -23,21 +23,21 @@ public class ReservationController {
 
     @GetMapping("/{reservationId}")
     public ResponseEntity<ApiResponse<ReservationResponse>> getReservation(
-            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader("X-Institution-Id") UUID institutionId,
             @RequestHeader("X-User-Role") RoleType role,
             @PathVariable("reservationId") UUID reservationId
     ) {
-        ReservationResponse response = reservationService.getReservation(userId, reservationId, role);
+        ReservationResponse response = reservationService.getReservation(institutionId, reservationId, role);
         return ResponseEntity.ok(ApiResponse.ok("예약 조회가 완료되었습니다.", response));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<ReservationResponse>>> getReservations(
-            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader("X-Institution-Id") UUID institutionId,
             @RequestHeader("X-User-Role") RoleType role,
             @ModelAttribute ReservationSearchCondition cond
     ) {
-        PagedResponse<ReservationResponse> response = reservationService.getReservations(userId, cond, role);
+        PagedResponse<ReservationResponse> response = reservationService.getReservations(institutionId, cond, role);
         return ResponseEntity.ok(ApiResponse.ok("예약 목록 조회가 완료되었습니다.", response));
     }
 
