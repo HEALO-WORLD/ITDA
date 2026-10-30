@@ -5,8 +5,10 @@ import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
+import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.request.ReferralSearchCondition;
 import healoworld.referral_service.presentation.dto.response.ReferralResponse;
+import healoworld.referral_service.presentation.dto.response.ReservationResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -29,6 +31,18 @@ public class ReferralController {
         ReferralResponse response = referralService.createReferral(userId, createReferralRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("의뢰 생성, 예약 접수가 완료되었습니다.", response));
     }
+
+    @PostMapping("/{referralId}/reschedule")
+    public ResponseEntity<ApiResponse<ReservationResponse>> createRescheduledReservation(
+            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader("X-User-Role") RoleType role,
+            @PathVariable("referralId") UUID referralId,
+            @RequestBody @Valid CreateReservationRequest request
+    ) {
+        ReservationResponse response = referralService.createRescheduledReservation(userId, role, referralId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("재 예약 접수가 완료되었습니다.", response));
+    }
+
 
     @GetMapping("/{referralId}")
     public ResponseEntity<ApiResponse<ReferralResponse>> getReferral(

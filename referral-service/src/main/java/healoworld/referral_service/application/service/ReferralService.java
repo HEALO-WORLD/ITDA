@@ -8,8 +8,11 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
+import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.request.ReferralSearchCondition;
 import healoworld.referral_service.presentation.dto.response.ReferralResponse;
+import healoworld.referral_service.presentation.dto.response.ReservationResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
@@ -65,5 +68,13 @@ public class ReferralService {
         }
         referral.delete(userId);
         referralRepository.save(referral);
+    }
+
+    public ReservationResponse createRescheduledReservation(UUID userId, RoleType role, UUID referralId, CreateReservationRequest request) {
+        Referral referral = referralRepository.findById(referralId)
+                .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
+        Reservation reservation = reservationService.createReservation(referral, request);
+        referral.reschedule(reservation.getId());
+        return ReservationResponse.from(reservation);
     }
 }
