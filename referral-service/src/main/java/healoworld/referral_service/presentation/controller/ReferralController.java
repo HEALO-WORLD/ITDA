@@ -24,7 +24,8 @@ public class ReferralController {
     @PostMapping
     public ResponseEntity<ApiResponse<ReferralResponse>> createReferralWithReservation(
             @RequestHeader("X-User-Id") UUID userId,
-            @RequestBody @Valid CreateReferralRequest createReferralRequest) {
+            @RequestBody @Valid CreateReferralRequest createReferralRequest
+    ) {
         ReferralResponse response = referralService.createReferral(userId, createReferralRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("의뢰 생성, 예약 접수가 완료되었습니다.", response));
     }
@@ -33,7 +34,8 @@ public class ReferralController {
     public ResponseEntity<ApiResponse<ReferralResponse>> getReferral(
             @RequestHeader("X-User-Id") UUID userId,
             @RequestHeader("X-User-Role") RoleType role,
-            @PathVariable("referralId") UUID referralId) {
+            @PathVariable("referralId") UUID referralId
+    ) {
         ReferralResponse response = referralService.getReferral(userId, referralId, role);
         return ResponseEntity.ok(ApiResponse.ok("의뢰 조회가 완료되었습니다.", response));
     }
@@ -42,7 +44,8 @@ public class ReferralController {
     public ResponseEntity<ApiResponse<PagedResponse<ReferralResponse>>> getReferrals(
             @RequestHeader("X-User-Id") UUID userId,
             @RequestHeader("X-User-Role") RoleType role,
-            @ModelAttribute ReferralSearchCondition cond) {
+            @ModelAttribute ReferralSearchCondition cond
+    ) {
         PagedResponse<ReferralResponse> response = referralService.getReferrals(userId, cond, role);
         return ResponseEntity.ok(ApiResponse.ok("의뢰 목록 조회가 완료되었습니다.", response));
     }
