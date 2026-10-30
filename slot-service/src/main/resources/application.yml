@@ -25,6 +25,9 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
+        max.block.ms: 5000           # 토픽 메타데이터 대기 한도 (기본 60초)
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000   # linger.ms + request.timeout.ms 이상이어야 함
     consumer:
       group-id: slot-service
       auto-offset-reset: earliest
@@ -33,6 +36,10 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     listener:
       ack-mode: record
+
+outbox:
+  publish:
+    fixed-delay-ms: 1000
 
 eureka:
   client:
