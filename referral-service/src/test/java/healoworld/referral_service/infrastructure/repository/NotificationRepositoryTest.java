@@ -1,11 +1,10 @@
 package healoworld.referral_service.infrastructure.repository;
 
 import healoworld.referral_service.domain.entity.Notification;
+import healoworld.referral_service.support.RepositoryTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -26,10 +25,8 @@ import java.util.concurrent.Future;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-// 실제 PostgreSQL(docker-compose의 referral_db)에 연결해 쿼리를 검증한다
-@DataJpaTest
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class NotificationRepositoryTest {
+// 개발 DB와 분리된 Postgres 컨테이너(RepositoryTestSupport)에 연결해 쿼리를 검증한다
+class NotificationRepositoryTest extends RepositoryTestSupport {
 
     @Autowired
     private NotificationRepository notificationRepository;

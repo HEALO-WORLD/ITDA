@@ -59,7 +59,7 @@ public class ReferralController {
     @PostMapping("/{referralId}/reschedule")
     public ResponseEntity<ApiResponse<ReservationResponse>> createRescheduledReservation(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-User-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
             @Parameter(description = "의뢰 ID") @PathVariable("referralId") UUID referralId,
             @RequestBody @Valid CreateReservationRequest request
     ) {
@@ -77,7 +77,7 @@ public class ReferralController {
     @GetMapping("/{referralId}")
     public ResponseEntity<ApiResponse<ReferralResponse>> getReferral(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-User-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
             @Parameter(description = "의뢰 ID") @PathVariable("referralId") UUID referralId
     ) {
         ReferralResponse response = referralService.getReferral(institutionId, referralId, role);
@@ -92,7 +92,7 @@ public class ReferralController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<ReferralResponse>>> getReferrals(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-User-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
             @ParameterObject @ModelAttribute ReferralSearchCondition cond
     ) {
         PagedResponse<ReferralResponse> response = referralService.getReferrals(institutionId, cond, role);
@@ -109,7 +109,7 @@ public class ReferralController {
     @GetMapping("/{referralId}/histories")
     public ResponseEntity<ApiResponse<List<ReferralHistoryResponse>>> getReferralHistories(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-User-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
             @Parameter(description = "의뢰 ID") @PathVariable("referralId") UUID referralId
     ) {
         List<ReferralHistoryResponse> response = referralHistoryService.getReferralHistories(institutionId, referralId, role);
@@ -127,7 +127,7 @@ public class ReferralController {
     @DeleteMapping("/{referralId}")
     public ResponseEntity<ApiResponse<Void>> deleteReferral(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-User-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
             @Parameter(description = "의뢰 ID") @PathVariable("referralId") UUID referralId
     ) {
         referralService.deleteReferral(userId, referralId, role);

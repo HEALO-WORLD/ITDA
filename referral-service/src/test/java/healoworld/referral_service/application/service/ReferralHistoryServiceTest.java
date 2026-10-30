@@ -55,7 +55,7 @@ class ReferralHistoryServiceTest {
                 .willReturn(List.of(created, confirmed));
 
         List<ReferralHistoryResponse> result =
-                referralHistoryService.getReferralHistories(referral.getReferringInstitutionId(), referral.getId(), RoleType.USER);
+                referralHistoryService.getReferralHistories(referral.getReferringInstitutionId(), referral.getId(), RoleType.REQUESTER);
 
         assertThat(result).extracting(ReferralHistoryResponse::getToStatus)
                 .containsExactly(ReferralStatus.PENDING, ReferralStatus.CONFIRMED);
@@ -85,7 +85,7 @@ class ReferralHistoryServiceTest {
         Referral referral = referral(USER_ID);
         given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
 
-        assertThatThrownBy(() -> referralHistoryService.getReferralHistories(UUID.randomUUID(), referral.getId(), RoleType.USER))
+        assertThatThrownBy(() -> referralHistoryService.getReferralHistories(UUID.randomUUID(), referral.getId(), RoleType.REQUESTER))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.REFERRAL_NOT_FOUND);
         verifyNoInteractions(referralHistoryRepository);

@@ -90,7 +90,7 @@ class ReservationServiceTest {
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
 
             ReservationResponse response = reservationService.getReservation(
-                    referral.getReferringInstitutionId(), reservation.getId(), RoleType.USER);
+                    referral.getReferringInstitutionId(), reservation.getId(), RoleType.REQUESTER);
 
             assertThat(response.getId()).isEqualTo(reservation.getId());
             assertThat(response.getReferralId()).isEqualTo(referral.getId());
@@ -103,7 +103,7 @@ class ReservationServiceTest {
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
 
             ReservationResponse response = reservationService.getReservation(
-                    reservation.getExamInstitutionId(), reservation.getId(), RoleType.USER);
+                    reservation.getExamInstitutionId(), reservation.getId(), RoleType.EXAMINER);
 
             assertThat(response.getId()).isEqualTo(reservation.getId());
         }
@@ -125,7 +125,7 @@ class ReservationServiceTest {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
 
-            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservation.getId(), RoleType.USER),
+            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservation.getId(), RoleType.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
         }
 
@@ -135,7 +135,7 @@ class ReservationServiceTest {
             UUID reservationId = UUID.randomUUID();
             given(reservationRepository.findById(reservationId)).willReturn(Optional.empty());
 
-            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservationId, RoleType.USER),
+            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservationId, RoleType.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
         }
     }
@@ -149,7 +149,7 @@ class ReservationServiceTest {
             Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
 
-            reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.USER);
+            reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.REQUESTER);
 
             assertThat(reservation.getDeletedAt()).isNotNull();
         }
@@ -160,7 +160,7 @@ class ReservationServiceTest {
             Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
 
-            assertErrorCode(() -> reservationService.deleteReservation(OTHER_USER_ID, reservation.getId(), RoleType.USER),
+            assertErrorCode(() -> reservationService.deleteReservation(OTHER_USER_ID, reservation.getId(), RoleType.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
             assertThat(reservation.getDeletedAt()).isNull();
         }
@@ -171,7 +171,7 @@ class ReservationServiceTest {
             Reservation reservation = reservationIn(ReservationStatus.CONFIRMED, referral);
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
 
-            assertErrorCode(() -> reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.USER),
+            assertErrorCode(() -> reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.REQUESTER),
                     ErrorCode.INVALID_RESERVATION_STATUS);
         }
     }
