@@ -6,7 +6,11 @@ import healoworld.referral_service.presentation.dto.response.NotificationReadRes
 import healoworld.referral_service.presentation.dto.response.NotificationResponse;
 import healoworld.referral_service.presentation.dto.response.UnreadCountResponse;
 import healoworld.referral_service.application.service.NotificationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -22,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 // 로그인 사용자 ID는 Gateway가 JWT 검증 후 넘겨주는 X-User-Id 헤더로 받는다 (JpaAuditingConfig와 같은 약속)
+@Tag(name = "Notification", description = "사용자 알림 API")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/notifications")
@@ -31,26 +36,52 @@ public class NotificationController {
 
     private final NotificationService notificationService;
 
+    @Operation(summary = "내 알림 목록 조회",
+            description = """
+                    요청자 본인의 알림만 조회합니다. referralId와 isRead로 필터링할 수 있습니다.
+                    page는 0부터 시작하는 페이지 번호, size는 페이지 크기, sort는 "필드,asc" 또는 "필드,desc" 형식의 정렬 조건입니다.
+                    기본값은 page=0, size=10, sort=createdAt,desc입니다.
+
+                    - 400 MISSING_HEADER: X-User-Id 누락
+                    - 400 INVALID_INPUT: 헤더 또는 검색 조건의 형식이 잘못되었거나 정렬 필드가 없음
+                    """)
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<NotificationResponse>>> getMyNotifications(
-            @RequestHeader(USER_ID_HEADER) UUID userId,
-            @RequestParam(required = false) UUID referralId,
-            @RequestParam(required = false) Boolean isRead,
-            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @Parameter(description = "요청자 ID") @RequestHeader(USER_ID_HEADER) UUID userId,
+            @Parameter(description = "의뢰 ID. 해당 의뢰의 알림만 조회") @RequestParam(required = false) UUID referralId,
+            @Parameter(description = "읽음 여부. 생략하면 전체 조회") @RequestParam(required = false) Boolean isRead,
+            @ParameterObject @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(ApiResponse.ok("알림 목록 조회 성공",
                 notificationService.getMyNotifications(userId, referralId, isRead, pageable)));
     }
 
+    @Operation(summary = "읽지 않은 알림 수 조회",
+            description = """
+                    요청자 본인의 읽지 않은 알림 수를 조회합니다.
+
+                    - 400 MISSING_HEADER: X-User-Id 누락
+                    - 400 INVALID_INPUT: X-User-Id 형식이 잘못됨
+                    """)
     @GetMapping("/unread-count")
     public ResponseEntity<ApiResponse<UnreadCountResponse>> countUnread(
-            @RequestHeader(USER_ID_HEADER) UUID userId) {
+            @Parameter(description = "요청자 ID") @RequestHeader(USER_ID_HEADER) UUID userId) {
         return ResponseEntity.ok(ApiResponse.ok("안 읽은 알림 수 조회 성공", notificationService.countUnread(userId)));
     }
 
+    @Operation(summary = "알림 읽음 처리",
+            description = """
+                    요청자 본인의 알림을 읽음 처리합니다.
+                    이미 읽은 알림이면 변경하지 않고 처음 읽은 시각을 그대로 반환합니다.
+
+                    - 400 MISSING_HEADER: X-User-Id 누락
+                    - 400 INVALID_INPUT: 헤더 또는 알림 ID의 형식이 잘못됨
+                    - 403 NOTIFICATION_ACCESS_DENIED: 다른 사용자의 알림
+                    - 404 NOTIFICATION_NOT_FOUND: 알림이 없음
+                    """)
     @PatchMapping("/{notificationId}/read")
     public ResponseEntity<ApiResponse<NotificationReadResponse>> markAsRead(
-            @RequestHeader(USER_ID_HEADER) UUID userId,
-            @PathVariable UUID notificationId) {
+            @Parameter(description = "요청자 ID") @RequestHeader(USER_ID_HEADER) UUID userId,
+            @Parameter(description = "알림 ID") @PathVariable UUID notificationId) {
         return ResponseEntity.ok(ApiResponse.ok("알림 읽음 처리 성공", notificationService.markAsRead(userId, notificationId)));
     }
 }
