@@ -1178,4 +1178,104 @@ class ExaminationServiceIntegrationTest {
                     .ifPresent(examinationRepository::delete);
         }
     }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DisplayName("동시에 검사 시작 요청이 10건 들어와도 상태 변경은 한 번만 수행된다")
+    void startConcurrently() throws Exception {
+
+        // 1. 정상적으로 시작 가능한 검사 생성
+        UUID examinationId = createExaminationForStartTest(
+                true,
+                true,
+                true
+        );
+
+        Examination examination = reload(examinationId);
+
+        UUID referralId = examination.getReferralId();
+        UUID reservationId = examination.getReservationId();
+
+        int threadCount = 10;
+
+        ExecutorService executor =
+                Executors.newFixedThreadPool(threadCount);
+
+        CountDownLatch start = new CountDownLatch(1);
+
+        try {
+            List<Future<ExaminationStatusChangeResponse>> results =
+                    new ArrayList<>();
+
+            // 2. 검사 시작 요청 10건 생성
+            for (int i = 0; i < threadCount; i++) {
+
+                results.add(executor.submit(() -> {
+
+                    start.await();
+
+                    return examinationService.changeStatus(
+                            examinationId,
+                            ExaminationStatus.IN_PROGRESS
+                    );
+                }));
+            }
+
+            // 3. 동시에 요청 시작
+            start.countDown();
+
+            int changedCount = 0;
+
+            // 4. 모든 요청 결과 확인
+            for (Future<ExaminationStatusChangeResponse> future : results) {
+
+                ExaminationStatusChangeResponse response =
+                        future.get(30, TimeUnit.SECONDS);
+
+                assertThat(response.currentStatus())
+                        .isEqualTo(ExaminationStatus.IN_PROGRESS);
+
+                // 실제 상태를 변경한 요청 수 확인
+                if (response.previousStatus()
+                        == ExaminationStatus.SCHEDULED) {
+                    changedCount++;
+                }
+            }
+
+            // 5. 상태 변경은 한 번만 발생해야 함
+            assertThat(changedCount)
+                    .as("실제 검사 시작 상태 변경 횟수")
+                    .isEqualTo(1);
+
+            // 6. 최종 DB 상태 확인
+            Examination started = reload(examinationId);
+
+            assertThat(started.getStatus())
+                    .isEqualTo(ExaminationStatus.IN_PROGRESS);
+
+            assertThat(started.getStartedAt())
+                    .isNotNull();
+
+        } finally {
+
+            start.countDown();
+
+            // 7. 스레드 종료
+            executor.shutdown();
+
+            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+
+            // 8. 테스트 데이터 정리
+            examinationRepository.findById(examinationId)
+                    .ifPresent(examinationRepository::delete);
+
+            reservationRepository.findById(reservationId)
+                    .ifPresent(reservationRepository::delete);
+
+            referralRepository.findById(referralId)
+                    .ifPresent(referralRepository::delete);
+        }
+    }
 }
