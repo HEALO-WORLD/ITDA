@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: gateway-service
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
   cloud:
     loadbalancer:
       cache:
@@ -15,7 +19,7 @@ spring:
             - id: block-internal
               uri: no://op
               predicates:
-                - Path=/internal/**,/api/v1/*/internal/**
+                - Path=/internal/**,/api/v1/internal/**,/api/v1/*/internal/**
               filters:
                 - SetStatus=404
 
@@ -50,3 +54,10 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+jwt:
+  secret: ${JWT_SECRET}
+  public-paths:
+    - /api/v1/auth/signup
+    - /api/v1/auth/login
+    - /api/v1/institutions/public
