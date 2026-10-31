@@ -61,3 +61,17 @@ jwt:
     - /api/v1/auth/signup
     - /api/v1/auth/login
     - /api/v1/institutions/public
+gateway:
+  policy:
+    rules:
+      - methods: [POST]
+        path: /api/v1/institutions
+        roles: [ADMIN]
+
+      - methods: [PATCH, DELETE]
+        path: /api/v1/institutions/*
+        roles: [ADMIN]
+
+      - methods: [POST]
+        path: /api/v1/partnerships
+        roles: [REQUESTER, EXAMINER]
