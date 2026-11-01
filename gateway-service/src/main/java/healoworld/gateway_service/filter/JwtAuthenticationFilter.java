@@ -59,16 +59,16 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
                 })
                 .build();
 
-        // 2. 인증 제외 경로면 그대로 통과
+        // 2. 공개 API면 그대로 통과
         String path = request.getURI().getPath();
-        if (isPublicPath(path)) {
+        if (rolePolicy.isPublic(request.getMethod(), path)) {
             return chain.filter(exchange.mutate().request(request).build());
         }
 
         // 3. Authorization 헤더에서 토큰 꺼내기
         String authorization = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
-            return unauthorized(exchange, "UNAHTORIZED", "인증 토큰이 필요합니다.");
+            return unauthorized(exchange, "UNAUTHORIZED", "인증 토큰이 필요합니다.");
         }
         String token = authorization.substring(BEARER_PREFIX.length());
 
@@ -83,7 +83,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         }
 
         // 4-1. 역할 검증
-        if (!rolePolicy.isAlllowed(request.getMethod(), path, claims.role())) {
+        if (!rolePolicy.isAllowed(request.getMethod(), path, claims.role())) {
             return errorResponse(exchange, HttpStatus.FORBIDDEN, "ACCESS_DENIED", "접근 권한이 없습니다.");
         }
 
@@ -113,7 +113,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         response.setStatusCode(HttpStatus.UNAUTHORIZED);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
 
-        String body = "{\"code\":\"" + code + "\",\" message\" :\"" + message + "\" }";
+        String body = "{\"code\":\"" + code + "\",\"message\" :\"" + message + "\" }";
         DataBuffer buffer = response.bufferFactory().wrap(body.getBytes(StandardCharsets.UTF_8));
         return response.writeWith(Mono.just(buffer));
     }

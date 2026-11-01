@@ -5,11 +5,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.util.List;
 
 @ConfigurationProperties(prefix = "gateway.policy")
-public record RolePolicyProperties(List<Rule> rules) {
+public record RolePolicyProperties(List<String> publicRules, List<Group> groups) {
     public RolePolicyProperties {
-        rules = (rules == null) ? List.of() : rules;
+        publicRules = (publicRules == null) ? List.of() : publicRules;
+        groups = (groups == null) ? List.of() : groups;
     }
 
-    public record Rule(List<String> methods, String path, List<String> roles) {
+    public record Group(List<String> roles, List<String> rules) {
     }
 }
