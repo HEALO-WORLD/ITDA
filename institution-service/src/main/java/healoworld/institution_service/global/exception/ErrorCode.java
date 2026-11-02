@@ -10,6 +10,8 @@ public enum ErrorCode {
 
     // user
     DUPLICATE_LOGIN_ID(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다."),
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
+    USER_NOT_APPROVED(HttpStatus.FORBIDDEN, "미승인 아이디입니다. 승인 후 이용해주세요."),
 
     // institution
     INSTITUTION_NOT_FOUND(HttpStatus.NOT_FOUND, "기관을 찾을 수 없습니다."),

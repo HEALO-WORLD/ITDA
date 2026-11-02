@@ -1,4 +1,4 @@
-package healoworld.institution_service.application.service.auth;
+package healoworld.institution_service.application.service.user;
 
 import healoworld.institution_service.domain.enums.InstitutionType;
 import healoworld.institution_service.domain.enums.Role;
