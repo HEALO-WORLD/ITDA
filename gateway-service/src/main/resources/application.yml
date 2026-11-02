@@ -87,6 +87,7 @@ gateway:
           - "POST /api/v1/examinations/*/results"
           - "PATCH /api/v1/examinations/*/status"
           - "PATCH /api/v1/referrals/*/complete"
+          - "GET /api/v1/examinations/*/results"
 
       # ── 의뢰기관 사용자만 ──
       - roles: [REQUESTER]
@@ -95,6 +96,7 @@ gateway:
           - "PATCH /api/v1/exam-types/*"
           - "POST /api/v1/referrals"
           - "PATCH /api/v1/referrals/reservations/*/cancel"
+          - "GET /api/v1/referrals/*/results"
 
       # ── 기관 사용자 (의뢰 + 검사) ──
       - roles: [REQUESTER, EXAMINER]
@@ -107,7 +109,6 @@ gateway:
           - "GET /api/v1/equipments/*"
           - "GET /api/v1/equipments/*/operating-hours"
           - "GET /api/v1/exam-types"
-          - "GET /api/v1/referrals/*/result"
           - "GET /api/v1/notifications"
           - "GET /api/v1/notifications/unread-count"
           - "PATCH /api/v1/notifications/*/read"
