@@ -1,4 +1,4 @@
-package healoworld.slot_service.slot.application;
+package healoworld.slot_service.application;
 
 import healoworld.slot_service.application.dto.HoldResult;
 import healoworld.slot_service.application.service.SlotHoldService;

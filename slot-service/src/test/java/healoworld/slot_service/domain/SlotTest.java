@@ -1,4 +1,4 @@
-package healoworld.slot_service.slot.domain;
+package healoworld.slot_service.domain;
 
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
