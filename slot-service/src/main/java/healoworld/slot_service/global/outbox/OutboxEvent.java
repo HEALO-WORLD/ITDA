@@ -53,7 +53,7 @@ public class OutboxEvent {
 
     public static OutboxEvent create(UUID eventId, String aggregateType, UUID aggregateId,
                                      String topic, String messageKey, String eventType,
-                                     String payloadJson) {
+                                     String payloadJson, LocalDateTime now) {
         OutboxEvent e = new OutboxEvent();
         e.id = eventId;
         e.aggregateType = aggregateType;
@@ -63,7 +63,7 @@ public class OutboxEvent {
         e.eventType = eventType;
         e.payload = payloadJson;
         e.retryCount = 0;
-        e.createdAt = e.updatedAt = LocalDateTime.now();
+        e.createdAt = e.updatedAt = now;
         return e;
     }
 }
