@@ -1,5 +1,6 @@
 package healoworld.referral_service.presentation.controller;
 
+import healoworld.referral_service.application.service.ExaminationResultService;
 import healoworld.referral_service.application.service.ReferralHistoryService;
 import healoworld.referral_service.application.service.ReferralService;
 import healoworld.referral_service.domain.enums.RoleType;
@@ -8,6 +9,7 @@ import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.request.ReferralSearchCondition;
+import healoworld.referral_service.presentation.dto.response.ExaminationResultResponse;
 import healoworld.referral_service.presentation.dto.response.ReferralHistoryResponse;
 import healoworld.referral_service.presentation.dto.response.ReferralResponse;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
@@ -31,6 +33,7 @@ import java.util.UUID;
 public class ReferralController {
     private final ReferralService referralService;
     private final ReferralHistoryService referralHistoryService;
+    private final ExaminationResultService examinationResultService;
 
     @Operation(summary = "의뢰 생성 + 첫 예약 접수",
             description = """
@@ -132,5 +135,47 @@ public class ReferralController {
     ) {
         referralService.deleteReferral(userId, referralId, role);
         return ResponseEntity.ok(ApiResponse.ok("삭제가 완료되었습니다.", null));
+    }
+
+    @Operation(
+            summary = "검사 결과 조회 (검사기관)",
+            description = """
+                의뢰기관 담당자가 해당 의뢰의 검사 결과를 조회합니다.
+
+                - REQUESTER 역할만 요청할 수 있습니다.
+                - 요청자의 소속 기관이 해당 의뢰의 의뢰기관과 일치해야 합니다.
+                - 등록된 검사 결과의 요약, 추가 소견, 등록 일시를 반환합니다.
+
+                오류 응답:
+                - 400 INVALID_INPUT: 잘못된 UUID 또는 역할값
+                - 400 MISSING_HEADER: 필수 헤더 누락
+                - 403 EXAMINATION_RESULT_READ_ACCESS_DENIED: 역할 또는 소속 기관 불일치
+                - 404 REFERRAL_NOT_FOUND: 의뢰가 존재하지 않음
+                - 404 EXAMINATION_NOT_FOUND: 검사 기록이 존재하지 않음
+                - 404 EXAMINATION_RESULT_NOT_FOUND: 검사 결과가 등록되지 않음
+                """
+    )
+    @GetMapping("/{referralId}/results")
+    public ResponseEntity<ApiResponse<ExaminationResultResponse>> getExaminationResult(
+            @Parameter(description = "요청자 소속 기관 ID")
+            @RequestHeader("X-Institution-Id") UUID institutionId,
+
+            @Parameter(description = "요청자 역할")
+            @RequestHeader("X-Role") RoleType role,
+
+            @Parameter(description = "의뢰 ID")
+            @PathVariable("referralId") UUID referralId
+    ) {
+
+        ExaminationResultResponse response =
+                examinationResultService.getResultByReferralId(
+                        referralId,
+                        institutionId,
+                        role
+                );
+
+        return ResponseEntity.ok(
+                ApiResponse.ok("검사 결과 조회가 완료되었습니다.", response)
+        );
     }
 }
