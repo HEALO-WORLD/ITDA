@@ -55,6 +55,7 @@ class BindingErrorResponseTest {
     @MockitoBean
     private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
+
     @ParameterizedTest(name = "{0}?{1}={2}")
     @CsvSource({
             "/api/v1/equipment-incidents, status, RESOLVED",
