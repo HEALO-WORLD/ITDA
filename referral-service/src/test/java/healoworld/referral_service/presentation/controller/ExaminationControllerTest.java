@@ -3,6 +3,7 @@ package healoworld.referral_service.presentation.controller;
 import healoworld.referral_service.application.service.ExaminationResultService;
 import healoworld.referral_service.application.service.ExaminationService;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
@@ -110,7 +111,20 @@ class ExaminationControllerTest {
                             reservationId,
                             ExaminationStatus.SCHEDULED,
                             null,
-                            null
+                            null,
+
+                            // 의뢰 정보
+                            UUID.randomUUID(),
+
+                            // 예약 정보
+                            LocalDateTime.of(2026, 11, 5, 0, 0),
+                            LocalDateTime.of(2026, 11, 5, 10, 0),
+                            LocalDateTime.of(2026, 11, 5, 10, 30),
+                            ReservationStatus.CONFIRMED,
+                            UUID.randomUUID(),
+
+                            // 결과 등록 여부
+                            false
                     );
 
             given(examinationService.getExaminations(

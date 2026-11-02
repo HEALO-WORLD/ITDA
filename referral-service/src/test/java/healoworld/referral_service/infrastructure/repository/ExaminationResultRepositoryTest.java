@@ -8,10 +8,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.context.annotation.Import;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -77,5 +78,91 @@ class ExaminationResultRepositoryTest {
         assertThatThrownBy(() -> examinationResultRepository.saveAndFlush(
                 ExaminationResult.register(examination, "두 번째 결과", null)))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("여러 검사 중 결과가 등록된 검사 ID만 조회한다")
+    void findRegisteredExaminationIds() {
+        // given
+        Examination examination1 = saveExamination();
+        Examination examination2 = saveExamination();
+        Examination examination3 = saveExamination();
+
+        // 1번과 3번 검사에만 결과 등록
+        examinationResultRepository.saveAndFlush(
+                ExaminationResult.register(examination1, "첫 번째 결과", null)
+        );
+
+        examinationResultRepository.saveAndFlush(
+                ExaminationResult.register(examination3, "세 번째 결과", null)
+        );
+
+        // when
+        List<UUID> registeredIds =
+                examinationResultRepository.findRegisteredExaminationIds(
+                        List.of(
+                                examination1.getId(),
+                                examination2.getId(),
+                                examination3.getId()
+                        )
+                );
+
+        // then
+        assertThat(registeredIds)
+                .containsExactlyInAnyOrder(
+                        examination1.getId(),
+                        examination3.getId()
+                );
+
+        assertThat(registeredIds)
+                .doesNotContain(examination2.getId());
+    }
+
+    @Test
+    @DisplayName("결과가 등록되지 않은 검사만 조회하면 빈 목록을 반환한다")
+    void findRegisteredExaminationIdsEmpty() {
+        // given
+        Examination examination1 = saveExamination();
+        Examination examination2 = saveExamination();
+
+        // 결과는 등록하지 않음
+
+        // when
+        List<UUID> registeredIds =
+                examinationResultRepository.findRegisteredExaminationIds(
+                        List.of(
+                                examination1.getId(),
+                                examination2.getId()
+                        )
+                );
+
+        // then
+        assertThat(registeredIds).isEmpty();
+    }
+
+    @Test
+    @DisplayName("조회 대상에 포함되지 않은 검사의 결과는 반환하지 않는다")
+    void findRegisteredExaminationIdsExcludesOthers() {
+        // given
+        Examination targetExamination = saveExamination();
+        Examination otherExamination = saveExamination();
+
+        // 조회 대상이 아닌 검사에만 결과 등록
+        examinationResultRepository.saveAndFlush(
+                ExaminationResult.register(
+                        otherExamination,
+                        "다른 검사 결과",
+                        null
+                )
+        );
+
+        // when
+        List<UUID> registeredIds =
+                examinationResultRepository.findRegisteredExaminationIds(
+                        List.of(targetExamination.getId())
+                );
+
+        // then
+        assertThat(registeredIds).isEmpty();
     }
 }
