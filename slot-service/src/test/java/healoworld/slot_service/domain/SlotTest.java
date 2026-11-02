@@ -2,8 +2,6 @@ package healoworld.slot_service.domain;
 
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
-import healoworld.slot_service.global.exception.BaseException;
-import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.support.fixture.SlotFixture;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -13,40 +11,34 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SlotTest {
 
     private final LocalDateTime now = LocalDateTime.of(2026, 10, 30, 10, 0);
 
     @Test
-    void AVAILABLE_슬롯을_HOLD하면_HELD와_5분_뒤_만료시각이_저장된다() {
-        Slot slot = SlotFixture.available();
+    void 같은_예약으로_HELD된_슬롯이면_isHeldBy가_true다() {
         UUID reservationId = UUID.randomUUID();
+        Slot slot = SlotFixture.held(reservationId, now.plus(Slot.HOLD_DURATION));
 
-        slot.hold(reservationId, now);
-
-        assertThat(slot.getStatus()).isEqualTo(SlotStatus.HELD);
-        assertThat(slot.getReservationId()).isEqualTo(reservationId);
-        assertThat(slot.getHeldUntil()).isEqualTo(now.plusMinutes(5));
-    }
-
-    @ParameterizedTest
-    @EnumSource(value = SlotStatus.class, names = {"HELD", "BOOKED", "UNAVAILABLE"})
-    void AVAILABLE이_아니면_HOLD할_수_없다(SlotStatus status) {
-        Slot slot = SlotFixture.withStatus(status);
-
-        assertThatThrownBy(() -> slot.hold(UUID.randomUUID(), now))
-                .isInstanceOf(BaseException.class)
-                .extracting("errorCode")
-                .isEqualTo(ErrorCode.SLOT_NOT_AVAILABLE);
+        assertThat(slot.isHeldBy(reservationId)).isTrue();
     }
 
     @Test
-    void AVAILABLE_슬롯만_HOLD_가능하다() {
-        assertThat(SlotFixture.available().isHoldable()).isTrue();
-        assertThat(SlotFixture.held().isHoldable()).isFalse();
-        assertThat(SlotFixture.booked(UUID.randomUUID()).isHoldable()).isFalse();
-        assertThat(SlotFixture.unavailable().isHoldable()).isFalse();
+    void 다른_예약으로_HELD된_슬롯이면_isHeldBy가_false다() {
+        Slot slot = SlotFixture.held(UUID.randomUUID(), now.plus(Slot.HOLD_DURATION));
+
+        assertThat(slot.isHeldBy(UUID.randomUUID())).isFalse();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SlotStatus.class, names = {"AVAILABLE", "BOOKED", "UNAVAILABLE"})
+    void HELD가_아니면_isHeldBy가_false다(SlotStatus status) {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = status == SlotStatus.BOOKED
+                ? SlotFixture.booked(reservationId)
+                : SlotFixture.withStatus(status);
+
+        assertThat(slot.isHeldBy(reservationId)).isFalse();
     }
 }

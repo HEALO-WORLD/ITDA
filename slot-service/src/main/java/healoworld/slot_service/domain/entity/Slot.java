@@ -98,4 +98,8 @@ public class Slot extends BaseEntity {
             throw new IllegalArgumentException("시작 시간은 종료 시간보다 빨라야 합니다.");
         }
     }
+
+    public boolean isHeldBy(UUID reservationId) {
+        return this.status == SlotStatus.HELD && reservationId.equals(this.reservationId);
+    }
 }

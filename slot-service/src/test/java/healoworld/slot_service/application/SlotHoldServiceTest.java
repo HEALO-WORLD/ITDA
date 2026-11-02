@@ -12,11 +12,14 @@ import healoworld.slot_service.support.FixedClockConfig;
 import healoworld.slot_service.support.fixture.SlotFixture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,6 +64,33 @@ class SlotHoldServiceTest {
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getFailureReason()).isEqualTo(HoldFailureReason.SLOT_CONFLICT);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SlotStatus.class, names = {"BOOKED", "UNAVAILABLE"})
+    void BOOKED나_UNAVAILABLE인_슬롯은_SLOT_CONFLICT로_실패한다(SlotStatus status) {
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.withStatus(status));
+
+        HoldResult result = slotHoldService.hold(slot.getId(), UUID.randomUUID());
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getFailureReason()).isEqualTo(HoldFailureReason.SLOT_CONFLICT);
+        assertThat(slotRepository.findById(slot.getId()).orElseThrow().getStatus()).isEqualTo(status);
+    }
+
+    @Test
+    void 같은_예약으로_이미_HELD면_기존_만료시각으로_성공한다() {
+        UUID reservationId = UUID.randomUUID();
+        LocalDateTime originalHeldUntil = FixedClockConfig.NOW.plusMinutes(3);
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.held(reservationId, originalHeldUntil));
+
+        HoldResult result = slotHoldService.hold(slot.getId(), reservationId);
+
+        Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getHeldUntil()).isEqualTo(originalHeldUntil);
+        assertThat(saved.getHeldUntil()).isEqualTo(originalHeldUntil);
+        assertThat(saved.getReservationId()).isEqualTo(reservationId);
     }
 
     @Test
