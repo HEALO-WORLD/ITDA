@@ -31,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class ReferralControllerTest {
 
-    private static final String URL = "/api/v1/referrals/{referralId}/result";
+    private static final String URL = "/api/v1/referrals/{referralId}/results";
 
     @Autowired
     private MockMvc mockMvc;
