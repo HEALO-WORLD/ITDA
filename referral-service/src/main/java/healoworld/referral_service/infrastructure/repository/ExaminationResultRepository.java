@@ -3,6 +3,7 @@ package healoworld.referral_service.infrastructure.repository;
 import healoworld.referral_service.domain.entity.ExaminationResult;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ExaminationResultRepository extends JpaRepository<ExaminationResult, UUID> {
@@ -11,4 +12,6 @@ public interface ExaminationResultRepository extends JpaRepository<ExaminationRe
     boolean existsByExaminationId(UUID examinationId);
 
     long countByExaminationId(UUID examinationId);
+
+    Optional<ExaminationResult> findByExamination_Id(UUID examinationId);
 }
