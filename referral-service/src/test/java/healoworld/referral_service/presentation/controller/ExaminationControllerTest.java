@@ -1,9 +1,14 @@
 package healoworld.referral_service.presentation.controller;
 
 import healoworld.referral_service.application.service.ExaminationResultService;
+import healoworld.referral_service.application.service.ExaminationService;
+import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.presentation.dto.response.ExaminationStatusChangeResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationResultCreateResponse;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -16,6 +21,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -37,6 +43,9 @@ class ExaminationControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private ExaminationService examinationService;
 
     @MockitoBean
     private ExaminationResultService examinationResultService;
@@ -76,6 +85,90 @@ class ExaminationControllerTest {
                 .andExpect(jsonPath("$.data.resultId").value(resultId.toString()))
                 .andExpect(jsonPath("$.data.examinationId").value(examinationId.toString()))
                 .andExpect(jsonPath("$.data.registeredAt").exists());
+    }
+
+    @Test
+    @DisplayName("검사 시작 요청 시 200 OK와 변경된 상태를 반환한다")
+    void changeStatusToInProgress() throws Exception {
+
+        // given
+        UUID referralId = UUID.randomUUID();
+
+        ExaminationStatusChangeResponse response =
+                new ExaminationStatusChangeResponse(
+                        examinationId,
+                        referralId,
+                        ExaminationStatus.SCHEDULED,
+                        ExaminationStatus.IN_PROGRESS,
+                        LocalDateTime.of(2026, 11, 2, 10, 0)
+                );
+
+        given(examinationService.changeStatus(
+                examinationId,
+                institutionId,
+                RoleType.EXAMINER,
+                ExaminationStatus.IN_PROGRESS
+        )).willReturn(response);
+
+        // when & then
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Institution-Id", institutionId.toString())
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "IN_PROGRESS"}
+                                    """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.examinationId")
+                        .value(examinationId.toString()))
+                .andExpect(jsonPath("$.data.previousStatus")
+                        .value("SCHEDULED"))
+                .andExpect(jsonPath("$.data.currentStatus")
+                        .value("IN_PROGRESS"));
+    }
+
+    @Test
+    @DisplayName("검사 완료 요청 시 200 OK와 COMPLETED 상태를 반환한다")
+    void changeStatusToCompleted() throws Exception {
+
+        // given
+        UUID referralId = UUID.randomUUID();
+
+        ExaminationStatusChangeResponse response =
+                new ExaminationStatusChangeResponse(
+                        examinationId,
+                        referralId,
+                        ExaminationStatus.IN_PROGRESS,
+                        ExaminationStatus.COMPLETED,
+                        LocalDateTime.of(2026, 11, 2, 11, 0)
+                );
+
+        given(examinationService.changeStatus(
+                examinationId,
+                institutionId,
+                RoleType.EXAMINER,
+                ExaminationStatus.COMPLETED
+        )).willReturn(response);
+
+        // when & then
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Institution-Id", institutionId.toString())
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "COMPLETED"}
+                                    """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.previousStatus")
+                        .value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.currentStatus")
+                        .value("COMPLETED"));
     }
 
     @Test
@@ -162,4 +255,207 @@ class ExaminationControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
     }
+
+    @Test
+    @DisplayName("검사 상태 변경 권한이 없으면 403을 반환한다")
+    void changeStatusAccessDenied() throws Exception {
+
+        given(examinationService.changeStatus(
+                examinationId,
+                institutionId,
+                RoleType.EXAMINER,
+                ExaminationStatus.IN_PROGRESS
+        )).willThrow(
+                new BaseException(ErrorCode.EXAMINATION_ACCESS_DENIED)
+        );
+
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Institution-Id", institutionId.toString())
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "IN_PROGRESS"}
+                                    """)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code")
+                        .value("EXAMINATION_ACCESS_DENIED"));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 검사의 상태 변경은 404를 반환한다")
+    void changeStatusNotFound() throws Exception {
+
+        given(examinationService.changeStatus(
+                examinationId,
+                institutionId,
+                RoleType.EXAMINER,
+                ExaminationStatus.IN_PROGRESS
+        )).willThrow(
+                new BaseException(ErrorCode.EXAMINATION_NOT_FOUND)
+        );
+
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Institution-Id", institutionId.toString())
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "IN_PROGRESS"}
+                                    """)
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code")
+                        .value("EXAMINATION_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("허용되지 않은 검사 상태 전환은 409를 반환한다")
+    void changeStatusInvalidTransition() throws Exception {
+
+        given(examinationService.changeStatus(
+                examinationId,
+                institutionId,
+                RoleType.EXAMINER,
+                ExaminationStatus.COMPLETED
+        )).willThrow(
+                new BaseException(
+                        ErrorCode.INVALID_EXAMINATION_STATUS_TRANSITION
+                )
+        );
+
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Institution-Id", institutionId.toString())
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "COMPLETED"}
+                                    """)
+                )
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code")
+                        .value("INVALID_EXAMINATION_STATUS_TRANSITION"));
+    }
+
+    @Test
+    @DisplayName("유효하지 않은 예약으로 검사 시작 시 409를 반환한다")
+    void changeStatusStartNotAllowed() throws Exception {
+
+        given(examinationService.changeStatus(
+                examinationId,
+                institutionId,
+                RoleType.EXAMINER,
+                ExaminationStatus.IN_PROGRESS
+        )).willThrow(
+                new BaseException(ErrorCode.EXAMINATION_START_NOT_ALLOWED)
+        );
+
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Institution-Id", institutionId.toString())
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "IN_PROGRESS"}
+                                    """)
+                )
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code")
+                        .value("EXAMINATION_START_NOT_ALLOWED"));
+    }
+
+    @Test
+    @DisplayName("status가 누락되면 400 VALIDATION_FAILED를 반환한다")
+    void changeStatusMissingStatus() throws Exception {
+
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Institution-Id", institutionId.toString())
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{}")
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        then(examinationService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 검사 상태값은 400 INVALID_INPUT을 반환한다")
+    void changeStatusInvalidStatus() throws Exception {
+
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Institution-Id", institutionId.toString())
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "STARTED"}
+                                    """)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+        then(examinationService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("검사 ID가 UUID 형식이 아니면 400 INVALID_INPUT을 반환한다")
+    void changeStatusInvalidExaminationId() throws Exception {
+
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", "not-a-uuid")
+                                .header("X-Institution-Id", institutionId.toString())
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "IN_PROGRESS"}
+                                    """)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+        then(examinationService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("X-Institution-Id 누락 시 400 MISSING_HEADER를 반환한다")
+    void changeStatusMissingInstitutionHeader() throws Exception {
+
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Role", "EXAMINER")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "IN_PROGRESS"}
+                                    """)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MISSING_HEADER"));
+
+        then(examinationService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("X-Role 누락 시 400 MISSING_HEADER를 반환한다")
+    void changeStatusMissingRoleHeader() throws Exception {
+
+        mockMvc.perform(
+                        patch("/api/v1/examinations/{examinationId}/status", examinationId)
+                                .header("X-Institution-Id", institutionId.toString())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {"status": "IN_PROGRESS"}
+                                    """)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MISSING_HEADER"));
+
+        then(examinationService).shouldHaveNoInteractions();
+    }
+
+
 }

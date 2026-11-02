@@ -1,10 +1,6 @@
 package healoworld.referral_service.presentation.controller;
 
-import healoworld.referral_service.application.service.EquipmentIncidentQueryService;
-import healoworld.referral_service.application.service.ExaminationResultService;
-import healoworld.referral_service.application.service.ReferralHistoryService;
-import healoworld.referral_service.application.service.ReferralService;
-import healoworld.referral_service.application.service.ReservationService;
+import healoworld.referral_service.application.service.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -48,6 +44,9 @@ class BindingErrorResponseTest {
 
     @MockitoBean
     private ReservationService reservationService;
+
+    @MockitoBean
+    private ExaminationService examinationService;
 
     @MockitoBean
     private ExaminationResultService examinationResultService;
