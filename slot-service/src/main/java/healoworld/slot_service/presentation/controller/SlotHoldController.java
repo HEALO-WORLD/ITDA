@@ -7,6 +7,7 @@ import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.presentation.dto.request.HoldRequest;
 import healoworld.slot_service.presentation.dto.response.HoldResponse;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -23,8 +24,15 @@ public class SlotHoldController {
     private final SlotHoldService slotHoldService;
 
     @PostMapping("/{slotId}/hold")
-    public ResponseEntity<ApiResponse<HoldResponse>> hold(@PathVariable UUID slotId,
-                                                          @RequestBody @Valid HoldRequest request) {
+    public ResponseEntity<ApiResponse<HoldResponse>> hold(
+            @Parameter(description = "슬롯 ID") @PathVariable UUID slotId,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") String role,
+            @RequestBody @Valid HoldRequest request) {
+
+        if (!"ADMIN".equals(role)) {
+            throw new BaseException(ErrorCode.ADMIN_ONLY);
+        }
+
         HoldResult result = slotHoldService.hold(slotId, request.getReservationId());
 
         if (!result.isSuccess()) {
