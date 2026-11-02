@@ -3,20 +3,28 @@ package healoworld.referral_service.application.service;
 import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
+import healoworld.referral_service.presentation.dto.response.ExaminationListResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationStatusChangeResponse;
+
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,8 +33,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
-// 실제 DB로는 타이밍을 맞추기 어려운 "조회 후 다른 요청이 먼저 바꾼 경우"(조건부 UPDATE 0건) 분기를 검증한다
 @ExtendWith(MockitoExtension.class)
 class ExaminationServiceTest {
 
@@ -36,15 +45,35 @@ class ExaminationServiceTest {
     @InjectMocks
     private ExaminationService examinationService;
 
-    private Examination examination(UUID id, UUID referralId, UUID reservationId, ExaminationStatus status, UUID institutionId ) {
-        Examination examination = Examination.schedule(referralId, reservationId, institutionId);
+    // ==============================
+    // 테스트 데이터 생성
+    // ==============================
+
+    private Examination examination(
+            UUID id,
+            UUID referralId,
+            UUID reservationId,
+            ExaminationStatus status,
+            UUID institutionId
+    ) {
+        Examination examination = Examination.schedule(
+                referralId,
+                reservationId,
+                institutionId
+        );
+
         ReflectionTestUtils.setField(examination, "id", id);
         ReflectionTestUtils.setField(examination, "status", status);
+
         return examination;
     }
 
+    // ==============================
+    // 검사 상태 변경 및 동시성 처리
+    // ==============================
+
     @Test
-    @DisplayName("완료 UPDATE가 0건이지만 다른 요청이 이미 완료했다면 중복 요청으로 보고 현재 상태를 돌려준다")
+    @DisplayName("완료 UPDATE가 0건이지만 다른 요청이 이미 완료했다면 중복 요청으로 처리한다")
     void completeLostRaceToSameRequest() {
 
         // given
@@ -53,7 +82,6 @@ class ExaminationServiceTest {
         UUID reservationId = UUID.randomUUID();
         UUID institutionId = UUID.randomUUID();
 
-        // 처음 조회: 검사 진행 중
         Examination inProgress = examination(
                 id,
                 referralId,
@@ -62,7 +90,6 @@ class ExaminationServiceTest {
                 institutionId
         );
 
-        // 두 번째 조회: 다른 요청이 먼저 완료한 상태
         Examination completed = examination(
                 id,
                 referralId,
@@ -71,12 +98,12 @@ class ExaminationServiceTest {
                 institutionId
         );
 
-        given(examinationRepository.findById(id)).willReturn(
-                Optional.of(inProgress),
-                Optional.of(completed)
-        );
+        given(examinationRepository.findById(id))
+                .willReturn(
+                        Optional.of(inProgress),
+                        Optional.of(completed)
+                );
 
-        // 다른 요청이 먼저 변경해서 UPDATE 0건
         given(examinationRepository.completeIfInProgress(eq(id), any()))
                 .willReturn(0);
 
@@ -98,36 +125,72 @@ class ExaminationServiceTest {
     }
 
     @Test
-    @DisplayName("예약 변경 UPDATE가 0건이고 그사이 검사가 시작됐다면 EXAMINATION_RESERVATION_NOT_CHANGEABLE")
+    @DisplayName("예약 변경 중 검사가 시작되면 예약 변경을 거부한다")
     void changeReservationLostRaceToStart() {
+
+        // given
         UUID id = UUID.randomUUID();
         UUID referralId = UUID.randomUUID();
-        UUID reservationA = UUID.randomUUID();
-        given(examinationRepository.findByReferralId(referralId)).willReturn(
-                Optional.of(examination(id, referralId, reservationA, ExaminationStatus.SCHEDULED, UUID.randomUUID())));
-        given(examinationRepository.changeReservationIfScheduled(eq(id), any(), any(), any())).willReturn(0);
-        given(examinationRepository.findById(id)).willReturn(
-                Optional.of(examination(id, referralId, reservationA, ExaminationStatus.IN_PROGRESS, UUID.randomUUID())));
+        UUID reservationId = UUID.randomUUID();
 
-        assertThatThrownBy(() -> examinationService.updateReservation(referralId, UUID.randomUUID(), UUID.randomUUID()))
+        Examination scheduled = examination(
+                id,
+                referralId,
+                reservationId,
+                ExaminationStatus.SCHEDULED,
+                UUID.randomUUID()
+        );
+
+        Examination inProgress = examination(
+                id,
+                referralId,
+                reservationId,
+                ExaminationStatus.IN_PROGRESS,
+                UUID.randomUUID()
+        );
+
+        given(examinationRepository.findByReferralId(referralId))
+                .willReturn(Optional.of(scheduled));
+
+        given(examinationRepository.changeReservationIfScheduled(
+                eq(id),
+                any(),
+                any(),
+                any()
+        )).willReturn(0);
+
+        given(examinationRepository.findById(id))
+                .willReturn(Optional.of(inProgress));
+
+        // when & then
+        assertThatThrownBy(() ->
+                examinationService.updateReservation(
+                        referralId,
+                        UUID.randomUUID(),
+                        UUID.randomUUID()
+                )
+        )
                 .isInstanceOf(BaseException.class)
-                .extracting("errorCode").isEqualTo(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE);
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE);
     }
 
+    // ==============================
+    // 검사 중복 생성 및 DB 예외 처리
+    // ==============================
+
     @Test
-    @DisplayName("동시 검사 생성 중 UNIQUE 충돌이 발생하면 EXAMINATION_ALREADY_EXISTS")
+    @DisplayName("동시 검사 생성 중 UNIQUE 충돌이 발생하면 중복 생성 예외를 반환한다")
     void createScheduledUniqueViolation() {
 
+        // given
         UUID referralId = UUID.randomUUID();
         UUID reservationId = UUID.randomUUID();
         UUID institutionId = UUID.randomUUID();
 
-        // 최초 조회에서는 검사가 존재하지 않는 상황을 만든다
         given(examinationRepository.findByReferralId(referralId))
                 .willReturn(Optional.empty());
 
-        // 조회 이후 다른 요청이 먼저 검사를 생성했다고 가정한다
-        // PostgreSQL UNIQUE 위반 코드인 23505를 강제로 발생시킨다
         DataIntegrityViolationException dbException =
                 new DataIntegrityViolationException(
                         "중복 검사 생성",
@@ -137,7 +200,7 @@ class ExaminationServiceTest {
         given(examinationRepository.saveAndFlush(any(Examination.class)))
                 .willThrow(dbException);
 
-        // DB 오류가 프로젝트의 비즈니스 예외로 변환되는지 확인한다
+        // when & then
         assertThatThrownBy(() ->
                 examinationService.createScheduled(
                         referralId,
@@ -154,6 +217,7 @@ class ExaminationServiceTest {
     @DisplayName("UNIQUE 위반이 아닌 DB 오류는 원래 예외를 유지한다")
     void createScheduledOtherDatabaseViolation() {
 
+        // given
         UUID referralId = UUID.randomUUID();
         UUID reservationId = UUID.randomUUID();
         UUID institutionId = UUID.randomUUID();
@@ -161,24 +225,191 @@ class ExaminationServiceTest {
         given(examinationRepository.findByReferralId(referralId))
                 .willReturn(Optional.empty());
 
-        // PostgreSQL NOT NULL 위반 코드인 23502를 발생시킨다
         DataIntegrityViolationException dbException =
                 new DataIntegrityViolationException(
                         "필수 컬럼 누락",
-                        new SQLException("NOT NULL 제약조건 위반", "23502")
+                        new SQLException("NOT NULL 위반", "23502")
                 );
 
         given(examinationRepository.saveAndFlush(any(Examination.class)))
                 .willThrow(dbException);
 
-        // UNIQUE 위반이 아니라면 원래 발생한 예외를 그대로 전달해야 한다
+        // when & then
         assertThatThrownBy(() ->
                 examinationService.createScheduled(
                         referralId,
                         reservationId,
                         institutionId
                 )
-        )
-                .isSameAs(dbException);
+        ).isSameAs(dbException);
+    }
+
+    // ==============================
+    // 검사기관별 검사 목록 조회
+    // ==============================
+
+    @Nested
+    @DisplayName("검사기관별 검사 목록 조회")
+    class GetExaminationsTest {
+
+        @Test
+        @DisplayName("EXAMINER는 자기 기관의 검사 목록을 조회할 수 있다")
+        void getExaminations_success() {
+
+            // given
+            UUID institutionId = UUID.randomUUID();
+
+            Examination first = examination(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    ExaminationStatus.SCHEDULED,
+                    institutionId
+            );
+
+            Examination second = examination(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    ExaminationStatus.IN_PROGRESS,
+                    institutionId
+            );
+
+            PageRequest pageable = PageRequest.of(0, 10);
+
+            Page<Examination> page = new PageImpl<>(
+                    List.of(first, second),
+                    pageable,
+                    2
+            );
+
+            given(examinationRepository.findByExamInstitutionId(
+                    institutionId,
+                    pageable
+            )).willReturn(page);
+
+            // when
+            PagedResponse<ExaminationListResponse> response =
+                    examinationService.getExaminations(
+                            institutionId,
+                            RoleType.EXAMINER,
+                            pageable
+                    );
+
+            // then
+            assertThat(response.contents()).hasSize(2);
+            assertThat(response.totalElements()).isEqualTo(2);
+
+            assertThat(response.contents())
+                    .extracting(ExaminationListResponse::examinationId)
+                    .containsExactly(
+                            first.getId(),
+                            second.getId()
+                    );
+
+            assertThat(response.contents())
+                    .extracting(ExaminationListResponse::status)
+                    .containsExactly(
+                            ExaminationStatus.SCHEDULED,
+                            ExaminationStatus.IN_PROGRESS
+                    );
+
+            verify(examinationRepository)
+                    .findByExamInstitutionId(institutionId, pageable);
+        }
+
+        @Test
+        @DisplayName("EXAMINER가 아닌 사용자는 검사 목록을 조회할 수 없다")
+        void getExaminations_accessDenied() {
+
+            // given
+            UUID institutionId = UUID.randomUUID();
+            PageRequest pageable = PageRequest.of(0, 10);
+
+            // when & then
+            assertThatThrownBy(() ->
+                    examinationService.getExaminations(
+                            institutionId,
+                            RoleType.REQUESTER,
+                            pageable
+                    )
+            )
+                    .isInstanceOf(BaseException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.EXAMINATION_ACCESS_DENIED);
+
+            verify(examinationRepository, never())
+                    .findByExamInstitutionId(any(), any());
+        }
+
+        @Test
+        @DisplayName("소속 기관에 검사가 없으면 빈 목록을 반환한다")
+        void getExaminations_empty() {
+
+            // given
+            UUID institutionId = UUID.randomUUID();
+            PageRequest pageable = PageRequest.of(0, 10);
+
+            given(examinationRepository.findByExamInstitutionId(
+                    institutionId,
+                    pageable
+            )).willReturn(Page.empty(pageable));
+
+            // when
+            PagedResponse<ExaminationListResponse> response =
+                    examinationService.getExaminations(
+                            institutionId,
+                            RoleType.EXAMINER,
+                            pageable
+                    );
+
+            // then
+            assertThat(response.contents()).isEmpty();
+            assertThat(response.totalElements()).isZero();
+            assertThat(response.totalPages()).isZero();
+        }
+
+        @Test
+        @DisplayName("검사 목록 조회 시 페이지네이션 정보가 유지된다")
+        void getExaminations_pagination() {
+
+            // given
+            UUID institutionId = UUID.randomUUID();
+            PageRequest pageable = PageRequest.of(1, 2);
+
+            Examination examination = examination(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    ExaminationStatus.COMPLETED,
+                    institutionId
+            );
+
+            Page<Examination> page = new PageImpl<>(
+                    List.of(examination),
+                    pageable,
+                    3
+            );
+
+            given(examinationRepository.findByExamInstitutionId(
+                    institutionId,
+                    pageable
+            )).willReturn(page);
+
+            // when
+            PagedResponse<ExaminationListResponse> response =
+                    examinationService.getExaminations(
+                            institutionId,
+                            RoleType.EXAMINER,
+                            pageable
+                    );
+
+            // then
+            assertThat(response.contents()).hasSize(1);
+            assertThat(response.totalElements()).isEqualTo(3);
+            assertThat(response.totalPages()).isEqualTo(2);
+            assertThat(response.size()).isEqualTo(2);
+            assertThat(response.number()).isEqualTo(1);
+        }
     }
 }
