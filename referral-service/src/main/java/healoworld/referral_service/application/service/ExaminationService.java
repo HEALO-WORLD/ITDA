@@ -2,12 +2,16 @@ package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
+import healoworld.referral_service.presentation.dto.response.ExaminationListResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationStatusChangeResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.core.NestedExceptionUtils;
@@ -44,6 +48,33 @@ public class ExaminationService {
 
     public ExaminationResponse getByReferralId(UUID referralId) {
         return ExaminationResponse.from(findByReferralId(referralId));
+    }
+
+    // 검사기관별 검사 목록 조회
+    public PagedResponse<ExaminationListResponse> getExaminations(
+            UUID institutionId,
+            RoleType role,
+            Pageable pageable
+    ) {
+
+        // 1. EXAMINER 역할 검증
+        if (role != RoleType.EXAMINER) {
+            throw new BaseException(ErrorCode.EXAMINATION_ACCESS_DENIED);
+        }
+
+        // 2. 요청자의 소속 검사기관에 해당하는 검사만 조회
+        Page<Examination> examinations =
+                examinationRepository.findByExamInstitutionId(
+                        institutionId,
+                        pageable
+                );
+
+        // 3. Entity → Response DTO 변환
+        Page<ExaminationListResponse> responses =
+                examinations.map(ExaminationListResponse::from);
+
+        // 4. 페이지네이션 응답으로 변환
+        return PagedResponse.from(responses);
     }
 
     // 최초 예약 확정 시 의뢰·예약 Saga가 호출한다. 호출한 쪽 트랜잭션에 참여하므로 의뢰·예약 확정과 함께 커밋/롤백된다
