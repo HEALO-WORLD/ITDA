@@ -4,6 +4,7 @@ import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -93,6 +94,20 @@ class ExaminationServiceIntegrationTest {
     private Examination reload(UUID examinationId) {
         return examinationRepository.findById(examinationId)
                 .orElseThrow();
+    }
+
+    private ExaminationStatusChangeResponse changeStatusAsExaminer(
+            UUID examinationId,
+            ExaminationStatus status
+    ) {
+        Examination examination = reload(examinationId);
+
+        return examinationService.changeStatus(
+                examinationId,
+                examination.getExamInstitutionId(),
+                RoleType.EXAMINER,
+                status
+        );
     }
 
     private LocalDateTime now() {
@@ -482,13 +497,13 @@ class ExaminationServiceIntegrationTest {
 
         // when
         ExaminationStatusChangeResponse response =
-                examinationService.changeStatus(
+                changeStatusAsExaminer(
                         examinationId,
                         ExaminationStatus.IN_PROGRESS
                 );
 
         // then
-        Examination examination = reload(examinationId);
+        Examination updated = reload(examinationId);
 
         assertThat(response.previousStatus())
                 .isEqualTo(ExaminationStatus.SCHEDULED);
@@ -496,13 +511,13 @@ class ExaminationServiceIntegrationTest {
         assertThat(response.currentStatus())
                 .isEqualTo(ExaminationStatus.IN_PROGRESS);
 
-        assertThat(examination.getStatus())
+        assertThat(updated.getStatus())
                 .isEqualTo(ExaminationStatus.IN_PROGRESS);
 
-        assertThat(examination.getStartedAt())
+        assertThat(updated.getStartedAt())
                 .isNotNull();
 
-        assertThat(examination.getCompletedAt())
+        assertThat(updated.getCompletedAt())
                 .isNull();
     }
 
@@ -529,7 +544,7 @@ class ExaminationServiceIntegrationTest {
 
         // when & then
         assertErrorCode(
-                () -> examinationService.changeStatus(
+                () -> changeStatusAsExaminer(
                         examinationId,
                         ExaminationStatus.IN_PROGRESS
                 ),
@@ -555,7 +570,7 @@ class ExaminationServiceIntegrationTest {
         );
 
         assertErrorCode(
-                () -> examinationService.changeStatus(
+                () -> changeStatusAsExaminer(
                         examination.getId(),
                         ExaminationStatus.IN_PROGRESS
                 ),
@@ -583,7 +598,7 @@ class ExaminationServiceIntegrationTest {
         );
 
         // 첫 번째 검사 시작
-        examinationService.changeStatus(
+        changeStatusAsExaminer(
                 examinationId,
                 ExaminationStatus.IN_PROGRESS
         );
@@ -595,7 +610,7 @@ class ExaminationServiceIntegrationTest {
 
         // when: 같은 요청 재실행
         ExaminationStatusChangeResponse response =
-                examinationService.changeStatus(
+                changeStatusAsExaminer(
                         examinationId,
                         ExaminationStatus.IN_PROGRESS
                 );
@@ -630,7 +645,7 @@ class ExaminationServiceIntegrationTest {
 
         // when & then: 검사 시작 거부
         assertErrorCode(
-                () -> examinationService.changeStatus(
+                () -> changeStatusAsExaminer(
                         examinationId,
                         ExaminationStatus.IN_PROGRESS
                 ),
@@ -660,7 +675,7 @@ class ExaminationServiceIntegrationTest {
         );
 
         ExaminationStatusChangeResponse response =
-                examinationService.changeStatus(
+                changeStatusAsExaminer(
                         examination.getId(),
                         ExaminationStatus.COMPLETED
                 );
@@ -694,7 +709,7 @@ class ExaminationServiceIntegrationTest {
         Examination before = examinationIn(status);
 
         ExaminationStatusChangeResponse response =
-                examinationService.changeStatus(
+                changeStatusAsExaminer(
                         before.getId(),
                         status
                 );
@@ -736,7 +751,7 @@ class ExaminationServiceIntegrationTest {
         Examination before = examinationIn(current);
 
         assertErrorCode(
-                () -> examinationService.changeStatus(
+                () -> changeStatusAsExaminer(
                         before.getId(),
                         requested
                 ),
@@ -759,10 +774,81 @@ class ExaminationServiceIntegrationTest {
         assertErrorCode(
                 () -> examinationService.changeStatus(
                         UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        RoleType.EXAMINER,
                         ExaminationStatus.COMPLETED
                 ),
                 ErrorCode.EXAMINATION_NOT_FOUND
         );
+    }
+
+    @Test
+    @DisplayName("다른 검사기관의 EXAMINER는 검사 상태를 변경할 수 없다")
+    void changeStatusDeniedForOtherInstitution() {
+
+        // given
+        Examination examination = examinationIn(ExaminationStatus.SCHEDULED);
+
+        UUID otherInstitutionId = UUID.randomUUID();
+
+        // when & then
+        assertErrorCode(
+                () -> examinationService.changeStatus(
+                        examination.getId(),
+                        otherInstitutionId,
+                        RoleType.EXAMINER,
+                        ExaminationStatus.IN_PROGRESS
+                ),
+                ErrorCode.EXAMINATION_ACCESS_DENIED
+        );
+
+        // 검사 상태가 변경되지 않았는지 확인
+        assertThat(reload(examination.getId()).getStatus())
+                .isEqualTo(ExaminationStatus.SCHEDULED);
+    }
+
+    @Test
+    @DisplayName("REQUESTER는 검사 상태를 변경할 수 없다")
+    void changeStatusDeniedForRequester() {
+
+        // given
+        Examination examination = examinationIn(ExaminationStatus.SCHEDULED);
+
+        // when & then
+        assertErrorCode(
+                () -> examinationService.changeStatus(
+                        examination.getId(),
+                        examination.getExamInstitutionId(),
+                        RoleType.REQUESTER,
+                        ExaminationStatus.IN_PROGRESS
+                ),
+                ErrorCode.EXAMINATION_ACCESS_DENIED
+        );
+
+        assertThat(reload(examination.getId()).getStatus())
+                .isEqualTo(ExaminationStatus.SCHEDULED);
+    }
+
+    @Test
+    @DisplayName("ADMIN도 검사 상태를 변경할 수 없다")
+    void changeStatusDeniedForAdmin() {
+
+        // given
+        Examination examination = examinationIn(ExaminationStatus.SCHEDULED);
+
+        // when & then
+        assertErrorCode(
+                () -> examinationService.changeStatus(
+                        examination.getId(),
+                        examination.getExamInstitutionId(),
+                        RoleType.ADMIN,
+                        ExaminationStatus.IN_PROGRESS
+                ),
+                ErrorCode.EXAMINATION_ACCESS_DENIED
+        );
+
+        assertThat(reload(examination.getId()).getStatus())
+                .isEqualTo(ExaminationStatus.SCHEDULED);
     }
 
     // =========================================================
@@ -1082,7 +1168,7 @@ class ExaminationServiceIntegrationTest {
 
                     ready.await();
 
-                    return examinationService.changeStatus(
+                    return changeStatusAsExaminer(
                             examination.getId(),
                             ExaminationStatus.COMPLETED
                     );
@@ -1248,7 +1334,7 @@ class ExaminationServiceIntegrationTest {
 
                     start.await();
 
-                    return examinationService.changeStatus(
+                    return changeStatusAsExaminer(
                             examinationId,
                             ExaminationStatus.IN_PROGRESS
                     );
