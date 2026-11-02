@@ -1,8 +1,7 @@
 package healoworld.slot_service.domain.entity;
 
 import healoworld.slot_service.domain.enums.SlotStatus;
-import healoworld.slot_service.global.exception.BaseException;
-import healoworld.slot_service.global.exception.ErrorCode;
+import healoworld.slot_service.global.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -19,7 +18,7 @@ import java.util.UUID;
 @Table(name = "p_slots")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Slot {
+public class Slot extends BaseEntity {
 
     public static final Duration HOLD_DURATION = Duration.ofMinutes(5);
 
@@ -100,16 +99,7 @@ public class Slot {
         }
     }
 
-    public boolean isHoldable() {
-        return this.status == SlotStatus.AVAILABLE;
-    }
-
-    public void hold(UUID reservationId, LocalDateTime now) {
-        if (this.status != SlotStatus.AVAILABLE) {
-            throw new BaseException(ErrorCode.SLOT_NOT_AVAILABLE);
-        }
-        this.status = SlotStatus.HELD;
-        this.reservationId = reservationId;
-        this.heldUntil = now.plus(HOLD_DURATION);
+    public boolean isHeldBy(UUID reservationId) {
+        return this.status == SlotStatus.HELD && reservationId.equals(this.reservationId);
     }
 }

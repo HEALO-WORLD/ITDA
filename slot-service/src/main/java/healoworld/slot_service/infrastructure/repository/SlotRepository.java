@@ -5,10 +5,12 @@ import healoworld.slot_service.domain.enums.SlotStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Set;
 import java.util.UUID;
@@ -57,4 +59,22 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
             @Param("visibleEquipmentIds") Set<UUID> visibleEquipmentIds,
             Pageable pageable
     );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update Slot s
+           set s.status = :held,
+               s.reservationId = :reservationId,
+               s.heldUntil = :heldUntil,
+               s.updatedAt = :now
+         where s.id = :slotId
+           and s.status = :available
+           and s.deletedAt is null
+        """)
+    int holdIfAvailable(@Param("slotId") UUID slotId,
+                        @Param("reservationId") UUID reservationId,
+                        @Param("heldUntil") LocalDateTime heldUntil,
+                        @Param("now") LocalDateTime now,
+                        @Param("held") SlotStatus held,
+                        @Param("available") SlotStatus available);
 }
