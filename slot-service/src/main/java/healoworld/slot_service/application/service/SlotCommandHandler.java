@@ -1,7 +1,10 @@
 package healoworld.slot_service.application.service;
 
 import healoworld.slot_service.application.dto.HoldResult;
+import healoworld.slot_service.application.event.BookSlotEvent;
 import healoworld.slot_service.application.event.HoldRequestedEvent;
+import healoworld.slot_service.application.event.SlotBookFailedEvent;
+import healoworld.slot_service.application.event.SlotBookedEvent;
 import healoworld.slot_service.application.event.SlotHeldEvent;
 import healoworld.slot_service.application.event.SlotHoldFailedEvent;
 import healoworld.slot_service.domain.enums.HoldFailureReason;
@@ -32,6 +35,7 @@ public class SlotCommandHandler {
     private static final String RESULT_TOPIC = "slot-results";
 
     private final SlotHoldService slotHoldService;
+    private final SlotBookService slotBookService;
     private final SlotRepository slotRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ConsumedEventRepository consumedEventRepository;
@@ -63,6 +67,33 @@ public class SlotCommandHandler {
         }
 
         consumedEventRepository.save(ConsumedEvent.create(event.eventId(), CONSUMER, HoldRequestedEvent.TYPE, now));
+    }
+
+    @Transactional
+    public void handleBookSlot(BookSlotEvent event) {
+        if (consumedEventRepository.existsById(new ConsumedEventId(event.eventId(), CONSUMER))) {
+            log.info("이미 처리한 BookSlot, 건너뜀. eventId={}", event.eventId());
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        switch (slotBookService.book(event.slotId(), event.reservationId())) {
+            // 같은 예약으로 이미 확정된 경우도 성공으로 다시 알려 Referral이 확정 처리를 이어갈 수 있게 한다
+            case BOOKED, ALREADY_BOOKED -> {
+                SlotBookedEvent booked = SlotBookedEvent.of(event, now);
+                saveOutbox(booked.eventId(), event.slotId(), SlotBookedEvent.TYPE, booked, now);
+            }
+            // HoldExpired는 SlotHoldExpiryService가 같은 트랜잭션에서 이미 Outbox에 기록했다
+            case HOLD_EXPIRED -> log.info("만료된 HOLD에 BookSlot 도착, 확정하지 않고 HoldExpired 발행. slotId={}, reservationId={}",
+                    event.slotId(), event.reservationId());
+            case FAILED -> {
+                SlotBookFailedEvent failed = SlotBookFailedEvent.of(event, now);
+                saveOutbox(failed.eventId(), event.slotId(), SlotBookFailedEvent.TYPE, failed, now);
+            }
+        }
+
+        consumedEventRepository.save(ConsumedEvent.create(event.eventId(), CONSUMER, BookSlotEvent.TYPE, now));
     }
 
     private void saveHoldFailed(HoldRequestedEvent event, HoldFailureReason reason, LocalDateTime now) {

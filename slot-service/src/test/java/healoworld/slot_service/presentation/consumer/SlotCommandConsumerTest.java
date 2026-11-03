@@ -1,5 +1,6 @@
 package healoworld.slot_service.presentation.consumer;
 
+import healoworld.slot_service.application.event.BookSlotEvent;
 import healoworld.slot_service.application.event.HoldRequestedEvent;
 import healoworld.slot_service.application.service.SlotCommandHandler;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -99,6 +100,49 @@ class SlotCommandConsumerTest {
         assertThatThrownBy(() -> consumer.consume(record(otherKey, "HoldRequested", holdRequestedJson(slotId))))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(slotCommandHandler, never()).handleHoldRequested(any());
+    }
+
+    @Test
+    void BookSlot을_읽어_핸들러로_넘긴다() {
+        consumer.consume(record(slotId.toString(), "BookSlot", bookSlotJson(slotId)));
+
+        ArgumentCaptor<BookSlotEvent> captor = ArgumentCaptor.forClass(BookSlotEvent.class);
+        verify(slotCommandHandler).handleBookSlot(captor.capture());
+        BookSlotEvent event = captor.getValue();
+
+        assertThat(event.eventId()).isEqualTo(eventId);
+        assertThat(event.slotId()).isEqualTo(slotId);
+        assertThat(event.reservationId()).isEqualTo(reservationId);
+        assertThat(event.occurredAt()).isEqualTo(LocalDateTime.of(2026, 11, 2, 10, 0));
+        verify(slotCommandHandler, never()).handleHoldRequested(any());
+    }
+
+    @Test
+    void BookSlot_필수_필드가_없으면_IllegalArgumentException() {
+        String json = """
+                {"eventId":"%s","eventType":"BookSlot","slotId":"%s"}
+                """.formatted(eventId, slotId);
+
+        assertThatThrownBy(() -> consumer.consume(record(slotId.toString(), "BookSlot", json)))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(slotCommandHandler, never()).handleBookSlot(any());
+    }
+
+    @Test
+    void BookSlot_메시지_키와_slotId가_다르면_IllegalArgumentException() {
+        String otherKey = UUID.randomUUID().toString();
+
+        assertThatThrownBy(() -> consumer.consume(record(otherKey, "BookSlot", bookSlotJson(slotId))))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(slotCommandHandler, never()).handleBookSlot(any());
+    }
+
+    // Referral이 보내는 referralId도 포함한다. Slot은 이 필드를 무시한다
+    private String bookSlotJson(UUID slotId) {
+        return """
+                {"eventId":"%s","eventType":"BookSlot","occurredAt":"2026-11-02T10:00:00",
+                 "slotId":"%s","reservationId":"%s","referralId":"%s"}
+                """.formatted(eventId, slotId, reservationId, referralId);
     }
 
     // Referral은 referralId를 함께 보낸다. Slot은 이 필드를 받지 않으므로 무시되어야 한다
