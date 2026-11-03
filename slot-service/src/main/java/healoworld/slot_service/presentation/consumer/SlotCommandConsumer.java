@@ -1,5 +1,6 @@
 package healoworld.slot_service.presentation.consumer;
 
+import healoworld.slot_service.application.event.BookSlotEvent;
 import healoworld.slot_service.application.event.HoldRequestedEvent;
 import healoworld.slot_service.application.service.SlotCommandHandler;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +30,8 @@ public class SlotCommandConsumer {
 
         switch (eventType) {
             case HoldRequestedEvent.TYPE -> slotCommandHandler.handleHoldRequested(toHoldRequested(record));
-            // BookSlot, ReleaseHold, ReleaseSlot은 후속 작업에서 추가
+            case BookSlotEvent.TYPE -> slotCommandHandler.handleBookSlot(toBookSlot(record));
+            // ReleaseHold, ReleaseSlot은 후속 작업에서 추가
             default -> throw new IllegalArgumentException("지원하지 않는 이벤트 유형입니다: " + eventType);
         }
     }
@@ -39,6 +41,18 @@ public class SlotCommandConsumer {
 
         if (event.eventId() == null || event.slotId() == null || event.reservationId() == null) {
             throw new IllegalArgumentException("HoldRequested 필수 필드가 없습니다: " + record.value());
+        }
+        if (!event.slotId().toString().equals(record.key())) {
+            throw new IllegalArgumentException("메시지 키와 slotId가 다릅니다. key=" + record.key() + ", slotId=" + event.slotId());
+        }
+        return event;
+    }
+
+    private BookSlotEvent toBookSlot(ConsumerRecord<String, String> record) {
+        BookSlotEvent event = jsonMapper.readValue(record.value(), BookSlotEvent.class);
+
+        if (event.eventId() == null || event.slotId() == null || event.reservationId() == null) {
+            throw new IllegalArgumentException("BookSlot 필수 필드가 없습니다: " + record.value());
         }
         if (!event.slotId().toString().equals(record.key())) {
             throw new IllegalArgumentException("메시지 키와 slotId가 다릅니다. key=" + record.key() + ", slotId=" + event.slotId());
