@@ -1,32 +1,35 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.Examination;
+import healoworld.referral_service.domain.entity.Referral;
+import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.domain.enums.ReferralStatus;
+import healoworld.referral_service.domain.enums.ReservationStatus;
+import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
+import healoworld.referral_service.infrastructure.repository.ExaminationResultRepository;
+import healoworld.referral_service.infrastructure.repository.ReferralRepository;
+import healoworld.referral_service.infrastructure.repository.ReservationRepository;
+import healoworld.referral_service.presentation.dto.response.ExaminationListResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationStatusChangeResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import healoworld.referral_service.domain.entity.Referral;
-import healoworld.referral_service.domain.entity.Reservation;
-
-import healoworld.referral_service.domain.enums.RoleType;
-import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.ReservationStatus;
-
-import healoworld.referral_service.infrastructure.repository.ReferralRepository;
-import healoworld.referral_service.infrastructure.repository.ReservationRepository;
-
-import java.time.LocalDateTime;
-import java.util.Optional;
-import java.util.UUID;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -38,12 +41,112 @@ public class ExaminationService {
     private static final String UNIQUE_VIOLATION_SQL_STATE = "23505";
 
     private final ExaminationRepository examinationRepository;
-
     private final ReferralRepository referralRepository;
     private final ReservationRepository reservationRepository;
+    private final ExaminationResultRepository examinationResultRepository;
 
     public ExaminationResponse getByReferralId(UUID referralId) {
         return ExaminationResponse.from(findByReferralId(referralId));
+    }
+
+    // 검사기관별 검사 목록 조회
+    public PagedResponse<ExaminationListResponse> getExaminations(
+            UUID institutionId,
+            RoleType role,
+            Pageable pageable
+    ) {
+
+        // 1. EXAMINER 역할 검증
+        if (role != RoleType.EXAMINER) {
+            throw new BaseException(ErrorCode.EXAMINATION_ACCESS_DENIED);
+        }
+
+        // 2. 소속 검사기관의 검사 목록 조회
+        Page<Examination> examinations =
+                examinationRepository.findByExamInstitutionId(
+                        institutionId,
+                        pageable
+                );
+
+        // 3. 조회 결과가 없으면 빈 페이지 반환
+        if (examinations.isEmpty()) {
+            return PagedResponse.from(
+                    examinations.map(examination -> (ExaminationListResponse) null)
+            );
+        }
+
+        List<Examination> examinationList = examinations.getContent();
+
+        // 4. 관련 ID 수집
+        Set<UUID> referralIds = examinationList.stream()
+                .map(Examination::getReferralId)
+                .collect(Collectors.toSet());
+
+        Set<UUID> reservationIds = examinationList.stream()
+                .map(Examination::getReservationId)
+                .collect(Collectors.toSet());
+
+        Set<UUID> examinationIds = examinationList.stream()
+                .map(Examination::getId)
+                .collect(Collectors.toSet());
+
+        // 5. 의뢰 정보 일괄 조회
+        Map<UUID, Referral> referralMap =
+                referralRepository.findAllById(referralIds)
+                        .stream()
+                        .collect(Collectors.toMap(
+                                Referral::getId,
+                                Function.identity()
+                        ));
+
+        // 6. 예약 정보 일괄 조회
+        Map<UUID, Reservation> reservationMap =
+                reservationRepository.findAllById(reservationIds)
+                        .stream()
+                        .collect(Collectors.toMap(
+                                Reservation::getId,
+                                Function.identity()
+                        ));
+
+        // 7. 결과가 등록된 검사 ID 일괄 조회
+        Set<UUID> registeredExaminationIds = new HashSet<>(
+                examinationResultRepository.findRegisteredExaminationIds(
+                        examinationIds
+                )
+        );
+
+        // 8. 검사·의뢰·예약·결과 정보 조합
+        Page<ExaminationListResponse> responses =
+                examinations.map(examination -> {
+
+                    Referral referral =
+                            referralMap.get(examination.getReferralId());
+
+                    Reservation reservation =
+                            reservationMap.get(examination.getReservationId());
+
+                    // 연결된 의뢰 또는 예약이 없는 경우
+                    if (referral == null || reservation == null) {
+                        throw new IllegalStateException(
+                                "검사에 연결된 의뢰 또는 예약 정보를 찾을 수 없습니다."
+                        );
+                    }
+
+                    boolean resultRegistered =
+                            registeredExaminationIds.contains(
+                                    examination.getId()
+                            );
+
+                    return ExaminationListResponse.from(
+                            examination,
+                            referral,
+                            reservation,
+                            resultRegistered
+                    );
+                });
+
+        // 9. 페이지네이션 응답 반환
+        return PagedResponse.from(responses);
     }
 
     // 최초 예약 확정 시 의뢰·예약 Saga가 호출한다. 호출한 쪽 트랜잭션에 참여하므로 의뢰·예약 확정과 함께 커밋/롤백된다
@@ -65,11 +168,11 @@ public class ExaminationService {
             return examinationRepository.saveAndFlush(
                     Examination.schedule(referralId, reservationId, examInstitutionId)
             ).getId();
-        } catch (DataIntegrityViolationException e){
+        } catch (DataIntegrityViolationException e) {
 
             // 조회와 저장 사이에 다른 요청이 같은 의뢰의 검사를 먼저 생성했다면
             // DB의 UNIQUE 제약조건에 의해 INSERT가 실패할 수 있다
-            if(isUniqueViolation(e)){
+            if (isUniqueViolation(e)) {
 
                 // DB 중복 오류를 프로젝트에서 사용하는 비즈니스 예외로 변환한다
                 // 실패한 트랜잭션에서 다시 조회하지 않고 예외를 던져 롤백한다
@@ -119,7 +222,7 @@ public class ExaminationService {
         }
 
         // 2. 해당 검사를 수행하는 기관 소속인지 확인
-        if(!examination.getExamInstitutionId().equals(institutionId)){
+        if (!examination.getExamInstitutionId().equals(institutionId)) {
             throw new BaseException(ErrorCode.EXAMINATION_ACCESS_DENIED);
         }
 

@@ -101,7 +101,7 @@ public class Reservation extends BaseEntity {
     }
 
     public void block() {
-        validateReservationStatus(ReservationStatus.CONFIRMED);
+        validateReservationStatus(ReservationStatus.REQUESTED, ReservationStatus.HELD, ReservationStatus.CONFIRMED);
         this.reservationStatus = ReservationStatus.BLOCKED;
         this.failureReason = FailureReason.EQUIPMENT_FAILURE;
         this.endedAt = LocalDateTime.now();

@@ -37,6 +37,7 @@ public class JwtProvider {
                 .claim(CLAIM_INSTITUTION_ID, institutionId.toString())
                 .claim(CLAIM_INSTITUTION_TYPE, institutionType)
                 .claim(CLAIM_ROLE, role.name())
+                .claim("tokenType", "ACCESS")
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenExpiration)))
                 .signWith(secretKey)
