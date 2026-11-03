@@ -18,6 +18,7 @@ public enum ErrorCode {
     RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다."),
     INVALID_RESERVATION_STATUS(HttpStatus.CONFLICT, "현재 예약상태에서는 처리할 수 없습니다."),
     INVALID_FAILURE_REASON(HttpStatus.BAD_REQUEST, "유효하지 않은 실패 사유입니다."),
+    RESERVATION_CANCEL_DEADLINE_PASSED(HttpStatus.CONFLICT, "예약 취소는 검사 시작 2시간 전까지만 가능합니다."),
 
     // common
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "유효성 검사에 실패했습니다."),
