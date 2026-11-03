@@ -104,4 +104,8 @@ public class Slot extends BaseEntity {
     public boolean isHeldBy(UUID reservationId) {
         return this.status == SlotStatus.HELD && reservationId.equals(this.reservationId);
     }
+
+    public boolean isBookedBy(UUID reservationId) {
+        return this.status == SlotStatus.BOOKED && reservationId.equals(this.reservationId);
+    }
 }

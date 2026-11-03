@@ -1,0 +1,59 @@
+package healoworld.slot_service.application.service;
+
+import healoworld.slot_service.application.dto.BookOutcome;
+import healoworld.slot_service.domain.entity.Slot;
+import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.infrastructure.repository.SlotRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+// 슬롯 예약 확정(HELD → BOOKED). HOLD 만료 후 도착한 확정 요청은 확정하지 않는다
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class SlotBookService {
+
+    private final SlotRepository slotRepository;
+    private final SlotHoldExpiryService slotHoldExpiryService;
+    private final Clock clock;
+
+    @Transactional
+    public BookOutcome book(UUID slotId, UUID reservationId) {
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        int updated = slotRepository.bookIfHeld(slotId, reservationId, now, SlotStatus.HELD, SlotStatus.BOOKED);
+        if (updated == 1) {
+            return BookOutcome.BOOKED;
+        }
+
+        // 0행: 없는 슬롯인지, 이미 확정된 건지, 만료된 건지, 남의 슬롯인지 구분
+        Slot slot = slotRepository.findById(slotId).orElse(null);
+        if (slot == null) {
+            log.warn("BookSlot 슬롯 없음. slotId={}, reservationId={}", slotId, reservationId);
+            return BookOutcome.FAILED;
+        }
+        if (slot.getDeletedAt() != null) {
+            log.warn("BookSlot 삭제된 슬롯. slotId={}, reservationId={}", slotId, reservationId);
+            return BookOutcome.FAILED;
+        }
+        if (slot.isBookedBy(reservationId)) {
+            return BookOutcome.ALREADY_BOOKED;
+        }
+        if (slot.isHeldBy(reservationId)) {
+            // 만료 시각이 지났지만 스케줄러가 아직 해제하지 않은 경우. 확정하지 않고 이 자리에서 만료 처리한다
+            // expire()는 이 트랜잭션에 합류하므로 슬롯 해제, HoldExpired Outbox 기록이 함께 커밋된다
+            slotHoldExpiryService.expire(slotId, reservationId, slot.getHeldUntil());
+            return BookOutcome.HOLD_EXPIRED;
+        }
+
+        log.warn("BookSlot 확정 불가. slotId={}, reservationId={}, status={}, holder={}",
+                slotId, reservationId, slot.getStatus(), slot.getReservationId());
+        return BookOutcome.FAILED;
+    }
+}
