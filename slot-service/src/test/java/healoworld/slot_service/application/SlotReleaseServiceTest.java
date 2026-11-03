@@ -4,6 +4,8 @@ import healoworld.slot_service.application.dto.ReleaseOutcome;
 import healoworld.slot_service.application.service.SlotReleaseService;
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.global.exception.BaseException;
+import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.global.outbox.OutboxEventRepository;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import healoworld.slot_service.support.FixedClockConfig;
@@ -19,6 +21,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -194,5 +197,80 @@ class SlotReleaseServiceTest {
     void ReleaseSlot_없는_슬롯이면_예외_없이_NOT_APPLICABLE() {
         assertThat(slotReleaseService.releaseSlot(UUID.randomUUID(), UUID.randomUUID()))
                 .isEqualTo(ReleaseOutcome.NOT_APPLICABLE);
+    }
+
+    // ---------- ADMIN 강제 해제 ----------
+
+    @Test
+    void 강제해제_같은_예약으로_HELD면_AVAILABLE로_반환한다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.held(reservationId, FixedClockConfig.NOW.plusMinutes(3)));
+
+        ReleaseOutcome outcome = slotReleaseService.forceRelease(slot.getId(), reservationId);
+
+        assertThat(outcome).isEqualTo(ReleaseOutcome.RELEASED);
+        Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(SlotStatus.AVAILABLE);
+        assertThat(saved.getReservationId()).isNull();
+        assertThat(saved.getHeldUntil()).isNull();
+    }
+
+    @Test
+    void 강제해제_같은_예약으로_BOOKED면_AVAILABLE로_반환한다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.booked(reservationId));
+
+        ReleaseOutcome outcome = slotReleaseService.forceRelease(slot.getId(), reservationId);
+
+        assertThat(outcome).isEqualTo(ReleaseOutcome.RELEASED);
+        Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(SlotStatus.AVAILABLE);
+        assertThat(saved.getReservationId()).isNull();
+        assertThat(outboxEventRepository.findAll()).isEmpty();   // 이벤트는 발행하지 않는다
+    }
+
+    @Test
+    void 강제해제_같은_예약으로_UNAVAILABLE이면_예약_연결만_끊는다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = SlotFixture.unavailable();
+        ReflectionTestUtils.setField(slot, "reservationId", reservationId);
+        slotRepository.saveAndFlush(slot);
+
+        ReleaseOutcome outcome = slotReleaseService.forceRelease(slot.getId(), reservationId);
+
+        assertThat(outcome).isEqualTo(ReleaseOutcome.DETACHED);
+        Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(SlotStatus.UNAVAILABLE);
+        assertThat(saved.getReservationId()).isNull();
+    }
+
+    @Test
+    void 강제해제_다른_예약이_잡은_슬롯이면_SLOT_NOT_RELEASABLE이고_변경하지_않는다() {
+        UUID otherReservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.booked(otherReservationId));
+
+        assertThatThrownBy(() -> slotReleaseService.forceRelease(slot.getId(), UUID.randomUUID()))
+                .isInstanceOf(BaseException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SLOT_NOT_RELEASABLE);
+
+        Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(SlotStatus.BOOKED);
+        assertThat(saved.getReservationId()).isEqualTo(otherReservationId);
+    }
+
+    @Test
+    void 강제해제_이미_AVAILABLE이면_SLOT_NOT_RELEASABLE() {
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.available());
+
+        assertThatThrownBy(() -> slotReleaseService.forceRelease(slot.getId(), UUID.randomUUID()))
+                .isInstanceOf(BaseException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SLOT_NOT_RELEASABLE);
+    }
+
+    @Test
+    void 강제해제_없는_슬롯이면_SLOT_NOT_FOUND() {
+        assertThatThrownBy(() -> slotReleaseService.forceRelease(UUID.randomUUID(), UUID.randomUUID()))
+                .isInstanceOf(BaseException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SLOT_NOT_FOUND);
     }
 }

@@ -2,6 +2,8 @@ package healoworld.slot_service.application.service;
 
 import healoworld.slot_service.application.dto.ReleaseOutcome;
 import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.global.exception.BaseException;
+import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,5 +55,27 @@ public class SlotReleaseService {
             return ReleaseOutcome.DETACHED;
         }
         return ReleaseOutcome.NOT_APPLICABLE;
+    }
+
+    // ADMIN 강제 해제: 같은 예약으로 HELD·BOOKED면 반환하고, UNAVAILABLE이면 예약 연결만 끊는다.
+    // Referral과 Slot의 상태 불일치를 관리자가 정리하는 용도라, 해제할 대상이 없으면 예외로 알린다
+    @Transactional
+    public ReleaseOutcome forceRelease(UUID slotId, UUID reservationId) {
+        if (!slotRepository.existsById(slotId)) {
+            throw new BaseException(ErrorCode.SLOT_NOT_FOUND);
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        int released = slotRepository.releaseHoldIfHeld(slotId, reservationId, now, SlotStatus.HELD, SlotStatus.AVAILABLE)
+                + slotRepository.releaseBookedSlot(slotId, reservationId, now, SlotStatus.BOOKED, SlotStatus.AVAILABLE);
+        if (released == 1) {
+            log.warn("관리자 슬롯 강제 해제. slotId={}, reservationId={}", slotId, reservationId);
+            return ReleaseOutcome.RELEASED;
+        }
+        if (slotRepository.detachReservationIfUnavailable(slotId, reservationId, now, SlotStatus.UNAVAILABLE) == 1) {
+            log.warn("관리자 슬롯 예약 연결 해제(UNAVAILABLE 유지). slotId={}, reservationId={}", slotId, reservationId);
+            return ReleaseOutcome.DETACHED;
+        }
+        throw new BaseException(ErrorCode.SLOT_NOT_RELEASABLE);
     }
 }
