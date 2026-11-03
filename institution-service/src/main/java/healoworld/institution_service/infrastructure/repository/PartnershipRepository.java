@@ -28,4 +28,7 @@ public interface PartnershipRepository extends JpaRepository<Partnership, UUID> 
             "order by p.requestedAt")
     List<Partnership> findMyPartnerships(UUID institutionId, PartnershipStatus status);
 
+    boolean existsByRequesterInstitutionIdAndExamInstitutionIdAndStatusAndDeletedAtIsNull(
+            UUID requesterInstitutionId, UUID examInstitutionId, PartnershipStatus status
+    );
 }
