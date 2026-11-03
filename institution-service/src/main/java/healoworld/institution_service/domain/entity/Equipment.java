@@ -58,6 +58,11 @@ public class Equipment extends BaseEntity {
         return new Equipment(institutionId, name, modality);
     }
 
+    public void changeName(String name) {
+        validateName(name);
+        this.name = name;
+    }
+
     private void validateName(String name) {
         if (name == null || name.isBlank() || name.length() > 50) {
             throw new IllegalArgumentException("장비명은 공백이 아닌 최대 50자여야 합니다.");
