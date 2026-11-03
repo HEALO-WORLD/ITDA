@@ -1,12 +1,16 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.Referral;
+import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.global.outbox.SlotCommandOutbox;
+import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
@@ -15,10 +19,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class ReservationServiceTest {
@@ -38,6 +46,12 @@ class ReservationServiceTest {
 
     @Mock
     private ReservationRepository reservationRepository;
+
+    @Mock
+    private ReferralHistoryRepository referralHistoryRepository;
+
+    @Mock
+    private SlotCommandOutbox slotCommandOutbox;
 
     @InjectMocks
     private ReservationService reservationService;
@@ -53,12 +67,13 @@ class ReservationServiceTest {
     @DisplayName("createReservation")
     class CreateReservation {
         @Test
-        @DisplayName("첫 예약이면 attemptNo는 1이다")
+        @DisplayName("첫 예약이면 attemptNo는 1이고, 넘겨받은 eventId로 HoldRequested를 기록한다")
         void firstAttempt() {
             CreateReservationRequest request = reservationRequest();
+            UUID eventId = UUID.randomUUID();
             given(reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId())).willReturn(Optional.empty());
 
-            Reservation created = reservationService.createReservation(referral, request);
+            Reservation created = reservationService.createReservation(eventId, referral, request);
 
             assertThat(created.getAttemptNo()).isEqualTo(1);
             assertThat(created.getReservationStatus()).isEqualTo(ReservationStatus.REQUESTED);
@@ -66,6 +81,7 @@ class ReservationServiceTest {
             assertThat(created.getSlotId()).isEqualTo(request.getSlotId());
             assertThat(created.getEquipmentId()).isEqualTo(request.getEquipmentId());
             verify(reservationRepository).save(created);
+            verify(slotCommandOutbox).recordOutbox(created, eventId, "HoldRequested");
         }
 
         @Test
@@ -74,7 +90,7 @@ class ReservationServiceTest {
             given(reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId()))
                     .willReturn(Optional.of(reservation(referral, 2)));
 
-            Reservation created = reservationService.createReservation(referral, reservationRequest());
+            Reservation created = reservationService.createReservation(UUID.randomUUID(), referral, reservationRequest());
 
             assertThat(created.getAttemptNo()).isEqualTo(3);
         }
@@ -174,6 +190,127 @@ class ReservationServiceTest {
             assertErrorCode(() -> reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.REQUESTER),
                     ErrorCode.INVALID_RESERVATION_STATUS);
         }
+    }
+
+    @Nested
+    @DisplayName("cancelReservation")
+    class CancelReservation {
+        private Referral confirmedReferral;
+        private Reservation confirmed;
+
+        @BeforeEach
+        void setUp() {
+            confirmedReferral = referralIn(ReferralStatus.CONFIRMED, USER_ID);
+            confirmed = reservationIn(ReservationStatus.CONFIRMED, confirmedReferral);
+            startsIn(confirmed, LocalDateTime.now().plusDays(1));
+        }
+
+        @Test
+        @DisplayName("의뢰기관은 확정 예약을 취소하고 ReleaseSlot 발행과 취소 이력을 같은 eventId로 남긴다")
+        void success() {
+            UUID releaseEventId = UUID.randomUUID();
+            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+            given(slotCommandOutbox.recordOutbox(confirmed, "ReleaseSlot")).willReturn(releaseEventId);
+
+            reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
+
+            assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CANCELED);
+            assertThat(confirmedReferral.getReferralStatus()).isEqualTo(ReferralStatus.CANCELED);
+
+            ReferralHistory history = savedHistory();
+            assertThat(history.getFromStatus()).isEqualTo(ReferralStatus.CONFIRMED);
+            assertThat(history.getToStatus()).isEqualTo(ReferralStatus.CANCELED);
+            assertThat(history.getReason()).isEqualTo(Reason.CANCELED_BY_REQUESTER);
+            assertThat(history.getEventId()).isEqualTo(releaseEventId);
+            assertThat(history.getChangedBy()).isEqualTo(USER_ID);
+        }
+
+        @Test
+        @DisplayName("관리자는 다른 기관의 예약도 취소할 수 있다")
+        void admin() {
+            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+
+            reservationService.cancelReservation(OTHER_USER_ID, UUID.randomUUID(), RoleType.ADMIN, confirmed.getId());
+
+            assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CANCELED);
+            assertThat(savedHistory().getChangedBy()).isEqualTo(OTHER_USER_ID);
+        }
+
+        @Test
+        @DisplayName("다른 기관은 취소할 수 없고 존재를 숨긴다")
+        void otherInstitution() {
+            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.RESERVATION_NOT_FOUND);
+            assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("없는 예약이면 NOT_FOUND")
+        void notFound() {
+            UUID reservationId = UUID.randomUUID();
+            given(reservationRepository.findById(reservationId)).willReturn(Optional.empty());
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), RoleType.ADMIN, reservationId),
+                    ErrorCode.RESERVATION_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("시작 2시간 전 직전까지는 취소할 수 있다")
+        void justBeforeDeadline() {
+            startsIn(confirmed, LocalDateTime.now().plusHours(2).plusMinutes(1));
+            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+
+            reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
+
+            assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CANCELED);
+        }
+
+        @Test
+        @DisplayName("시작 2시간 전이 지나면 취소할 수 없다")
+        void afterDeadline() {
+            startsIn(confirmed, LocalDateTime.now().plusHours(1).plusMinutes(59));
+            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
+            assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("이미 시작한 예약은 취소할 수 없다")
+        void alreadyStarted() {
+            startsIn(confirmed, LocalDateTime.now().minusHours(3));
+            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
+        }
+
+        @Test
+        @DisplayName("확정되지 않은 예약은 취소할 수 없고 아무것도 기록하지 않는다")
+        void notConfirmed() {
+            Reservation requested = reservationIn(ReservationStatus.REQUESTED, referral);
+            startsIn(requested, LocalDateTime.now().plusDays(1));
+            given(reservationRepository.findById(requested.getId())).willReturn(Optional.of(requested));
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, requested.getId()),
+                    ErrorCode.INVALID_RESERVATION_STATUS);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        }
+    }
+
+    private void startsIn(Reservation reservation, LocalDateTime startTime) {
+        ReflectionTestUtils.setField(reservation, "startTime", startTime);
+    }
+
+    private ReferralHistory savedHistory() {
+        ArgumentCaptor<ReferralHistory> captor = ArgumentCaptor.forClass(ReferralHistory.class);
+        verify(referralHistoryRepository).save(captor.capture());
+        return captor.getValue();
     }
 
     private void assertErrorCode(Runnable action, ErrorCode errorCode) {

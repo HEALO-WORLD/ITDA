@@ -1,11 +1,14 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.Referral;
+import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
@@ -44,6 +47,9 @@ class ReferralServiceTest {
     private ReferralRepository referralRepository;
 
     @Mock
+    private ReferralHistoryRepository referralHistoryRepository;
+
+    @Mock
     private ReservationService reservationService;
 
     @InjectMocks
@@ -60,7 +66,7 @@ class ReferralServiceTest {
             Reservation reservation = reservation(referralIn(ReferralStatus.PENDING, USER_ID), 1);
 
             given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
-            given(reservationService.createReservation(any(Referral.class), eq(reservationRequest))).willReturn(reservation);
+            given(reservationService.createReservation(any(UUID.class), any(Referral.class), eq(reservationRequest))).willReturn(reservation);
 
             referralService.createReferral(USER_ID, request);
 
@@ -72,7 +78,18 @@ class ReferralServiceTest {
             assertThat(saved.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
             assertThat(saved.getIdempotencyKey()).isEqualTo(request.getIdempotencyKey());
             assertThat(saved.getCurrentReservationId()).isEqualTo(reservation.getId());
-            verify(reservationService).createReservation(saved, reservationRequest);
+            ArgumentCaptor<UUID> eventIdCaptor = ArgumentCaptor.forClass(UUID.class);
+            verify(reservationService).createReservation(eventIdCaptor.capture(), eq(saved), eq(reservationRequest));
+
+            // 생성 이력은 HoldRequested와 같은 eventId로 남는다
+            ArgumentCaptor<ReferralHistory> historyCaptor = ArgumentCaptor.forClass(ReferralHistory.class);
+            verify(referralHistoryRepository).save(historyCaptor.capture());
+            ReferralHistory history = historyCaptor.getValue();
+            assertThat(history.getFromStatus()).isNull();
+            assertThat(history.getToStatus()).isEqualTo(ReferralStatus.PENDING);
+            assertThat(history.getReason()).isEqualTo(Reason.REFERRAL_CREATED);
+            assertThat(history.getEventId()).isEqualTo(eventIdCaptor.getValue());
+            assertThat(history.getChangedBy()).isEqualTo(USER_ID);
         }
 
         @Test
@@ -86,7 +103,7 @@ class ReferralServiceTest {
             assertThat(referralService.createReferral(USER_ID, request)).isNotNull();
 
             verify(referralRepository, never()).save(any());
-            verifyNoInteractions(reservationService);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
         }
     }
 
@@ -181,7 +198,7 @@ class ReferralServiceTest {
             CreateReservationRequest request = reservationRequest();
             Reservation newReservation = reservation(referral, 2);
             given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
-            given(reservationService.createReservation(referral, request)).willReturn(newReservation);
+            given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(newReservation);
 
             ReservationResponse response =
                     referralService.createRescheduledReservation(USER_ID, RoleType.REQUESTER, referral.getId(), request);
@@ -189,6 +206,18 @@ class ReferralServiceTest {
             assertThat(response.getId()).isEqualTo(newReservation.getId());
             assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
             assertThat(referral.getCurrentReservationId()).isEqualTo(newReservation.getId());
+
+            ArgumentCaptor<UUID> eventIdCaptor = ArgumentCaptor.forClass(UUID.class);
+            verify(reservationService).createReservation(eventIdCaptor.capture(), eq(referral), eq(request));
+
+            ArgumentCaptor<ReferralHistory> historyCaptor = ArgumentCaptor.forClass(ReferralHistory.class);
+            verify(referralHistoryRepository).save(historyCaptor.capture());
+            ReferralHistory history = historyCaptor.getValue();
+            assertThat(history.getFromStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+            assertThat(history.getToStatus()).isEqualTo(ReferralStatus.PENDING);
+            assertThat(history.getReason()).isEqualTo(Reason.RESCHEDULED);
+            assertThat(history.getEventId()).isEqualTo(eventIdCaptor.getValue());
+            assertThat(history.getChangedBy()).isEqualTo(USER_ID);
         }
 
         @Test
@@ -197,11 +226,16 @@ class ReferralServiceTest {
             Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, OTHER_USER_ID);
             CreateReservationRequest request = reservationRequest();
             given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
-            given(reservationService.createReservation(referral, request)).willReturn(reservation(referral, 2));
+            given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(reservation(referral, 2));
 
             referralService.createRescheduledReservation(USER_ID, RoleType.ADMIN, referral.getId(), request);
 
             assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
+
+            // 이력의 변경자는 의뢰 작성자가 아니라 재예약을 요청한 관리자
+            ArgumentCaptor<ReferralHistory> historyCaptor = ArgumentCaptor.forClass(ReferralHistory.class);
+            verify(referralHistoryRepository).save(historyCaptor.capture());
+            assertThat(historyCaptor.getValue().getChangedBy()).isEqualTo(USER_ID);
         }
 
         @Test

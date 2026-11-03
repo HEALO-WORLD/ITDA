@@ -138,10 +138,11 @@ class ReservationTest {
     @Nested
     @DisplayName("block / cancel")
     class BlockAndCancel {
-        @Test
-        @DisplayName("CONFIRMED → BLOCKED, 사유는 EQUIPMENT_FAILURE")
-        void block() {
-            Reservation reservation = reservationIn(ReservationStatus.CONFIRMED, referral);
+        @ParameterizedTest
+        @EnumSource(value = ReservationStatus.class, names = {"REQUESTED", "HELD", "CONFIRMED"})
+        @DisplayName("진행 중인 예약 → BLOCKED, 사유는 EQUIPMENT_FAILURE")
+        void block(ReservationStatus status) {
+            Reservation reservation = reservationIn(status, referral);
 
             reservation.block();
 
@@ -162,8 +163,8 @@ class ReservationTest {
         }
 
         @ParameterizedTest
-        @EnumSource(value = ReservationStatus.class, names = "CONFIRMED", mode = EXCLUDE)
-        @DisplayName("CONFIRMED가 아니면 block할 수 없다")
+        @EnumSource(value = ReservationStatus.class, names = {"REQUESTED", "HELD", "CONFIRMED"}, mode = EXCLUDE)
+        @DisplayName("이미 끝난 예약은 block할 수 없다")
         void blockInvalidStatus(ReservationStatus status) {
             Reservation reservation = reservationIn(status, referral);
 

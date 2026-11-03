@@ -1,18 +1,21 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.Referral;
+import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.Reason;
+import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.request.ReferralSearchCondition;
 import healoworld.referral_service.presentation.dto.response.ReferralResponse;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
@@ -26,6 +29,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReferralService {
     private final ReferralRepository referralRepository;
+    private final ReferralHistoryRepository referralHistoryRepository;
     private final ReservationService reservationService;
 
     public ReferralResponse createReferral(UUID userId, CreateReferralRequest createReferralRequest) {
@@ -36,8 +40,15 @@ public class ReferralService {
         Referral createdReferral = Referral.create(createReferralRequest.getReferringInstitutionId(), userId, createReferralRequest.getExamTypeId(), createReferralRequest.getPatientName(), createReferralRequest.getIdempotencyKey());
         referralRepository.save(createdReferral);
 
-        Reservation reservation = reservationService.createReservation(createdReferral, createReferralRequest.getReservation());
+        UUID outboxEventId = UUID.randomUUID();
+
+        Reservation reservation = reservationService.createReservation(outboxEventId, createdReferral, createReferralRequest.getReservation());
         createdReferral.assignReservation(reservation.getId());
+
+        // referralHistory 기록
+        ReferralHistory history = ReferralHistory.create(createdReferral, reservation, null, createdReferral.getReferralStatus(), Reason.REFERRAL_CREATED, outboxEventId, userId);
+        referralHistoryRepository.save(history);
+
         return ReferralResponse.from(createdReferral);
     }
 
@@ -79,8 +90,13 @@ public class ReferralService {
         }
 
         referral.validateReschedulable();
-        Reservation reservation = reservationService.createReservation(referral, request);
+        UUID outboxEventId = UUID.randomUUID();
+        Reservation reservation = reservationService.createReservation(outboxEventId, referral, request);
         referral.reschedule(reservation.getId());
+
+        // referralHistory 기록
+        ReferralHistory history = ReferralHistory.create(referral, reservation, ReferralStatus.NEEDS_RESCHEDULE, referral.getReferralStatus(), Reason.RESCHEDULED, outboxEventId, userId);
+        referralHistoryRepository.save(history);
         return ReservationResponse.from(reservation);
     }
 }
