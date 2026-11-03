@@ -15,7 +15,9 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Entity
-@Table(name = "p_slots")
+// HOLD 만료 스캐너(findExpiredHolds)가 status = HELD, held_until <= now 조건으로 주기 조회한다
+@Table(name = "p_slots",
+        indexes = @Index(name = "idx_slot_status_held_until", columnList = "status, held_until"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Slot extends BaseEntity {
