@@ -9,6 +9,9 @@ import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.global.inbox.ConsumedEvent;
+import healoworld.referral_service.global.inbox.ConsumedEventId;
+import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
@@ -55,6 +58,9 @@ class SlotResultServiceTest {
 
     @Mock
     private SlotCommandOutbox slotCommandOutbox;
+
+    @Mock
+    private ConsumedEventRepository consumedEventRepository;
 
     @InjectMocks
     private SlotResultService slotResultService;
@@ -177,6 +183,59 @@ class SlotResultServiceTest {
         assertThat(reservation.getReservationStatus()).isEqualTo(status);
         assertThat(referral.getReferralStatus()).isEqualTo(referralBefore);
         verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        verify(consumedEventRepository).save(any(ConsumedEvent.class));
+    }
+
+    @Test
+    @DisplayName("inbox: 처리한 이벤트는 eventId·consumer·eventType으로 기록한다")
+    void recordsConsumedEvent() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
+
+        UUID eventId = handle("SlotHeld", reservation);
+
+        ArgumentCaptor<ConsumedEvent> captor = ArgumentCaptor.forClass(ConsumedEvent.class);
+        verify(consumedEventRepository).save(captor.capture());
+        ConsumedEvent consumed = captor.getValue();
+        assertThat(consumed.getId()).isEqualTo(new ConsumedEventId(eventId, SlotResultService.CONSUMER));
+        assertThat(consumed.getEventType()).isEqualTo("SlotHeld");
+        assertThat(consumed.getProcessedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("inbox: 이미 처리한 eventId면 상태·아웃박스·이력을 건드리지 않고 다시 기록하지도 않는다")
+    void skipsAlreadyConsumed() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
+        UUID eventId = UUID.randomUUID();
+        given(consumedEventRepository.existsById(new ConsumedEventId(eventId, SlotResultService.CONSUMER))).willReturn(true);
+
+        slotResultService.handle(eventId, "SlotHeld", reservation.getId());
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.REQUESTED);
+        verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        verify(consumedEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("inbox: 이미 처리했는지는 의뢰를 잠근 뒤에 확인한다")
+    void checksInboxAfterLock() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
+
+        UUID eventId = handle("SlotHeld", reservation);
+
+        InOrder inOrder = inOrder(referralRepository, consumedEventRepository);
+        inOrder.verify(referralRepository).findByIdForUpdate(referral.getId());
+        inOrder.verify(consumedEventRepository).existsById(new ConsumedEventId(eventId, SlotResultService.CONSUMER));
+        inOrder.verify(consumedEventRepository).save(any(ConsumedEvent.class));
+    }
+
+    @Test
+    @DisplayName("inbox: 처리 중 예외가 나면 기록하지 않아 재시도 때 다시 처리된다")
+    void doesNotRecordOnFailure() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
+        given(slotCommandOutbox.recordOutbox(reservation, "BookSlot")).willThrow(new IllegalStateException("outbox 실패"));
+
+        assertThatThrownBy(() -> handle("SlotHeld", reservation)).isInstanceOf(IllegalStateException.class);
+        verify(consumedEventRepository, never()).save(any());
     }
 
     @Test

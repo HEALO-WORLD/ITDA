@@ -9,6 +9,9 @@ import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.global.inbox.ConsumedEvent;
+import healoworld.referral_service.global.inbox.ConsumedEventId;
+import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
@@ -18,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.UUID;
 
@@ -26,10 +30,13 @@ import java.util.UUID;
 @Transactional
 @RequiredArgsConstructor
 public class SlotResultService {
-    private final ReservationRepository reservationRepository;
     private final ReferralRepository referralRepository;
+    private final ReservationRepository reservationRepository;
     private final ReferralHistoryRepository referralHistoryRepository;
+    private final ConsumedEventRepository consumedEventRepository;
     private final SlotCommandOutbox slotCommandOutbox;
+
+    public static final String CONSUMER = "referral-service";
 
     public void handle(UUID eventId, String eventType, UUID reservationId) {
         UUID referralId = reservationRepository.findReferralIdById(reservationId)
@@ -40,6 +47,11 @@ public class SlotResultService {
 
         Reservation reservation = reservationRepository.findById(reservationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
+
+        if (consumedEventRepository.existsById(new ConsumedEventId(eventId, CONSUMER))) {
+            log.info("이미 처리한 이벤트, 건너뜀. eventId={}, eventType={}", eventId, eventType);
+            return;
+        }
 
         switch (eventType) {
             case "SlotHeld":
@@ -80,10 +92,9 @@ public class SlotResultService {
 
             default:
                 log.warn("slot-results 알 수 없는 eventType, 처리 생략. eventId={}, eventType={}", eventId, eventType);
-                return;
+                break;
         }
-        log.info("slot-results 핸들러 완료(커밋 전). eventId={}, eventType={}, reservationId={}, reservationStatus={}, referralStatus={}",
-                eventId, eventType, reservation.getId(), reservation.getReservationStatus(), referral.getReferralStatus());
+        consumedEventRepository.save(ConsumedEvent.create(eventId, CONSUMER, eventType, LocalDateTime.now()));
     }
 
     // SlotHeld 이벤트 수신
@@ -182,7 +193,7 @@ public class SlotResultService {
 
     private boolean isExpected(Reservation reservation, UUID eventId, String eventType, ReservationStatus... expected) {
         if (Arrays.asList(expected).contains(reservation.getReservationStatus())) return true;
-        log.info("이미 처리된 이벤트 무시. eventType={}, eventId={}, reservationId={}, status={}", eventType, eventId, reservation.getId(), reservation.getReservationStatus());
+        log.info("기대하지 않은 상태의 이벤트 무시. eventType={}, eventId={}, reservationId={}, status={}", eventType, eventId, reservation.getId(), reservation.getReservationStatus());
         return false;
     }
 }
