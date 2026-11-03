@@ -82,7 +82,7 @@ class SlotCommandHandlerTest {
         assertThat(payload.get("occurredAt").asText()).isEqualTo("2026-10-30T10:00:00");
         assertThat(payload.get("slotId").asText()).isEqualTo(slot.getId().toString());
         assertThat(payload.get("reservationId").asText()).isEqualTo(request.reservationId().toString());
-        assertThat(payload.get("referralId").asText()).isEqualTo(request.referralId().toString());
+        assertThat(payload.has("referralId")).isFalse();   // slot-results는 referralId를 담지 않는다
         assertThat(payload.get("heldUntil").asText()).isEqualTo("2026-10-30T10:05:00");
 
         assertThat(consumedEventRepository.existsById(
@@ -142,6 +142,6 @@ class SlotCommandHandlerTest {
 
     private HoldRequestedEvent holdRequested(UUID slotId) {
         return new HoldRequestedEvent(UUID.randomUUID(), HoldRequestedEvent.TYPE, FixedClockConfig.NOW,
-                slotId, UUID.randomUUID(), UUID.randomUUID());
+                slotId, UUID.randomUUID());
     }
 }

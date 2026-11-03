@@ -51,8 +51,16 @@ class SlotCommandConsumerTest {
         assertThat(event.eventId()).isEqualTo(eventId);
         assertThat(event.slotId()).isEqualTo(slotId);
         assertThat(event.reservationId()).isEqualTo(reservationId);
-        assertThat(event.referralId()).isEqualTo(referralId);
         assertThat(event.occurredAt()).isEqualTo(LocalDateTime.of(2026, 11, 2, 10, 0));
+    }
+
+    @Test
+    void Slot이_쓰지_않는_referralId가_포함돼도_예외_없이_처리한다() {
+        assertThat(holdRequestedJson(slotId)).contains("referralId");
+
+        consumer.consume(record(slotId.toString(), "HoldRequested", holdRequestedJson(slotId)));
+
+        verify(slotCommandHandler).handleHoldRequested(any());
     }
 
     @Test
@@ -93,6 +101,7 @@ class SlotCommandConsumerTest {
         verify(slotCommandHandler, never()).handleHoldRequested(any());
     }
 
+    // Referral은 referralId를 함께 보낸다. Slot은 이 필드를 받지 않으므로 무시되어야 한다
     private String holdRequestedJson(UUID slotId) {
         return """
                 {"eventId":"%s","eventType":"HoldRequested","occurredAt":"2026-11-02T10:00:00",
