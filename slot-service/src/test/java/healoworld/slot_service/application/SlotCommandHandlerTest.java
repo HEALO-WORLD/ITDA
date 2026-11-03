@@ -1,7 +1,9 @@
 package healoworld.slot_service.application;
 
-import healoworld.slot_service.application.event.BookSlotEvent;
-import healoworld.slot_service.application.event.HoldRequestedEvent;
+import healoworld.slot_service.application.event.command.BookSlotEvent;
+import healoworld.slot_service.application.event.command.HoldRequestedEvent;
+import healoworld.slot_service.application.event.command.ReleaseHoldEvent;
+import healoworld.slot_service.application.event.command.ReleaseSlotEvent;
 import healoworld.slot_service.application.service.SlotCommandHandler;
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
@@ -225,10 +227,82 @@ class SlotCommandHandlerTest {
         assertThat(consumedEventRepository.findAll()).hasSize(1);
     }
 
+    @Test
+    void ReleaseHold_같은_예약의_HOLD를_반환하고_결과_이벤트_없이_처리_완료로_남긴다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.held(reservationId, FixedClockConfig.NOW.plusMinutes(3)));
+        ReleaseHoldEvent request = releaseHold(slot.getId(), reservationId);
+
+        slotCommandHandler.handleReleaseHold(request);
+
+        assertThat(slotRepository.findById(slot.getId()).orElseThrow().getStatus()).isEqualTo(SlotStatus.AVAILABLE);
+        assertThat(outboxEventRepository.findAll()).isEmpty();
+        assertThat(consumedEventRepository.existsById(
+                new ConsumedEventId(request.eventId(), SlotCommandHandler.CONSUMER))).isTrue();
+    }
+
+    @Test
+    void ReleaseHold_해제할_슬롯이_없어도_예외_없이_처리_완료로_남긴다() {
+        ReleaseHoldEvent request = releaseHold(UUID.randomUUID(), UUID.randomUUID());
+
+        slotCommandHandler.handleReleaseHold(request);
+
+        assertThat(consumedEventRepository.existsById(
+                new ConsumedEventId(request.eventId(), SlotCommandHandler.CONSUMER))).isTrue();
+    }
+
+    @Test
+    void ReleaseHold_같은_이벤트를_두_번_받아도_한_번만_처리한다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.held(reservationId, FixedClockConfig.NOW.plusMinutes(3)));
+        ReleaseHoldEvent request = releaseHold(slot.getId(), reservationId);
+
+        slotCommandHandler.handleReleaseHold(request);
+        slotCommandHandler.handleReleaseHold(request);
+
+        assertThat(consumedEventRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    void ReleaseSlot_같은_예약의_BOOKED_슬롯을_반환하고_결과_이벤트_없이_처리_완료로_남긴다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.booked(reservationId));
+        ReleaseSlotEvent request = releaseSlot(slot.getId(), reservationId);
+
+        slotCommandHandler.handleReleaseSlot(request);
+
+        Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(SlotStatus.AVAILABLE);
+        assertThat(saved.getReservationId()).isNull();
+        assertThat(outboxEventRepository.findAll()).isEmpty();
+        assertThat(consumedEventRepository.existsById(
+                new ConsumedEventId(request.eventId(), SlotCommandHandler.CONSUMER))).isTrue();
+    }
+
+    @Test
+    void ReleaseSlot_같은_이벤트를_두_번_받아도_한_번만_처리한다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.booked(reservationId));
+        ReleaseSlotEvent request = releaseSlot(slot.getId(), reservationId);
+
+        slotCommandHandler.handleReleaseSlot(request);
+        slotCommandHandler.handleReleaseSlot(request);
+
+        assertThat(consumedEventRepository.findAll()).hasSize(1);
+    }
+
     private OutboxEvent singleOutbox() {
         List<OutboxEvent> events = outboxEventRepository.findAll();
         assertThat(events).hasSize(1);
         return events.getFirst();
+    }
+
+    private ReleaseHoldEvent releaseHold(UUID slotId, UUID reservationId) {
+        return new ReleaseHoldEvent(UUID.randomUUID(), ReleaseHoldEvent.TYPE, FixedClockConfig.NOW, slotId, reservationId);
+    }
+
+    private ReleaseSlotEvent releaseSlot(UUID slotId, UUID reservationId) {
+        return new ReleaseSlotEvent(UUID.randomUUID(), ReleaseSlotEvent.TYPE, FixedClockConfig.NOW, slotId, reservationId);
     }
 
     private BookSlotEvent bookSlot(UUID slotId, UUID reservationId) {

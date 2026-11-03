@@ -1,5 +1,6 @@
-package healoworld.slot_service.application.event;
+package healoworld.slot_service.application.event.result;
 
+import healoworld.slot_service.application.event.command.HoldRequestedEvent;
 import healoworld.slot_service.domain.enums.HoldFailureReason;
 
 import java.time.LocalDateTime;

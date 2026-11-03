@@ -99,6 +99,56 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
                    @Param("held") SlotStatus held,
                    @Param("booked") SlotStatus booked);
 
+    // ReleaseHold: 같은 예약으로 HELD일 때만 해제한다
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update Slot s
+           set s.status = :available,
+               s.reservationId = null,
+               s.heldUntil = null,
+               s.updatedAt = :now
+         where s.id = :slotId
+           and s.reservationId = :reservationId
+           and s.status = :held
+        """)
+    int releaseHoldIfHeld(@Param("slotId") UUID slotId,
+                          @Param("reservationId") UUID reservationId,
+                          @Param("now") LocalDateTime now,
+                          @Param("held") SlotStatus held,
+                          @Param("available") SlotStatus available);
+
+    // ReleaseSlot: 같은 예약으로 BOOKED일 때만 해제한다
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update Slot s
+           set s.status = :available,
+               s.reservationId = null,
+               s.updatedAt = :now
+         where s.id = :slotId
+           and s.reservationId = :reservationId
+           and s.status = :booked
+        """)
+    int releaseBookedSlot(@Param("slotId") UUID slotId,
+                          @Param("reservationId") UUID reservationId,
+                          @Param("now") LocalDateTime now,
+                          @Param("booked") SlotStatus booked,
+                          @Param("available") SlotStatus available);
+
+    // ReleaseSlot: 장애로 UNAVAILABLE인 슬롯은 상태를 유지하고 예약 연결만 끊는다
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update Slot s
+           set s.reservationId = null,
+               s.updatedAt = :now
+         where s.id = :slotId
+           and s.reservationId = :reservationId
+           and s.status = :unavailable
+        """)
+    int detachReservationIfUnavailable(@Param("slotId") UUID slotId,
+                                       @Param("reservationId") UUID reservationId,
+                                       @Param("now") LocalDateTime now,
+                                       @Param("unavailable") SlotStatus unavailable);
+
     // HOLD 만료 대상 조회. 오래된 HOLD부터 처리한다
     @Query("""
         select s

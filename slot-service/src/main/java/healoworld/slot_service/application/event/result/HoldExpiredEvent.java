@@ -1,4 +1,4 @@
-package healoworld.slot_service.application.event;
+package healoworld.slot_service.application.event.result;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
