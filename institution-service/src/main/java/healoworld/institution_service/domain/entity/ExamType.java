@@ -49,6 +49,28 @@ public class ExamType extends BaseEntity {
         return new ExamType(name, modality, durationMinutes);
     }
 
+    public void update(String name, Integer durationMinutes) {
+        if (name == null && durationMinutes == null) {
+            throw new IllegalArgumentException("수정할 항목을 하나 이상 입력해야 합니다.");
+        }
+
+        if (name != null) {
+            validateName(name);
+        }
+
+        if (durationMinutes != null && durationMinutes < 1) {
+            throw new IllegalArgumentException("검사 소요시간은 1분 이상이어야 합니다.");
+        }
+
+        if (name != null) {
+            this.name = name;
+        }
+
+        if (durationMinutes != null) {
+            this.durationMinutes = durationMinutes;
+        }
+    }
+
     private  void validateName(String name) {
         if (name == null || name.isBlank() || name.length() > 50) {
             throw new IllegalArgumentException("검사명은 공백이 아닌 최대 50자여야 합니다.");
