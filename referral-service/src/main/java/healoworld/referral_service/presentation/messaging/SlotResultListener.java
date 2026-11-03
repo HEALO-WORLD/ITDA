@@ -28,7 +28,7 @@ public class SlotResultListener {
 
         UUID eventId = UUID.fromString(id);
         ReservationEventPayload payloadJson = jsonMapper.readValue(payload, ReservationEventPayload.class);
-        log.debug("slot-results 파싱 완료. eventId={}, reservationId={}, referralId={}", id, payloadJson.reservationId(), payloadJson.referralId());
+        log.debug("slot-results 파싱 완료. eventId={}, reservationId={}", id, payloadJson.reservationId());
 
         if (payloadJson.reservationId() == null) {
             if ("SlotsBlocked".equals(eventType)) {
@@ -38,6 +38,6 @@ public class SlotResultListener {
             throw new IllegalArgumentException("reservationId 누락. eventType=" + eventType);
         }
 
-        slotResultService.handle(eventId, eventType, payloadJson.reservationId(), payloadJson.referralId());
+        slotResultService.handle(eventId, eventType, payloadJson.reservationId());
     }
 }

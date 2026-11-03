@@ -32,16 +32,15 @@ class SlotResultListenerTest {
     private SlotResultListener slotResultListener;
 
     @Test
-    @DisplayName("헤더의 eventId·eventType과 payload의 예약·의뢰 ID를 서비스에 넘긴다")
+    @DisplayName("헤더의 eventId·eventType과 payload의 예약 ID를 서비스에 넘긴다 (referralId는 없어도 된다)")
     void delegates() {
         UUID eventId = UUID.randomUUID();
         UUID reservationId = UUID.randomUUID();
-        UUID referralId = UUID.randomUUID();
-        stubPayload(reservationId, referralId);
+        stubPayload(reservationId, null);
 
         slotResultListener.onSlotResult(eventId.toString(), "SlotHeld", PAYLOAD);
 
-        verify(slotResultService).handle(eventId, "SlotHeld", reservationId, referralId);
+        verify(slotResultService).handle(eventId, "SlotHeld", reservationId);
     }
 
     @Test

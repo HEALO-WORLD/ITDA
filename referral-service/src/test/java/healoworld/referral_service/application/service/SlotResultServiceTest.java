@@ -9,6 +9,9 @@ import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.global.inbox.ConsumedEvent;
+import healoworld.referral_service.global.inbox.ConsumedEventId;
+import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
@@ -18,8 +21,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -33,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -52,6 +58,9 @@ class SlotResultServiceTest {
 
     @Mock
     private SlotCommandOutbox slotCommandOutbox;
+
+    @Mock
+    private ConsumedEventRepository consumedEventRepository;
 
     @InjectMocks
     private SlotResultService slotResultService;
@@ -155,42 +164,121 @@ class SlotResultServiceTest {
         verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
     }
 
-    @Test
-    @DisplayName("이미 처리된 SlotBooked가 다시 오면 상태 오류로 실패하고 이력을 다시 쓰지 않는다")
-    void duplicatedSlotBooked() {
-        Referral confirmedReferral = referralIn(ReferralStatus.CONFIRMED, USER_ID);
-        Reservation reservation = stored(ReservationStatus.CONFIRMED, confirmedReferral);
+    @ParameterizedTest(name = "{0}: 예약이 {1}이면 무시")
+    @CsvSource({
+            "SlotHeld, HELD", "SlotHeld, CONFIRMED", "SlotHeld, FAILED", "SlotHeld, BLOCKED", "SlotHeld, CANCELED",
+            "SlotHoldFailed, HELD", "SlotHoldFailed, CONFIRMED", "SlotHoldFailed, FAILED",
+            "SlotBooked, REQUESTED", "SlotBooked, CONFIRMED", "SlotBooked, FAILED", "SlotBooked, BLOCKED",
+            "SlotBookFailed, REQUESTED", "SlotBookFailed, CONFIRMED", "SlotBookFailed, FAILED",
+            "HoldExpired, REQUESTED", "HoldExpired, CONFIRMED", "HoldExpired, FAILED",
+            "SlotsBlocked, FAILED", "SlotsBlocked, BLOCKED", "SlotsBlocked, CANCELED"
+    })
+    @DisplayName("중복·지연 수신: 이벤트가 기대하는 예약 상태가 아니면 상태를 바꾸지 않고, 아웃박스·이력도 남기지 않는다")
+    void ignoresUnexpectedStatus(String eventType, ReservationStatus status) {
+        Reservation reservation = stored(status, referral);
+        ReferralStatus referralBefore = referral.getReferralStatus();
 
-        assertErrorCode(() -> slotResultService.handle(UUID.randomUUID(), "SlotBooked", reservation.getId(), confirmedReferral.getId()),
-                ErrorCode.INVALID_RESERVATION_STATUS);
-        verify(referralHistoryRepository, never()).save(any());
+        handle(eventType, reservation);
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(status);
+        assertThat(referral.getReferralStatus()).isEqualTo(referralBefore);
+        verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        verify(consumedEventRepository).save(any(ConsumedEvent.class));
     }
 
     @Test
-    @DisplayName("의뢰가 없으면 REFERRAL_NOT_FOUND")
-    void referralNotFound() {
-        UUID referralId = UUID.randomUUID();
-        given(referralRepository.findById(referralId)).willReturn(Optional.empty());
+    @DisplayName("inbox: 처리한 이벤트는 eventId·consumer·eventType으로 기록한다")
+    void recordsConsumedEvent() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
 
-        assertErrorCode(() -> slotResultService.handle(UUID.randomUUID(), "SlotHeld", UUID.randomUUID(), referralId),
+        UUID eventId = handle("SlotHeld", reservation);
+
+        ArgumentCaptor<ConsumedEvent> captor = ArgumentCaptor.forClass(ConsumedEvent.class);
+        verify(consumedEventRepository).save(captor.capture());
+        ConsumedEvent consumed = captor.getValue();
+        assertThat(consumed.getId()).isEqualTo(new ConsumedEventId(eventId, SlotResultService.CONSUMER));
+        assertThat(consumed.getEventType()).isEqualTo("SlotHeld");
+        assertThat(consumed.getProcessedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("inbox: 이미 처리한 eventId면 상태·아웃박스·이력을 건드리지 않고 다시 기록하지도 않는다")
+    void skipsAlreadyConsumed() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
+        UUID eventId = UUID.randomUUID();
+        given(consumedEventRepository.existsById(new ConsumedEventId(eventId, SlotResultService.CONSUMER))).willReturn(true);
+
+        slotResultService.handle(eventId, "SlotHeld", reservation.getId());
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.REQUESTED);
+        verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        verify(consumedEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("inbox: 이미 처리했는지는 의뢰를 잠근 뒤에 확인한다")
+    void checksInboxAfterLock() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
+
+        UUID eventId = handle("SlotHeld", reservation);
+
+        InOrder inOrder = inOrder(referralRepository, consumedEventRepository);
+        inOrder.verify(referralRepository).findByIdForUpdate(referral.getId());
+        inOrder.verify(consumedEventRepository).existsById(new ConsumedEventId(eventId, SlotResultService.CONSUMER));
+        inOrder.verify(consumedEventRepository).save(any(ConsumedEvent.class));
+    }
+
+    @Test
+    @DisplayName("inbox: 처리 중 예외가 나면 기록하지 않아 재시도 때 다시 처리된다")
+    void doesNotRecordOnFailure() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
+        given(slotCommandOutbox.recordOutbox(reservation, "BookSlot")).willThrow(new IllegalStateException("outbox 실패"));
+
+        assertThatThrownBy(() -> handle("SlotHeld", reservation)).isInstanceOf(IllegalStateException.class);
+        verify(consumedEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("예약이 없으면 RESERVATION_NOT_FOUND, 의뢰는 잠그지 않는다")
+    void reservationNotFound() {
+        UUID reservationId = UUID.randomUUID();
+        given(reservationRepository.findReferralIdById(reservationId)).willReturn(Optional.empty());
+
+        assertErrorCode(() -> slotResultService.handle(UUID.randomUUID(), "SlotHeld", reservationId),
+                ErrorCode.RESERVATION_NOT_FOUND);
+        verifyNoInteractions(referralRepository);
+    }
+
+    @Test
+    @DisplayName("예약은 있는데 의뢰가 없으면 REFERRAL_NOT_FOUND")
+    void referralNotFound() {
+        UUID reservationId = UUID.randomUUID();
+        UUID referralId = UUID.randomUUID();
+        given(reservationRepository.findReferralIdById(reservationId)).willReturn(Optional.of(referralId));
+        given(referralRepository.findByIdForUpdate(referralId)).willReturn(Optional.empty());
+
+        assertErrorCode(() -> slotResultService.handle(UUID.randomUUID(), "SlotHeld", reservationId),
                 ErrorCode.REFERRAL_NOT_FOUND);
     }
 
     @Test
-    @DisplayName("예약이 없으면 RESERVATION_NOT_FOUND")
-    void reservationNotFound() {
-        UUID reservationId = UUID.randomUUID();
-        given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
-        given(reservationRepository.findById(reservationId)).willReturn(Optional.empty());
+    @DisplayName("payload에 referralId가 없어도 예약에서 의뢰 ID를 찾고, 의뢰를 잠근 뒤에 예약을 읽는다")
+    void resolvesReferralFromReservationThenLocks() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
 
-        assertErrorCode(() -> slotResultService.handle(UUID.randomUUID(), "SlotHeld", reservationId, referral.getId()),
-                ErrorCode.RESERVATION_NOT_FOUND);
+        handle("SlotHeld", reservation);
+
+        InOrder inOrder = inOrder(reservationRepository, referralRepository);
+        inOrder.verify(reservationRepository).findReferralIdById(reservation.getId());
+        inOrder.verify(referralRepository).findByIdForUpdate(referral.getId());
+        inOrder.verify(reservationRepository).findById(reservation.getId());
     }
 
-    // 서비스가 조회할 의뢰·예약을 준비한다
+    // 예약에서 의뢰 ID 조회 → 의뢰 잠금 → 예약 조회 순서로 준비한다
     private Reservation stored(ReservationStatus status, Referral owner) {
         Reservation reservation = reservationIn(status, owner);
-        given(referralRepository.findById(owner.getId())).willReturn(Optional.of(owner));
+        given(reservationRepository.findReferralIdById(reservation.getId())).willReturn(Optional.of(owner.getId()));
+        given(referralRepository.findByIdForUpdate(owner.getId())).willReturn(Optional.of(owner));
         given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
         return reservation;
     }
@@ -198,7 +286,7 @@ class SlotResultServiceTest {
     // 수신 eventId를 돌려준다
     private UUID handle(String eventType, Reservation reservation) {
         UUID eventId = UUID.randomUUID();
-        slotResultService.handle(eventId, eventType, reservation.getId(), reservation.getReferral().getId());
+        slotResultService.handle(eventId, eventType, reservation.getId());
         return eventId;
     }
 
