@@ -1,8 +1,8 @@
 package healoworld.institution_service.presentation.controller;
 
 
-import healoworld.institution_service.application.service.auth.AuthService;
-import healoworld.institution_service.application.service.auth.DevTestAccount;
+import healoworld.institution_service.application.service.user.AuthService;
+import healoworld.institution_service.application.service.user.DevTestAccount;
 import healoworld.institution_service.global.dto.ApiResponse;
 import healoworld.institution_service.presentation.dto.response.TokenResponse;
 import jakarta.annotation.PostConstruct;

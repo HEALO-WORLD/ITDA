@@ -3,11 +3,13 @@ package healoworld.slot_service.global.outbox;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -15,12 +17,14 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "outbox.publish.enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxPublisher {
 
     private static final long SEND_TIMEOUT_SECONDS = 15;   // Kafka 응답 대기 시간
 
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaTemplate<String, String> kafkaTemplate;
+    private final Clock clock;
 
     @Scheduled(fixedDelayString = "${outbox.publish.fixed-delay-ms:1000}")   // 회차 종료 후 outbox.publish.fixed-delay-ms 뒤 시작
     public void publish() {
@@ -34,13 +38,13 @@ public class OutboxPublisher {
                 if (e instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
                 }
-                outboxEventRepository.increaseRetryCount(event.getId(), LocalDateTime.now());
+                outboxEventRepository.increaseRetryCount(event.getId(), LocalDateTime.now(clock));
                 log.warn("Outbox 발행 실패, 회차 중단. id={}, type={}, topic={}, retry={}",
                         event.getId(), event.getEventType(), event.getTopic(),
                         event.getRetryCount() + 1, e);
                 return; // 뒤 이벤트가 먼저 나가지 않도록 이번 회차 중단
             }
-            outboxEventRepository.markPublished(event.getId(), LocalDateTime.now());
+            outboxEventRepository.markPublished(event.getId(), LocalDateTime.now(clock));
             log.debug("Outbox 발행 완료. id={}, type={}", event.getId(), event.getEventType());
         }
     }

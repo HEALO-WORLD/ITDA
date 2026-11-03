@@ -1,5 +1,6 @@
 package healoworld.referral_service.presentation.controller;
 
+import healoworld.referral_service.application.service.ExaminationResultService;
 import healoworld.referral_service.application.service.ReferralHistoryService;
 import healoworld.referral_service.application.service.ReferralService;
 import healoworld.referral_service.application.service.ReservationService;
@@ -81,6 +82,9 @@ class AuthHeaderContractTest {
 
     @MockitoBean
     private OutboxEventRepository outboxEventRepository;
+
+    @MockitoBean
+    private ExaminationResultService examinationResultService;
 
     // 메인 클래스의 @EnableJpaAuditing이 웹 슬라이스 테스트에서도 JPA 메타모델을 찾기 때문에 대체한다
     @MockitoBean

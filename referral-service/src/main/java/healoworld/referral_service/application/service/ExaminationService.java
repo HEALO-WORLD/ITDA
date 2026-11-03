@@ -16,6 +16,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 
+import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 
@@ -106,9 +107,23 @@ public class ExaminationService {
     @Transactional
     public ExaminationStatusChangeResponse changeStatus(
             UUID examinationId,
+            UUID institutionId,
+            RoleType role,
             ExaminationStatus requestedStatus
     ) {
         Examination examination = findById(examinationId);
+
+        // 1. EXAMINER 역할인지 확인
+        if (role != RoleType.EXAMINER) {
+            throw new BaseException(ErrorCode.EXAMINATION_ACCESS_DENIED);
+        }
+
+        // 2. 해당 검사를 수행하는 기관 소속인지 확인
+        if(!examination.getExamInstitutionId().equals(institutionId)){
+            throw new BaseException(ErrorCode.EXAMINATION_ACCESS_DENIED);
+        }
+
+        // 3. 권한 확인 후 기존 상태 변경 로직 실행
         ExaminationStatus previousStatus = examination.getStatus();
 
         // 같은 상태 요청은 변경하지 않음 (멱등성)

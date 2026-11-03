@@ -16,7 +16,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -41,6 +41,9 @@ outbox:
   publish:
     fixed-delay-ms: 1000
 
+hold-expiry:
+  fixed-delay-ms: 10000   # HOLD 만료 스캔 간격 (회차 종료 후 대기)
+
 eureka:
   client:
     service-url:
@@ -57,4 +60,5 @@ management:
 
 logging:
   level:
-    com.itda.slot.global.outbox: debug
+    healoworld.slot_service.global.outbox: debug
+    healoworld.slot_service.presentation.consumer: debug

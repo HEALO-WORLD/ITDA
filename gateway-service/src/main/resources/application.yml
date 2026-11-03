@@ -57,7 +57,91 @@ management:
 
 jwt:
   secret: ${JWT_SECRET}
-  public-paths:
-    - /api/v1/auth/signup
-    - /api/v1/auth/login
-    - /api/v1/institutions/public
+  # public-paths는 삭제 → 아래 gateway.policy.public-rules로 이동
+
+gateway:
+  policy:
+    public-rules:
+      - "POST /api/v1/auth/signup"
+      - "POST /api/v1/auth/login"
+      - "GET /api/v1/institutions/public"
+
+    groups:
+      # ── 관리자만 ──
+      - roles: [ADMIN]
+        rules:
+          - "GET /api/v1/users"
+          - "PATCH /api/v1/users/*/approve"
+          - "GET,POST /api/v1/institutions"
+          - "PATCH,DELETE /api/v1/institutions/*"
+          - "POST /api/v1/slots/*/release"
+          - "GET /api/v1/equipment-incidents"
+
+      # ── 검사기관 사용자만 ──
+      - roles: [EXAMINER]
+        rules:
+          - "POST /api/v1/institutions/*/equipments"
+          - "PATCH /api/v1/equipments/*"
+          - "PUT /api/v1/equipments/*/operating-hours"
+          - "GET /api/v1/equipments/*/status-histories"
+          - "POST /api/v1/examinations/*/results"
+          - "PATCH /api/v1/examinations/*/status"
+          - "PATCH /api/v1/referrals/*/complete"
+          - "GET /api/v1/examinations/*/results"
+          - "GET /api/v1/examinations"
+
+      # ── 의뢰기관 사용자만 ──
+      - roles: [REQUESTER]
+        rules:
+          - "POST /api/v1/exam-types"
+          - "PATCH /api/v1/exam-types/*"
+          - "POST /api/v1/referrals"
+          - "PATCH /api/v1/referrals/reservations/*/cancel"
+          - "GET /api/v1/referrals/*/results"
+
+      # ── 기관 사용자 (의뢰 + 검사) ──
+      - roles: [REQUESTER, EXAMINER]
+        rules:
+          - "POST /api/v1/partnerships"
+          - "GET /api/v1/partnerships/me"
+          - "PATCH /api/v1/partnerships/*/approve"
+          - "PATCH /api/v1/partnerships/*/reject"
+          - "GET /api/v1/institutions/*/equipments"
+          - "GET /api/v1/equipments/*"
+          - "GET /api/v1/equipments/*/operating-hours"
+          - "GET /api/v1/exam-types"
+          - "GET /api/v1/notifications"
+          - "GET /api/v1/notifications/unread-count"
+          - "PATCH /api/v1/notifications/*/read"
+
+      # ── 검사기관 사용자 + 관리자 ──
+      - roles: [EXAMINER, ADMIN]
+        rules:
+          - "POST /api/v1/slots"
+          - "PATCH,DELETE /api/v1/slots/*"
+          - "POST /api/v1/equipment-downtimes"
+          - "PATCH,DELETE /api/v1/equipment-downtimes/*"
+
+      # ── 의뢰기관 사용자 + 관리자 ──
+      - roles: [REQUESTER, ADMIN]
+        rules:
+          - "POST /api/v1/slots/*/hold"
+          - "POST /api/v1/slots/*/confirm"
+          - "GET /api/v1/referrals"
+          - "GET /api/v1/referrals/*/histories"
+          - "DELETE /api/v1/referrals/*"
+          - "DELETE /api/v1/referrals/reservations/*"
+
+      # ── 로그인 사용자 전체 ──
+      - roles: [REQUESTER, EXAMINER, ADMIN]
+        rules:
+          - "GET /api/v1/users/me"
+          - "GET /api/v1/institutions/*"
+          - "PATCH /api/v1/partnerships/*/terminate"
+          - "GET /api/v1/slots"
+          - "GET /api/v1/slots/*"
+          - "GET /api/v1/equipment-downtimes"
+          - "GET /api/v1/equipment-downtimes/*"
+          - "GET /api/v1/referrals/*"
+          - "GET /api/v1/referrals/reservations"
+          - "GET /api/v1/referrals/reservations/*"

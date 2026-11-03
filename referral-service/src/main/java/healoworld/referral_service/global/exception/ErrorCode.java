@@ -40,6 +40,9 @@ public enum ErrorCode {
     EXAMINATION_NOT_COMPLETED(HttpStatus.CONFLICT, "검사가 완료된 후에만 결과를 등록할 수 있습니다."),
     EXAMINATION_RESULT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 등록된 검사 결과가 있습니다."),
     EXAMINATION_RESULT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "해당 검사 결과를 등록할 권한이 없습니다."),
+    EXAMINATION_ACCESS_DENIED( HttpStatus.FORBIDDEN, "검사 상태를 변경할 권한이 없습니다."),
+    EXAMINATION_RESULT_NOT_FOUND( HttpStatus.NOT_FOUND, "등록된 검사 결과를 찾을 수 없습니다."),
+    EXAMINATION_RESULT_READ_ACCESS_DENIED(HttpStatus.FORBIDDEN, "해당 검사 결과를 조회할 권한이 없습니다."),
 
     // equipment incident
     EQUIPMENT_INCIDENT_NOT_FOUND(HttpStatus.NOT_FOUND, "장비 장애를 찾을 수 없습니다."),

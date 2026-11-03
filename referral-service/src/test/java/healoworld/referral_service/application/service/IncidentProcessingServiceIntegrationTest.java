@@ -5,11 +5,7 @@ import healoworld.referral_service.domain.entity.EquipmentIncident;
 import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
-import healoworld.referral_service.domain.enums.ExaminationStatus;
-import healoworld.referral_service.domain.enums.FailureReason;
-import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
-import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.ReservationStatus;
+import healoworld.referral_service.domain.enums.*;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -455,7 +451,12 @@ class IncidentProcessingServiceIntegrationTest {
 
         incidentProcessingService.process(taskId);
 
-        assertThatThrownBy(() -> examinationService.changeStatus(examinationId, ExaminationStatus.IN_PROGRESS))
+        assertThatThrownBy(() -> examinationService.changeStatus(
+                        examinationId,
+                        booking.examInstitutionId(),
+                        RoleType.EXAMINER,
+                        ExaminationStatus.IN_PROGRESS
+                ))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.EXAMINATION_START_NOT_ALLOWED);
         assertThat(examinationRepository.findById(examinationId).orElseThrow().getStatus())

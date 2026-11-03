@@ -5,11 +5,14 @@ import healoworld.slot_service.domain.enums.SlotStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -57,4 +60,55 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
             @Param("visibleEquipmentIds") Set<UUID> visibleEquipmentIds,
             Pageable pageable
     );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update Slot s
+           set s.status = :held,
+               s.reservationId = :reservationId,
+               s.heldUntil = :heldUntil,
+               s.updatedAt = :now
+         where s.id = :slotId
+           and s.status = :available
+           and s.deletedAt is null
+        """)
+    int holdIfAvailable(@Param("slotId") UUID slotId,
+                        @Param("reservationId") UUID reservationId,
+                        @Param("heldUntil") LocalDateTime heldUntil,
+                        @Param("now") LocalDateTime now,
+                        @Param("held") SlotStatus held,
+                        @Param("available") SlotStatus available);
+
+    // HOLD 만료 대상 조회. 오래된 HOLD부터 처리한다
+    @Query("""
+        select s
+          from Slot s
+         where s.status = :held
+           and s.heldUntil <= :now
+           and s.deletedAt is null
+         order by s.heldUntil asc
+        """)
+    List<Slot> findExpiredHolds(@Param("held") SlotStatus held,
+                                @Param("now") LocalDateTime now,
+                                Pageable pageable);
+
+    // 아직 같은 예약으로 HELD이고 만료 시각이 지난 경우에만 AVAILABLE로 되돌린다.
+    // 조회 후 그 사이 확정되거나 다른 예약으로 다시 HOLD된 슬롯은 0행이 반환된다
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update Slot s
+           set s.status = :available,
+               s.reservationId = null,
+               s.heldUntil = null,
+               s.updatedAt = :now
+         where s.id = :slotId
+           and s.reservationId = :reservationId
+           and s.status = :held
+           and s.heldUntil <= :now
+        """)
+    int expireHoldIfDue(@Param("slotId") UUID slotId,
+                        @Param("reservationId") UUID reservationId,
+                        @Param("now") LocalDateTime now,
+                        @Param("held") SlotStatus held,
+                        @Param("available") SlotStatus available);
 }

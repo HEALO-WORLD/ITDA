@@ -2,6 +2,7 @@ package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
@@ -35,8 +36,8 @@ class ExaminationServiceTest {
     @InjectMocks
     private ExaminationService examinationService;
 
-    private Examination examination(UUID id, UUID referralId, UUID reservationId, ExaminationStatus status) {
-        Examination examination = Examination.schedule(referralId, reservationId, UUID.randomUUID());
+    private Examination examination(UUID id, UUID referralId, UUID reservationId, ExaminationStatus status, UUID institutionId ) {
+        Examination examination = Examination.schedule(referralId, reservationId, institutionId);
         ReflectionTestUtils.setField(examination, "id", id);
         ReflectionTestUtils.setField(examination, "status", status);
         return examination;
@@ -45,18 +46,55 @@ class ExaminationServiceTest {
     @Test
     @DisplayName("완료 UPDATE가 0건이지만 다른 요청이 이미 완료했다면 중복 요청으로 보고 현재 상태를 돌려준다")
     void completeLostRaceToSameRequest() {
+
+        // given
         UUID id = UUID.randomUUID();
         UUID referralId = UUID.randomUUID();
         UUID reservationId = UUID.randomUUID();
+        UUID institutionId = UUID.randomUUID();
+
+        // 처음 조회: 검사 진행 중
+        Examination inProgress = examination(
+                id,
+                referralId,
+                reservationId,
+                ExaminationStatus.IN_PROGRESS,
+                institutionId
+        );
+
+        // 두 번째 조회: 다른 요청이 먼저 완료한 상태
+        Examination completed = examination(
+                id,
+                referralId,
+                reservationId,
+                ExaminationStatus.COMPLETED,
+                institutionId
+        );
+
         given(examinationRepository.findById(id)).willReturn(
-                Optional.of(examination(id, referralId, reservationId, ExaminationStatus.IN_PROGRESS)),
-                Optional.of(examination(id, referralId, reservationId, ExaminationStatus.COMPLETED)));
-        given(examinationRepository.completeIfInProgress(eq(id), any())).willReturn(0);
+                Optional.of(inProgress),
+                Optional.of(completed)
+        );
 
-        ExaminationStatusChangeResponse response = examinationService.changeStatus(id, ExaminationStatus.COMPLETED);
+        // 다른 요청이 먼저 변경해서 UPDATE 0건
+        given(examinationRepository.completeIfInProgress(eq(id), any()))
+                .willReturn(0);
 
-        assertThat(response.previousStatus()).isEqualTo(ExaminationStatus.COMPLETED);
-        assertThat(response.currentStatus()).isEqualTo(ExaminationStatus.COMPLETED);
+        // when
+        ExaminationStatusChangeResponse response =
+                examinationService.changeStatus(
+                        id,
+                        institutionId,
+                        RoleType.EXAMINER,
+                        ExaminationStatus.COMPLETED
+                );
+
+        // then
+        assertThat(response.previousStatus())
+                .isEqualTo(ExaminationStatus.COMPLETED);
+
+        assertThat(response.currentStatus())
+                .isEqualTo(ExaminationStatus.COMPLETED);
     }
 
     @Test
@@ -66,10 +104,10 @@ class ExaminationServiceTest {
         UUID referralId = UUID.randomUUID();
         UUID reservationA = UUID.randomUUID();
         given(examinationRepository.findByReferralId(referralId)).willReturn(
-                Optional.of(examination(id, referralId, reservationA, ExaminationStatus.SCHEDULED)));
+                Optional.of(examination(id, referralId, reservationA, ExaminationStatus.SCHEDULED, UUID.randomUUID())));
         given(examinationRepository.changeReservationIfScheduled(eq(id), any(), any(), any())).willReturn(0);
         given(examinationRepository.findById(id)).willReturn(
-                Optional.of(examination(id, referralId, reservationA, ExaminationStatus.IN_PROGRESS)));
+                Optional.of(examination(id, referralId, reservationA, ExaminationStatus.IN_PROGRESS, UUID.randomUUID())));
 
         assertThatThrownBy(() -> examinationService.updateReservation(referralId, UUID.randomUUID(), UUID.randomUUID()))
                 .isInstanceOf(BaseException.class)

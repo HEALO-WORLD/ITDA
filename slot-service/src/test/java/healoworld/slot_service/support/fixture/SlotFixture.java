@@ -32,7 +32,9 @@ public final class SlotFixture {
     /** 지정한 예약으로 HOLD된 슬롯. heldUntil을 직접 정할 수 있어 만료 테스트(#C)에 사용 */
     public static Slot held(UUID reservationId, LocalDateTime heldUntil) {
         Slot slot = available();
-        slot.hold(reservationId, heldUntil.minus(Slot.HOLD_DURATION));
+        ReflectionTestUtils.setField(slot, "status", SlotStatus.HELD);
+        ReflectionTestUtils.setField(slot, "reservationId", reservationId);
+        ReflectionTestUtils.setField(slot, "heldUntil", heldUntil);
         return slot;
     }
 
