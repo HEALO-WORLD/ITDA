@@ -31,7 +31,9 @@ public class SlotResultService {
     private final ReferralHistoryRepository referralHistoryRepository;
     private final SlotCommandOutbox slotCommandOutbox;
 
-    public void handle(UUID eventId, String eventType, UUID reservationId, UUID referralId) {
+    public void handle(UUID eventId, String eventType, UUID reservationId) {
+        UUID referralId = reservationRepository.findReferralIdById(reservationId)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
 
         Referral referral = referralRepository.findByIdForUpdate(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
