@@ -1,6 +1,8 @@
 package healoworld.referral_service.infrastructure.repository;
 
 import healoworld.referral_service.domain.entity.Examination;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -14,6 +16,12 @@ import java.util.UUID;
 public interface ExaminationRepository extends JpaRepository<Examination, UUID> {
 
     Optional<Examination> findByReferralId(UUID referralId);
+
+    // 검사기관별 검사 목록 조회
+    Page<Examination> findByExamInstitutionId(
+            UUID examInstitutionId,
+            Pageable pageable
+    );
 
     // 특정 의뢰에 연결된 검사 기록의 개수를 조회한다
     // 동시 생성 요청 이후 검사가 정확히 1건만 저장됐는지 검증하기 위해 사용한다
@@ -60,4 +68,5 @@ public interface ExaminationRepository extends JpaRepository<Examination, UUID> 
     int changeReservationIfScheduled(@Param("id") UUID id, @Param("reservationId") UUID reservationId,
                                      @Param("examInstitutionId") UUID examInstitutionId,
                                      @Param("now") LocalDateTime now);
+
 }
