@@ -20,5 +20,12 @@ public interface PartnershipRepository extends JpaRepository<Partnership, UUID> 
             "where p.requesterInstitution.id = :requesterInstitutionId and p.status = :status")
     List<UUID> findExamInstitutionIds(UUID requesterInstitutionId, PartnershipStatus status);
 
+    @Query("select p from Partnership p " +
+            "join fetch p.requesterInstitution " +
+            "join fetch p.examInstitution " +
+            "where (p.requesterInstitution.id = :institutionId or p.examInstitution.id = :institutionId) " +
+            "and (:status is null or p.status = :status) " +
+            "order by p.requestedAt")
+    List<Partnership> findMyPartnerships(UUID institutionId, PartnershipStatus status);
 
 }

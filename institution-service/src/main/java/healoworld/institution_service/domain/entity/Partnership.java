@@ -47,4 +47,9 @@ public class Partnership extends BaseEntity {
         return status == PartnershipStatus.ACTIVE;
     }
 
+    // 내 기관 기준으로 협약 상대 기관
+    public Institution getPartnerOf(UUID myInstitutionId) {
+        return requesterInstitution.getId().equals(myInstitutionId) ? examInstitution : requesterInstitution;
+    }
+
 }
