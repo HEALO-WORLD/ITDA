@@ -1,6 +1,7 @@
 package healoworld.institution_service.infrastructure.repository;
 
 import healoworld.institution_service.domain.entity.User;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -12,4 +13,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByLoginIdAndDeletedAtIsNull(String loginId);
 
+    @EntityGraph(attributePaths = "institution")
+    List<User> findAllByActiveAndDeletedAtIsNullOrderByCreatedAtDesc(boolean active);
+
+    @EntityGraph(attributePaths = "institution")
+    List<User> findAllByDeletedAtIsNullOrderByCreatedAtDesc();
+
+    @EntityGraph(attributePaths = "institution")
+    Optional<User> findWithInstitutionByIdAndDeletedAtIsNull(UUID id);
 }
