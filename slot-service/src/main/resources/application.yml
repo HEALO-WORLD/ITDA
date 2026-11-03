@@ -41,6 +41,9 @@ outbox:
   publish:
     fixed-delay-ms: 1000
 
+hold-expiry:
+  fixed-delay-ms: 10000   # HOLD 만료 스캔 간격 (회차 종료 후 대기)
+
 eureka:
   client:
     service-url:
