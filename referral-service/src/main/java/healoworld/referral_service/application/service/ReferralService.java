@@ -11,12 +11,14 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
+import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.request.ReferralSearchCondition;
 import healoworld.referral_service.presentation.dto.response.ReferralResponse;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,14 +33,29 @@ public class ReferralService {
     private final ReferralRepository referralRepository;
     private final ReferralHistoryRepository referralHistoryRepository;
     private final ReservationService reservationService;
+    private final ReservationRepository reservationRepository;
 
     public ReferralResponse createReferral(UUID userId, CreateReferralRequest createReferralRequest) {
         Optional<Referral> referral = referralRepository.findByIdempotencyKey(createReferralRequest.getIdempotencyKey());
         if (referral.isPresent()) {
-            return ReferralResponse.from(referral.get());
+            Optional<Reservation> firstReservation = reservationRepository.findByReferralIdAndAttemptNo(referral.get().getId(), 1);
+            if (firstReservation.isPresent()) {
+                if (!referral.get().isSameRequest(userId, createReferralRequest.getReferringInstitutionId(), createReferralRequest.getExamTypeId(), createReferralRequest.getPatientName())
+                        || !createReferralRequest.getReservation().getSlotId().equals(firstReservation.get().getSlotId())
+                ) {
+                    throw new BaseException(ErrorCode.REFERRAL_IDEMPOTENCY_CONFLICT);
+                }
+                return ReferralResponse.from(referral.get());
+            }
+            throw new BaseException(ErrorCode.REFERRAL_IDEMPOTENCY_CONFLICT);
         }
+
         Referral createdReferral = Referral.create(createReferralRequest.getReferringInstitutionId(), userId, createReferralRequest.getExamTypeId(), createReferralRequest.getPatientName(), createReferralRequest.getIdempotencyKey());
-        referralRepository.save(createdReferral);
+        try {
+            referralRepository.saveAndFlush(createdReferral);
+        } catch (DataIntegrityViolationException e) {
+            throw new BaseException(ErrorCode.REFERRAL_IDEMPOTENCY_CONFLICT);
+        }
 
         UUID outboxEventId = UUID.randomUUID();
 
@@ -82,7 +99,7 @@ public class ReferralService {
     }
 
     public ReservationResponse createRescheduledReservation(UUID userId, RoleType role, UUID referralId, CreateReservationRequest request) {
-        Referral referral = referralRepository.findById(referralId)
+        Referral referral = referralRepository.findByIdForUpdate(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
 
         if (!(userId.equals(referral.getReferrerId()) || role == RoleType.ADMIN)) {

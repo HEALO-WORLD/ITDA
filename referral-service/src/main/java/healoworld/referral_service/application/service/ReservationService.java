@@ -9,7 +9,6 @@ import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
-import healoworld.referral_service.global.outbox.OutboxEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
@@ -22,7 +21,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.json.JsonMapper;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -35,6 +33,7 @@ public class ReservationService {
     private final ReservationRepository reservationRepository;
     private final ReferralHistoryRepository referralHistoryRepository;
     private final SlotCommandOutbox slotCommandOutbox;
+    private final ReferralRepository referralRepository;
 
     public Reservation createReservation(UUID outboxEventId, Referral referral, CreateReservationRequest createReservationRequest) {
         int attemptNo = reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId())
@@ -84,10 +83,16 @@ public class ReservationService {
 
     // 예약 취소
     public void cancelReservation(UUID userId, UUID institutionId, RoleType role, UUID reservationId) {
+        UUID referralId = reservationRepository.findReferralIdById(reservationId)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
+
+        Referral referral = referralRepository.findByIdForUpdate(referralId)
+                .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
+
         Reservation reservation = reservationRepository.findById(reservationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
 
-        if (!(institutionId.equals(reservation.getReferral().getReferringInstitutionId())
+        if (!(institutionId.equals(referral.getReferringInstitutionId())
                 || role == RoleType.ADMIN)
         ) {
             throw new BaseException(ErrorCode.RESERVATION_NOT_FOUND);
@@ -98,21 +103,21 @@ public class ReservationService {
             throw new BaseException(ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
         }
 
-        ReferralStatus fromStatus = reservation.getReferral().getReferralStatus();
+        ReferralStatus fromStatus = referral.getReferralStatus();
 
         // reservation status CANCELED 변경
         reservation.cancel();
         reservationRepository.save(reservation);
 
         // referral status CANCELED 변경
-        reservation.getReferral().cancel();
+        referral.cancel();
 
         // ReleaseSlot 이벤트 발행 (Outbox 기록)
         String eventType = "ReleaseSlot";
         UUID eventId = slotCommandOutbox.recordOutbox(reservation, eventType);
 
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(reservation.getReferral(), reservation, fromStatus, reservation.getReferral().getReferralStatus(), Reason.CANCELED_BY_REQUESTER, eventId, userId);
+        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.CANCELED_BY_REQUESTER, eventId, userId);
         referralHistoryRepository.save(history);
     }
 }
