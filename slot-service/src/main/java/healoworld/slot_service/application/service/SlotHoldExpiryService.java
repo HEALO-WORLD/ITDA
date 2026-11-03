@@ -1,6 +1,6 @@
 package healoworld.slot_service.application.service;
 
-import healoworld.slot_service.application.event.HoldExpiredEvent;
+import healoworld.slot_service.application.event.result.HoldExpiredEvent;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.global.outbox.OutboxEvent;
 import healoworld.slot_service.global.outbox.OutboxEventRepository;
