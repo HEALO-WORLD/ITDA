@@ -94,7 +94,6 @@ gateway:
         rules:
           - "POST /api/v1/exam-types"
           - "PATCH /api/v1/exam-types/*"
-          - "POST /api/v1/referrals"
           - "PATCH /api/v1/referrals/reservations/*/cancel"
           - "GET /api/v1/referrals/*/results"
 
@@ -129,6 +128,8 @@ gateway:
         rules:
           - "POST /api/v1/slots/*/hold"
           - "POST /api/v1/slots/*/confirm"
+          - "POST /api/v1/referrals"
+          - "POST /api/v1/referrals/*/reschedule"
           - "GET /api/v1/referrals"
           - "GET /api/v1/referrals/*/histories"
           - "DELETE /api/v1/referrals/*"
