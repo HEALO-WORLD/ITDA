@@ -3,6 +3,7 @@ package healoworld.slot_service.global.outbox;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "outbox.publish.enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxPublisher {
 
     private static final long SEND_TIMEOUT_SECONDS = 15;   // Kafka 응답 대기 시간
