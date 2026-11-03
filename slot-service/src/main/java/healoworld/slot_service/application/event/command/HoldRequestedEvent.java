@@ -1,4 +1,4 @@
-package healoworld.slot_service.application.event;
+package healoworld.slot_service.application.event.command;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -9,8 +9,7 @@ public record HoldRequestedEvent(
         String eventType,
         LocalDateTime occurredAt,
         UUID slotId,
-        UUID reservationId,
-        UUID referralId
-) {
+        UUID reservationId
+) implements SlotCommand {
     public static final String TYPE = "HoldRequested";
 }

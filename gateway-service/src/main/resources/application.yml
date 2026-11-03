@@ -68,17 +68,16 @@ gateway:
 
     groups:
       # ── 관리자만 ──
-      - roles: [ADMIN]
+      - roles: [ ADMIN ]
         rules:
           - "GET /api/v1/users"
           - "PATCH /api/v1/users/*/approve"
           - "GET,POST /api/v1/institutions"
           - "PATCH,DELETE /api/v1/institutions/*"
           - "POST /api/v1/slots/*/release"
-          - "GET /api/v1/equipment-incidents"
 
       # ── 검사기관 사용자만 ──
-      - roles: [EXAMINER]
+      - roles: [ EXAMINER ]
         rules:
           - "POST /api/v1/institutions/*/equipments"
           - "PATCH /api/v1/equipments/*"
@@ -91,16 +90,15 @@ gateway:
           - "GET /api/v1/examinations"
 
       # ── 의뢰기관 사용자만 ──
-      - roles: [REQUESTER]
+      - roles: [ REQUESTER ]
         rules:
           - "POST /api/v1/exam-types"
           - "PATCH /api/v1/exam-types/*"
-          - "POST /api/v1/referrals"
           - "PATCH /api/v1/referrals/reservations/*/cancel"
           - "GET /api/v1/referrals/*/results"
 
       # ── 기관 사용자 (의뢰 + 검사) ──
-      - roles: [REQUESTER, EXAMINER]
+      - roles: [ REQUESTER, EXAMINER ]
         rules:
           - "POST /api/v1/partnerships"
           - "GET /api/v1/partnerships/me"
@@ -115,25 +113,30 @@ gateway:
           - "PATCH /api/v1/notifications/*/read"
 
       # ── 검사기관 사용자 + 관리자 ──
-      - roles: [EXAMINER, ADMIN]
+      - roles: [ EXAMINER, ADMIN ]
         rules:
           - "POST /api/v1/slots"
           - "PATCH,DELETE /api/v1/slots/*"
           - "POST /api/v1/equipment-downtimes"
           - "PATCH,DELETE /api/v1/equipment-downtimes/*"
+          - "GET /api/v1/equipment-incidents"
+          - "GET /api/v1/equipment-incidents/{incidentId}"
+          - "GET /api/v1/equipment-incidents/{incidentId}/referrals"
 
       # ── 의뢰기관 사용자 + 관리자 ──
-      - roles: [REQUESTER, ADMIN]
+      - roles: [ REQUESTER, ADMIN ]
         rules:
           - "POST /api/v1/slots/*/hold"
           - "POST /api/v1/slots/*/confirm"
+          - "POST /api/v1/referrals"
+          - "POST /api/v1/referrals/*/reschedule"
           - "GET /api/v1/referrals"
           - "GET /api/v1/referrals/*/histories"
           - "DELETE /api/v1/referrals/*"
           - "DELETE /api/v1/referrals/reservations/*"
 
       # ── 로그인 사용자 전체 ──
-      - roles: [REQUESTER, EXAMINER, ADMIN]
+      - roles: [ REQUESTER, EXAMINER, ADMIN ]
         rules:
           - "GET /api/v1/users/me"
           - "GET /api/v1/institutions/*"

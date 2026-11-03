@@ -1,0 +1,142 @@
+package healoworld.institution_service.application.service.examtype;
+
+import healoworld.institution_service.domain.entity.ExamType;
+import healoworld.institution_service.domain.enums.Modality;
+import healoworld.institution_service.domain.enums.Role;
+import healoworld.institution_service.global.dto.PagedResponse;
+import healoworld.institution_service.global.exception.BaseException;
+import healoworld.institution_service.global.exception.ErrorCode;
+import healoworld.institution_service.infrastructure.repository.ExamTypeRepository;
+import healoworld.institution_service.presentation.dto.request.ExamTypeCreateRequest;
+import healoworld.institution_service.presentation.dto.request.ExamTypeUpdateRequest;
+import healoworld.institution_service.presentation.dto.response.ExamTypeCreateResponse;
+import healoworld.institution_service.presentation.dto.response.ExamTypeResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class ExamTypeService {
+
+    private final ExamTypeRepository examTypeRepository;
+
+    @Transactional
+    public ExamTypeCreateResponse createExamType(
+            ExamTypeCreateRequest request,
+            UUID userId,
+            Role userRole
+    ) {
+        if (userId == null || userRole == null) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        if (userRole != Role.REQUESTER) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
+
+        validateRequest(request);
+
+        ExamType examType = ExamType.create(
+                request.getName(),
+                request.getModality(),
+                request.getDurationMinutes()
+        );
+
+        ExamType savedExamType = examTypeRepository.save(examType);
+
+        return ExamTypeCreateResponse.from(savedExamType);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<ExamTypeResponse> getExamTypes(
+            UUID userId,
+            Role userRole,
+            Modality modality,
+            Integer page,
+            Integer size
+    ) {
+        if (userId == null || userRole == null) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        if (userRole != Role.REQUESTER && userRole != Role.EXAMINER) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
+
+        if (page == null || size == null
+                || page < 0 || size < 1 || size > 100) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        Page<ExamType> examTypes = examTypeRepository.findExamTypes(modality, pageable);
+
+        Page<ExamTypeResponse> responses = examTypes.map(ExamTypeResponse::from);
+
+        return PagedResponse.from(responses);
+    }
+
+    @Transactional
+    public ExamTypeResponse updateExamType(
+            UUID examTypeId,
+            ExamTypeUpdateRequest request,
+            UUID userId,
+            Role userRole
+    ) {
+        if (examTypeId == null || userId == null || userRole == null) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        if (userRole != Role.REQUESTER) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
+
+        validateUpdateRequest(request);
+
+        ExamType examType = examTypeRepository.findByIdAndDeletedAtIsNull(examTypeId).orElseThrow(() ->
+                        new BaseException(ErrorCode.RESOURCE_NOT_FOUND)
+                );
+
+        examType.update(request.getName(), request.getDurationMinutes());
+
+        return ExamTypeResponse.from(examType);
+    }
+
+    private void validateRequest(ExamTypeCreateRequest request) {
+        if (request == null
+                || request.getName() == null
+                || request.getName().isBlank()
+                || request.getName().length() > 50
+                || request.getModality() == null
+                || request.getDurationMinutes() == null
+                || request.getDurationMinutes() < 1) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private void validateUpdateRequest(ExamTypeUpdateRequest request) {
+        if (request == null
+                || (request.getName() == null
+                && request.getDurationMinutes() == null)) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        if (request.getName() != null
+                && (request.getName().isBlank()
+                || request.getName().length() > 50)) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        if (request.getDurationMinutes() != null
+                && request.getDurationMinutes() < 1) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+    }
+}
