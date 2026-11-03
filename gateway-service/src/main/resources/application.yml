@@ -88,6 +88,7 @@ gateway:
           - "PATCH /api/v1/examinations/*/status"
           - "PATCH /api/v1/referrals/*/complete"
           - "GET /api/v1/examinations/*/results"
+          - "GET /api/v1/examinations"
 
       # ── 의뢰기관 사용자만 ──
       - roles: [REQUESTER]
