@@ -6,6 +6,7 @@ import healoworld.referral_service.domain.enums.ReservationStatus;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+
 public record ReservationEventPayload(
         UUID reservationId,
         UUID referralId,
@@ -13,16 +14,19 @@ public record ReservationEventPayload(
         UUID slotId,
         UUID examInstitutionId,
         UUID equipmentId,
+        UUID eventId,
+        String eventType,
         LocalDateTime examDate,
         LocalDateTime startTime,
         LocalDateTime endTime,
         ReservationStatus reservationStatus,
         LocalDateTime occurredAt
 ) {
-    public static ReservationEventPayload from(Reservation r) {
+    public static ReservationEventPayload from(Reservation r, UUID eventId, String eventType) {
         return new ReservationEventPayload(
                 r.getId(), r.getReferral().getId(), r.getAttemptNo(), r.getSlotId(),
                 r.getExamInstitutionId(), r.getEquipmentId(),
+                eventId, eventType,
                 r.getExamDate(), r.getStartTime(), r.getEndTime(), r.getReservationStatus(), LocalDateTime.now());
     }
 }
