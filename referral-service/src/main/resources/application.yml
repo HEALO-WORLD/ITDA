@@ -57,6 +57,9 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
 
 management:
+  tracing:
+    sampling:
+      probability: 1.0   # 개발 단계: 모든 요청 샘플링 (운영 시 낮춤)
   endpoints:
     web:
       exposure:
@@ -64,3 +67,11 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+# 공통 로그 설정 (모든 서비스 동일, 서비스별 상세 레벨은 아래에 추가)
+logging:
+  include-application-name: true   # 로그에 [서비스명] 출력
+  level:
+    root: INFO
+    healoworld: INFO
+    org.apache.kafka: WARN         # Kafka 클라이언트 접속·설정 로그 소음 감소
