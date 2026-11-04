@@ -26,7 +26,7 @@ public class EquipmentExamTypeResponse {
                 equipmentExamType.getExamTypeId(),
                 examType.getName(),
                 examType.getModality(),
-                examType.getDurationMinutes()
+                equipmentExamType.getDurationMinutes()
         );
     }
 }

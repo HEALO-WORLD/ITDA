@@ -14,6 +14,7 @@ import healoworld.institution_service.infrastructure.repository.EquipmentReposit
 import healoworld.institution_service.infrastructure.repository.ExamTypeRepository;
 import healoworld.institution_service.infrastructure.repository.InstitutionRepository;
 import healoworld.institution_service.presentation.dto.request.EquipmentExamTypeCreateRequest;
+import healoworld.institution_service.presentation.dto.request.EquipmentExamTypeUpdateRequest;
 import healoworld.institution_service.presentation.dto.response.EquipmentExamTypeResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -44,6 +45,8 @@ public class EquipmentExamTypeService {
         if (equipmentId == null
                 || request == null
                 || request.getExamTypeId() == null
+                || request.getDurationMinutes() == null
+                || request.getDurationMinutes() < 1
                 || userId == null
                 || userInstitutionId == null
                 || userRole == null) {
@@ -54,20 +57,7 @@ public class EquipmentExamTypeService {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
 
-        Equipment equipment = equipmentRepository.findForUpdateById(equipmentId)
-                .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
-
-        if (!equipment.getInstitutionId().equals(userInstitutionId)) {
-            throw new BaseException(ErrorCode.FORBIDDEN);
-        }
-
-        Institution institution = institutionRepository.findByIdAndDeletedAtIsNull(userInstitutionId)
-                        .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
-
-        if (!institution.isActive()
-                || institution.getType() != InstitutionType.EXAM) {
-            throw new BaseException(ErrorCode.FORBIDDEN);
-        }
+        Equipment equipment = findOwnedEquipmentForUpdate(equipmentId, userInstitutionId);
 
         ExamType examType = examTypeRepository.findByIdAndDeletedAtIsNull(request.getExamTypeId())
                         .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -80,11 +70,45 @@ public class EquipmentExamTypeService {
             throw new BaseException(ErrorCode.DUPLICATE_EQUIPMENT_EXAM_TYPE);
         }
 
-        EquipmentExamType equipmentExamType = EquipmentExamType.create(equipment, examType);
+        EquipmentExamType equipmentExamType = EquipmentExamType.create(
+                equipment, examType, request.getDurationMinutes()
+        );
 
         EquipmentExamType saved = equipmentExamTypeRepository.save(equipmentExamType);
 
         return EquipmentExamTypeResponse.from(saved, examType);
+    }
+
+    @Transactional
+    public EquipmentExamTypeResponse updateEquipmentExamType(
+            UUID equipmentId,
+            UUID examTypeId,
+            EquipmentExamTypeUpdateRequest request,
+            UUID userId,
+            UUID userInstitutionId,
+            Role userRole
+    ) {
+        if (equipmentId == null || examTypeId == null || request == null
+                || request.getDurationMinutes() == null || request.getDurationMinutes() < 1
+                || userId == null || userInstitutionId == null || userRole == null) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        if (userRole != Role.EXAMINER) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
+
+        findOwnedEquipmentForUpdate(equipmentId, userInstitutionId);
+
+        ExamType examType = examTypeRepository.findByIdAndDeletedAtIsNull(examTypeId)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        EquipmentExamType equipmentExamType = equipmentExamTypeRepository
+                .findByEquipmentIdAndExamTypeIdAndDeletedAtIsNull(equipmentId, examTypeId)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        equipmentExamType.changeDurationMinutes(request.getDurationMinutes());
+        return EquipmentExamTypeResponse.from(equipmentExamType, examType);
     }
 
     @Transactional(readOnly = true)
@@ -114,5 +138,23 @@ public class EquipmentExamTypeService {
         );
 
         return PagedResponse.from(responses);
+    }
+
+    private Equipment findOwnedEquipmentForUpdate(UUID equipmentId, UUID userInstitutionId) {
+        Equipment equipment = equipmentRepository.findForUpdateById(equipmentId)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (!equipment.getInstitutionId().equals(userInstitutionId)) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
+
+        Institution institution = institutionRepository.findByIdAndDeletedAtIsNull(userInstitutionId)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (!institution.isActive() || institution.getType() != InstitutionType.EXAM) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
+
+        return equipment;
     }
 }

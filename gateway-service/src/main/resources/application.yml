@@ -76,6 +76,8 @@ gateway:
           - "PATCH,DELETE /api/v1/institutions/*"
           - "POST /api/v1/slots/*/release"
           - "GET /api/v1/slots/*/status-histories"
+          - "POST /api/v1/exam-types"
+          - "PATCH /api/v1/exam-types/*"
 
       # ── 검사기관 사용자만 ──
       - roles: [ EXAMINER ]
@@ -83,6 +85,7 @@ gateway:
           - "POST /api/v1/institutions/*/equipments"
           - "PATCH /api/v1/equipments/*"
           - "POST /api/v1/equipments/*/exam-types"
+          - "PATCH /api/v1/equipments/*/exam-types/*"
           - "PUT /api/v1/equipments/*/operating-hours"
           - "GET /api/v1/equipments/*/status-histories"
           - "POST /api/v1/examinations/*/results"
@@ -94,8 +97,6 @@ gateway:
       # ── 의뢰기관 사용자만 ──
       - roles: [ REQUESTER ]
         rules:
-          - "POST /api/v1/exam-types"
-          - "PATCH /api/v1/exam-types/*"
           - "PATCH /api/v1/referrals/reservations/*/cancel"
           - "GET /api/v1/referrals/*/results"
 
@@ -110,7 +111,6 @@ gateway:
           - "GET /api/v1/equipments/*"
           - "GET /api/v1/equipments/*/operating-hours"
           - "GET /api/v1/equipments/*/exam-types"
-          - "GET /api/v1/exam-types"
           - "GET /api/v1/notifications"
           - "GET /api/v1/notifications/unread-count"
           - "PATCH /api/v1/notifications/*/read"
@@ -139,6 +139,7 @@ gateway:
       # ── 로그인 사용자 전체 ──
       - roles: [ REQUESTER, EXAMINER, ADMIN ]
         rules:
+          - "GET /api/v1/exam-types"
           - "GET /api/v1/users/me"
           - "GET /api/v1/institutions/*"
           - "PATCH /api/v1/partnerships/*/terminate"
