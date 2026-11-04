@@ -70,6 +70,8 @@ public class SlotResultService {
             case "SlotBooked":
                 if (isExpected(reservation, eventId, eventType, ReservationStatus.HELD)) {
                     slotBookedHandler(referral, reservation, eventId);
+                } else if (isExpected(reservation, eventId, eventType, ReservationStatus.BLOCKED, ReservationStatus.FAILED, ReservationStatus.CANCELED)) {
+                    releaseOrphanSlot(reservation, eventId);
                 }
                 break;
 
@@ -208,5 +210,12 @@ public class SlotResultService {
         } else {
             referral.fail();
         }
+    }
+
+    // 이미 끝난 예약(BLOCKED/FAILED/CANCELED)에 슬롯이 확정되면 슬롯을 풀어준다
+    private void releaseOrphanSlot(Reservation reservation, UUID eventId) {
+        UUID releaseEventId = slotCommandOutbox.recordOutbox(reservation, "ReleaseSlot");
+        log.warn("종료된 예약에 SlotBooked 수신, 보상 ReleaseSlot 발행. eventId={}, reservationId={}, status={}, releaseEventId={}",
+                eventId, reservation.getId(), reservation.getReservationStatus(), releaseEventId);
     }
 }

@@ -186,7 +186,7 @@ class SlotResultServiceTest {
     @CsvSource({
             "SlotHeld, HELD", "SlotHeld, CONFIRMED", "SlotHeld, FAILED", "SlotHeld, BLOCKED", "SlotHeld, CANCELED",
             "SlotHoldFailed, HELD", "SlotHoldFailed, CONFIRMED", "SlotHoldFailed, FAILED",
-            "SlotBooked, REQUESTED", "SlotBooked, CONFIRMED", "SlotBooked, FAILED", "SlotBooked, BLOCKED",
+            "SlotBooked, REQUESTED", "SlotBooked, CONFIRMED",
             "SlotBookFailed, REQUESTED", "SlotBookFailed, CONFIRMED", "SlotBookFailed, FAILED",
             "HoldExpired, REQUESTED", "HoldExpired, CONFIRMED", "HoldExpired, FAILED",
             "SlotsBlocked, FAILED", "SlotsBlocked, BLOCKED", "SlotsBlocked, CANCELED"
@@ -202,6 +202,34 @@ class SlotResultServiceTest {
         assertThat(referral.getReferralStatus()).isEqualTo(referralBefore);
         verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
         verify(consumedEventRepository).save(any(ConsumedEvent.class));
+    }
+
+    @ParameterizedTest(name = "SlotBooked: 예약이 {0}이면 ReleaseSlot 발행")
+    @EnumSource(value = ReservationStatus.class, names = {"BLOCKED", "FAILED", "CANCELED"})
+    @DisplayName("보상: 이미 끝난 예약에 SlotBooked가 오면 ReleaseSlot으로 슬롯을 풀고, 예약·의뢰 상태와 이력은 그대로 둔다")
+    void releasesSlotWhenReservationTerminated(ReservationStatus status) {
+        Reservation reservation = stored(status, referral);
+        ReferralStatus referralBefore = referral.getReferralStatus();
+
+        handle("SlotBooked", reservation);
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(status);
+        assertThat(referral.getReferralStatus()).isEqualTo(referralBefore);
+        verify(slotCommandOutbox).recordOutbox(reservation, "ReleaseSlot");
+        verifyNoInteractions(referralHistoryRepository, examinationService);
+        verify(consumedEventRepository).save(any(ConsumedEvent.class));
+    }
+
+    @Test
+    @DisplayName("보상: 예약이 CONFIRMED면 SlotBooked 중복 수신이므로 슬롯을 풀지 않는다")
+    void doesNotReleaseSlotWhenConfirmed() {
+        Reservation reservation = stored(ReservationStatus.CONFIRMED, referral);
+
+        handle("SlotBooked", reservation);
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
+        verify(slotCommandOutbox, never()).recordOutbox(any(Reservation.class), any(String.class));
+        verifyNoInteractions(referralHistoryRepository, examinationService);
     }
 
     @Test
