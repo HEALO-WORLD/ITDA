@@ -53,6 +53,7 @@ public class UserService {
             if (userRepository.existsByLoginId(request.loginId())) {
                 throw new BaseException(ErrorCode.DUPLICATE_LOGIN_ID);
             }
+            throw e;
         }
 
         return SignupResponse.from(user);
