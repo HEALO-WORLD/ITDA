@@ -1,12 +1,6 @@
 package healoworld.referral_service.domain.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,7 +14,17 @@ import java.util.UUID;
 // ERD에 created_by/updated_at/deleted_at 컬럼이 없으므로 BaseEntity를 상속하지 않는다
 @Getter
 @Entity
-@Table(name = "p_notifications")
+@Table(
+        name = "p_notifications",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_notifications_incident_recipient_type",
+                columnNames = {
+                        "incident_referral_id",
+                        "recipient_user_id",
+                        "type"
+                }
+        )
+)
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Notification {

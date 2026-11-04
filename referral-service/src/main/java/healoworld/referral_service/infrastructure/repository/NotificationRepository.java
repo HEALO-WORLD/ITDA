@@ -30,4 +30,11 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     int markAsReadIfUnread(@Param("id") UUID id,
                            @Param("recipientUserId") UUID recipientUserId,
                            @Param("readAt") LocalDateTime readAt);
+
+    // 동일한 장애 작업으로 생성된 사용자 알림 존재 여부
+    boolean existsByIncidentReferralIdAndRecipientUserIdAndType(
+            UUID incidentReferralId,
+            UUID recipientUserId,
+            String type
+    );
 }
