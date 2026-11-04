@@ -25,6 +25,12 @@ public enum ErrorCode {
     DUPLICATE_CARE_INSTITUTION_CODE(HttpStatus.CONFLICT, "이미 등록된 요양기관기호입니다."),
     INSTITUTION_HAS_ACTIVE_PARTNERSHIP(HttpStatus.CONFLICT, "진행 중이거나 활성 상태인 협약이 있어 삭제할 수 없습니다."),
     INSTITUTION_HAS_USERS(HttpStatus.CONFLICT, "소속 사용자가 있어 삭제할 수 없습니다."),
+    
+    // partnership
+    PARTNERSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "협약을 찾을 수 없습니다."),
+    INVALID_PARTNERSHIP_STATUS(HttpStatus.CONFLICT, "현재 협약 상태에서는 처리할 수 없는 요청입니다."),
+    INVALID_PARTNERSHIP_INSTITUTION(HttpStatus.BAD_REQUEST, "협약은 의료기관이 검사기관에 요청해야 합니다."),
+    PARTNERSHIP_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "이미 요청 중이거나 체결된 협약이 있습니다."),
 
     // equipment
     INSTITUTION_NOT_AVAILABLE(HttpStatus.CONFLICT, "활성 검사기관에만 장비를 등록할 수 있습니다."),
