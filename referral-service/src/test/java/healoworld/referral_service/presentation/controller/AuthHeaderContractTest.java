@@ -102,6 +102,7 @@ class AuthHeaderContractTest {
         othersReservation = DomainFixtures.reservationIn(ReservationStatus.CANCELED, othersReferral);
         given(referralRepository.findById(othersReferral.getId())).willReturn(Optional.of(othersReferral));
         given(reservationRepository.findById(othersReservation.getId())).willReturn(Optional.of(othersReservation));
+        given(reservationRepository.findByIdWithReferral(othersReservation.getId())).willReturn(Optional.of(othersReservation));
     }
 
     // ===== 헤더 계약 =====

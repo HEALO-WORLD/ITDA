@@ -35,9 +35,9 @@ public class SlotResultService {
     private final ReferralHistoryRepository referralHistoryRepository;
     private final ConsumedEventRepository consumedEventRepository;
     private final SlotCommandOutbox slotCommandOutbox;
+    private final ExaminationService examinationService;
 
     public static final String CONSUMER = "referral-service";
-    private final ExaminationService examinationService;
 
     public void handle(UUID eventId, String eventType, UUID reservationId) {
         UUID referralId = reservationRepository.findReferralIdById(reservationId)
@@ -109,13 +109,12 @@ public class SlotResultService {
     private void slotHoldFailedHandler(Referral referral, Reservation reservation, UUID eventId) {
         ReferralStatus fromStatus = referral.getReferralStatus();
 
-        // failureReason SLOT_CONFLICT or EQUIPMENT_FAILURE
         // reservation status FAILED 변경
         reservation.fail(FailureReason.SLOT_CONFLICT);
 
-        // referral status FAILED
-        referral.fail();
-        // 전 상태가 needs_reschedule이면 needs_reschedule로
+        // referral status FAILED or NEEDS_RESCHEDULE 변경
+        failOrRequestReschedule(referral, reservation);
+
         // referralHistory 기록
         ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_FAILED, eventId, null);
         referralHistoryRepository.save(history);
@@ -152,7 +151,7 @@ public class SlotResultService {
         reservation.fail(FailureReason.CONFIRM_FAILED);
 
         // referral status FAILED or NEEDS_RESCHEDULE 변경
-        referral.fail();
+        failOrRequestReschedule(referral, reservation);
 
         // ReleaseHold 이벤트 발행 이벤트 발행 (Outbox 기록)
         UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, "ReleaseHold");
@@ -171,11 +170,10 @@ public class SlotResultService {
         reservation.fail(FailureReason.HOLD_EXPIRED);
 
         // referral status FAILED or NEEDS_RESCHEDULE 변경
-        referral.fail();
+        failOrRequestReschedule(referral, reservation);
 
         // ReleaseHold 이벤트 발행
         UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, "ReleaseHold");
-
 
         // referralHistory 기록
         ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_FAILED, outboxEventId, null);
@@ -202,5 +200,13 @@ public class SlotResultService {
         if (Arrays.asList(expected).contains(reservation.getReservationStatus())) return true;
         log.info("기대하지 않은 상태의 이벤트 무시. eventType={}, eventId={}, reservationId={}, status={}", eventType, eventId, reservation.getId(), reservation.getReservationStatus());
         return false;
+    }
+
+    private void failOrRequestReschedule(Referral referral, Reservation reservation) {
+        if (reservation.getAttemptNo() > 1) {
+            referral.requestReschedule();
+        } else {
+            referral.fail();
+        }
     }
 }

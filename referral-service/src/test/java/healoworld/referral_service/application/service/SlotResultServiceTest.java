@@ -28,6 +28,7 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -108,6 +109,23 @@ class SlotResultServiceTest {
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(reservation.getConfirmedAt()).isNotNull();
         assertHistory(ReferralStatus.PENDING, ReferralStatus.CONFIRMED, Reason.RESERVATION_CONFIRMED, eventId);
+    }
+
+    @ParameterizedTest(name = "{0}: 재예약(attemptNo 2) 실패면 의뢰는 NEEDS_RESCHEDULE")
+    @CsvSource({"SlotHoldFailed, REQUESTED", "SlotBookFailed, HELD", "HoldExpired, HELD"})
+    @DisplayName("재예약 실패: 예약은 FAILED, 의뢰는 FAILED가 아니라 NEEDS_RESCHEDULE로 돌아가 다시 재예약할 수 있다")
+    void retryFailureGoesBackToNeedsReschedule(String eventType, ReservationStatus status) {
+        Reservation reservation = storedRetry(status, referral);
+
+        handle(eventType, reservation);
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.FAILED);
+        assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        ArgumentCaptor<ReferralHistory> captor = ArgumentCaptor.forClass(ReferralHistory.class);
+        verify(referralHistoryRepository).save(captor.capture());
+        assertThat(captor.getValue().getFromStatus()).isEqualTo(ReferralStatus.PENDING);
+        assertThat(captor.getValue().getToStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(captor.getValue().getReason()).isEqualTo(Reason.RESERVATION_FAILED);
     }
 
     @Test
@@ -280,6 +298,13 @@ class SlotResultServiceTest {
         given(reservationRepository.findReferralIdById(reservation.getId())).willReturn(Optional.of(owner.getId()));
         given(referralRepository.findByIdForUpdate(owner.getId())).willReturn(Optional.of(owner));
         given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+        return reservation;
+    }
+
+    // 재예약으로 만든 예약(attemptNo 2)
+    private Reservation storedRetry(ReservationStatus status, Referral owner) {
+        Reservation reservation = stored(status, owner);
+        ReflectionTestUtils.setField(reservation, "attemptNo", 2);
         return reservation;
     }
 

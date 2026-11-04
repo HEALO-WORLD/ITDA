@@ -16,4 +16,7 @@ public interface ReferralRepository extends JpaRepository<Referral, UUID>, Refer
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from Referral r where r.id = :id")
     Optional<Referral> findByIdForUpdate(@Param("id") UUID id);
+
+
+
 }

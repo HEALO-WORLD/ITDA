@@ -15,6 +15,9 @@ public class SlotCommandOutbox {
     private final OutboxEventRepository outboxEventRepository;
     private final JsonMapper jsonMapper;
 
+    private static final String AGGREGATE_TYPE = "RESERVATION";
+    private static final String RESULT_TOPIC = "slot-commands";
+
     public UUID recordOutbox(Reservation reservation, String eventType) {
         UUID eventId = UUID.randomUUID();
         recordOutbox(reservation, eventId, eventType);
@@ -25,8 +28,8 @@ public class SlotCommandOutbox {
     public void recordOutbox(Reservation reservation, UUID eventId, String eventType) {
         String payloadJson = jsonMapper.writeValueAsString(ReservationEventPayload.from(reservation, eventId, eventType));
 
-        OutboxEvent outboxEvent = OutboxEvent.create(eventId, "RESERVATION", reservation.getId(),
-                "slot-commands", reservation.getSlotId().toString(), eventType, payloadJson);
+        OutboxEvent outboxEvent = OutboxEvent.create(eventId, AGGREGATE_TYPE, reservation.getId(),
+                RESULT_TOPIC, reservation.getSlotId().toString(), eventType, payloadJson);
         outboxEventRepository.save(outboxEvent);
         log.info("Outbox 기록. eventId={}, eventType={}, reservationId={}", outboxEvent.getId(), outboxEvent.getEventType(), outboxEvent.getAggregateId());
     }
