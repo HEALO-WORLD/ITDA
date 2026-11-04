@@ -21,6 +21,9 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true   # p95/p99 계산용 bucket 메트릭 노출
 
 # 공통 로그 설정 (모든 서비스 동일, 서비스별 상세 레벨은 아래에 추가)
 logging:
