@@ -3,6 +3,7 @@ package healoworld.institution_service.application.service.institution;
 import healoworld.institution_service.domain.entity.Institution;
 import healoworld.institution_service.domain.enums.InstitutionType;
 import healoworld.institution_service.domain.enums.PartnershipStatus;
+import healoworld.institution_service.domain.enums.Role;
 import healoworld.institution_service.global.exception.BaseException;
 import healoworld.institution_service.global.exception.ErrorCode;
 import healoworld.institution_service.infrastructure.repository.InstitutionRepository;
@@ -95,5 +96,26 @@ public class InstitutionService {
     private Institution getInstitution(UUID institutionId) {
         return institutionRepository.findByIdAndDeletedAtIsNull(institutionId)
                 .orElseThrow(() -> new BaseException(ErrorCode.INSTITUTION_NOT_FOUND));
+    }
+
+    public InstitutionResponse getInstitutionDetail(UUID institutionId, UUID myInstitutionId, Role role) {
+        Institution target = getInstitution(institutionId);       // 없으면 404
+        validateReadAccess(target, myInstitutionId, role);         // 권한 없으면 403
+        return InstitutionResponse.from(target);
+    }
+
+    // 기관 상세 접근 권한: ADMIN / 내 기관 / 협약(PENDING·ACTIVE) 기관만 허용
+    private void validateReadAccess(Institution target, UUID myInstitutionId, Role role) {
+        if (role == Role.ADMIN) {
+            return;
+        }
+        if (target.getId().equals(myInstitutionId)) {
+            return;
+        }
+        if (partnershipRepository.existsBetweenInstitutionsAndStatusIn(
+                myInstitutionId, target.getId(), PartnershipStatus.inProgress())) {
+            return;
+        }
+        throw new BaseException(ErrorCode.FORBIDDEN);
     }
 }
