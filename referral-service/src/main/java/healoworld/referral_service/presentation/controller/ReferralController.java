@@ -39,15 +39,22 @@ public class ReferralController {
             description = """
                     의뢰를 만들고 첫 예약(attemptNo=1)을 REQUESTED 상태로 접수합니다.
                     같은 idempotencyKey로 다시 요청하면 새로 만들지 않고 기존 의뢰를 반환합니다.
+                    본문의 referringInstitutionId는 요청자 소속 기관(X-Institution-Id)과 같아야 하고,
+                    검사기관(reservation.examInstitutionId)과 활성 협력 관계여야 합니다 (institution-service에 확인).
 
                     - 400: 필수값 누락, 헤더 누락
+                    - 403 REFERRAL_FORBIDDEN: 본문의 의뢰기관이 요청자 소속 기관과 다름
+                    - 403 PARTNERSHIP_NOT_ACTIVE: 검사기관과 활성 협력 관계가 아님
+                    - 409 REFERRAL_IDEMPOTENCY_CONFLICT: 같은 멱등 키로 다른 내용을 요청함
+                    - 503 INSTITUTION_SERVICE_UNAVAILABLE: 협력 관계를 확인할 수 없음 (institution-service 장애)
                     """)
     @PostMapping
     public ResponseEntity<ApiResponse<ReferralResponse>> createReferralWithReservation(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
+            @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
             @RequestBody @Valid CreateReferralRequest createReferralRequest
     ) {
-        ReferralResponse response = referralService.createReferral(userId, createReferralRequest);
+        ReferralResponse response = referralService.createReferral(userId, institutionId, createReferralRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("의뢰 생성, 예약 접수가 완료되었습니다.", response));
     }
 
@@ -55,9 +62,12 @@ public class ReferralController {
             description = """
                     NEEDS_RESCHEDULE 상태의 의뢰에 새 예약을 접수하고 의뢰를 PENDING으로 되돌립니다.
                     작성자 본인 또는 관리자만 가능합니다.
+                    새 검사기관(examInstitutionId)은 의뢰기관과 활성 협력 관계여야 합니다 (institution-service에 확인).
 
+                    - 403 PARTNERSHIP_NOT_ACTIVE: 새 검사기관과 활성 협력 관계가 아님
                     - 404 REFERRAL_NOT_FOUND: 의뢰가 없거나 권한 없음
                     - 409 INVALID_REFERRAL_STATUS: NEEDS_RESCHEDULE 상태가 아님
+                    - 503 INSTITUTION_SERVICE_UNAVAILABLE: 협력 관계를 확인할 수 없음 (institution-service 장애)
                     """)
     @PostMapping("/{referralId}/reschedule")
     public ResponseEntity<ApiResponse<ReservationResponse>> createRescheduledReservation(
