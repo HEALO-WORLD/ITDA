@@ -37,6 +37,7 @@ public class SlotResultService {
     private final SlotCommandOutbox slotCommandOutbox;
 
     public static final String CONSUMER = "referral-service";
+    private final ExaminationService examinationService;
 
     public void handle(UUID eventId, String eventType, UUID reservationId) {
         UUID referralId = reservationRepository.findReferralIdById(reservationId)
@@ -134,7 +135,13 @@ public class SlotResultService {
         // referralHistory 기록
         ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_CONFIRMED, eventId, null);
         referralHistoryRepository.save(history);
+
         // 검사 생성
+        examinationService.syncScheduledExamination(
+                referral.getId(),
+                reservation.getId(),
+                reservation.getExamInstitutionId()
+        );
     }
 
     // SlotBookFailed 이벤트 수신

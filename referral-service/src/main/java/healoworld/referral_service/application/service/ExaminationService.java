@@ -294,6 +294,29 @@ public class ExaminationService {
         );
     }
 
+    @Transactional
+    public UUID syncScheduledExamination(
+            UUID referralId,
+            UUID reservationId,
+            UUID examInstitutionId
+    ) {
+        // 최초 예약인지 재예약인지 구분
+        if (examinationRepository.findByReferralId(referralId).isEmpty()) {
+            return createScheduled(
+                    referralId,
+                    reservationId,
+                    examInstitutionId
+            );
+        }
+
+        // 기존 검사 기록이 있으면 새 예약에 연결
+        return updateReservation(
+                referralId,
+                reservationId,
+                examInstitutionId
+        );
+    }
+
     private Examination findById(UUID examinationId) {
         return examinationRepository.findById(examinationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.EXAMINATION_NOT_FOUND));

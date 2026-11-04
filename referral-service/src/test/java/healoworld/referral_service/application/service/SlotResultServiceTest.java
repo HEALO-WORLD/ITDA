@@ -38,10 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class SlotResultServiceTest {
@@ -61,6 +58,9 @@ class SlotResultServiceTest {
 
     @Mock
     private ConsumedEventRepository consumedEventRepository;
+
+    @Mock
+    private ExaminationService examinationService;
 
     @InjectMocks
     private SlotResultService slotResultService;
@@ -306,5 +306,25 @@ class SlotResultServiceTest {
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode")
                 .isEqualTo(errorCode);
+    }
+
+    @Test
+    @DisplayName("SlotBooked 수신 시 검사 일정 생성 또는 갱신을 요청한다")
+    void slotBookedSyncsExamination() {
+        // given
+        Reservation reservation = stored(
+                ReservationStatus.HELD,
+                referral
+        );
+
+        // when
+        handle("SlotBooked", reservation);
+
+        // then
+        verify(examinationService).syncScheduledExamination(
+                referral.getId(),
+                reservation.getId(),
+                reservation.getExamInstitutionId()
+        );
     }
 }
