@@ -1,5 +1,7 @@
 spring:
   datasource:
+    # 실제 접속은 PostgresContainerSupport의 컨테이너가 덮어쓴다
+    # 상속을 빠뜨린 테스트가 개발 DB(slot_db)에 붙지 않도록 테스트 DB 주소를 남겨 둔다
     url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/slot_test_db
     hikari:
       maximum-pool-size: 10
