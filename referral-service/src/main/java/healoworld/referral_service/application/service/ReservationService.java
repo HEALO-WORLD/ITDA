@@ -51,7 +51,7 @@ public class ReservationService {
 
     @Transactional(readOnly = true)
     public ReservationResponse getReservation(UUID institutionId, UUID reservationId, RoleType role) {
-        Reservation reservation = reservationRepository.findById(reservationId)
+        Reservation reservation = reservationRepository.findByIdWithReferral(reservationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
 
         if (!(institutionId.equals(reservation.getReferral().getReferringInstitutionId())
@@ -71,7 +71,7 @@ public class ReservationService {
     }
 
     public void deleteReservation(UUID userId, UUID reservationId, RoleType role) {
-        Reservation reservation = reservationRepository.findById(reservationId)
+        Reservation reservation = reservationRepository.findByIdWithReferral(reservationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
 
         if (!(userId.equals(reservation.getReferral().getReferrerId()) || role == RoleType.ADMIN)) {

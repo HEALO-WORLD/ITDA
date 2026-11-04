@@ -15,4 +15,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
 
     @Query("select r.referral.id from Reservation r where r.id = :id")
     Optional<UUID> findReferralIdById(@Param("id") UUID id);
+
+    // 삭제된 의뢰의 예약 조회 시 500 Error를 막기 위해 fetch join
+    @Query("select r from Reservation r join fetch r.referral where r.id = :id")
+    Optional<Reservation> findByIdWithReferral(@Param("id") UUID id);
 }

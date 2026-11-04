@@ -109,7 +109,7 @@ class ReservationServiceTest {
         @DisplayName("의뢰기관은 조회할 수 있고 referralId가 응답에 담긴다")
         void referringInstitution() {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
-            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
             ReservationResponse response = reservationService.getReservation(
                     referral.getReferringInstitutionId(), reservation.getId(), RoleType.REQUESTER);
@@ -122,7 +122,7 @@ class ReservationServiceTest {
         @DisplayName("검사기관은 조회할 수 있다")
         void examInstitution() {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
-            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
             ReservationResponse response = reservationService.getReservation(
                     reservation.getExamInstitutionId(), reservation.getId(), RoleType.EXAMINER);
@@ -134,7 +134,7 @@ class ReservationServiceTest {
         @DisplayName("관리자는 관계없는 기관이어도 조회할 수 있다")
         void admin() {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
-            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
             ReservationResponse response = reservationService.getReservation(UUID.randomUUID(), reservation.getId(), RoleType.ADMIN);
 
@@ -145,7 +145,7 @@ class ReservationServiceTest {
         @DisplayName("의뢰기관도 검사기관도 아니면 NOT_FOUND")
         void otherInstitution() {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
-            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
             assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservation.getId(), RoleType.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
@@ -155,7 +155,7 @@ class ReservationServiceTest {
         @DisplayName("없는 예약이면 NOT_FOUND")
         void notFound() {
             UUID reservationId = UUID.randomUUID();
-            given(reservationRepository.findById(reservationId)).willReturn(Optional.empty());
+            given(reservationRepository.findByIdWithReferral(reservationId)).willReturn(Optional.empty());
 
             assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservationId, RoleType.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
@@ -169,7 +169,7 @@ class ReservationServiceTest {
         @DisplayName("본인의 종료된 예약은 soft delete된다")
         void success() {
             Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
-            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
             reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.REQUESTER);
 
@@ -180,7 +180,7 @@ class ReservationServiceTest {
         @DisplayName("다른 사람의 예약은 삭제할 수 없다")
         void otherUser() {
             Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
-            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
             assertErrorCode(() -> reservationService.deleteReservation(OTHER_USER_ID, reservation.getId(), RoleType.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
@@ -191,7 +191,7 @@ class ReservationServiceTest {
         @DisplayName("진행 중인 예약은 삭제할 수 없다")
         void invalidStatus() {
             Reservation reservation = reservationIn(ReservationStatus.CONFIRMED, referral);
-            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
             assertErrorCode(() -> reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.REQUESTER),
                     ErrorCode.INVALID_RESERVATION_STATUS);

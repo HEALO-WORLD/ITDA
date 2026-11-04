@@ -28,6 +28,7 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -110,6 +111,23 @@ class SlotResultServiceTest {
         assertHistory(ReferralStatus.PENDING, ReferralStatus.CONFIRMED, Reason.RESERVATION_CONFIRMED, eventId);
     }
 
+    @ParameterizedTest(name = "{0}: 재예약(attemptNo 2) 실패면 의뢰는 NEEDS_RESCHEDULE")
+    @CsvSource({"SlotHoldFailed, REQUESTED", "SlotBookFailed, HELD", "HoldExpired, HELD"})
+    @DisplayName("재예약 실패: 예약은 FAILED, 의뢰는 FAILED가 아니라 NEEDS_RESCHEDULE로 돌아가 다시 재예약할 수 있다")
+    void retryFailureGoesBackToNeedsReschedule(String eventType, ReservationStatus status) {
+        Reservation reservation = storedRetry(status, referral);
+
+        handle(eventType, reservation);
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.FAILED);
+        assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        ArgumentCaptor<ReferralHistory> captor = ArgumentCaptor.forClass(ReferralHistory.class);
+        verify(referralHistoryRepository).save(captor.capture());
+        assertThat(captor.getValue().getFromStatus()).isEqualTo(ReferralStatus.PENDING);
+        assertThat(captor.getValue().getToStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(captor.getValue().getReason()).isEqualTo(Reason.RESERVATION_FAILED);
+    }
+
     @Test
     @DisplayName("SlotBookFailed: 예약 FAILED(CONFIRM_FAILED), ReleaseHold 발행, 이력은 발행 eventId로 남는다")
     void slotBookFailed() {
@@ -168,7 +186,7 @@ class SlotResultServiceTest {
     @CsvSource({
             "SlotHeld, HELD", "SlotHeld, CONFIRMED", "SlotHeld, FAILED", "SlotHeld, BLOCKED", "SlotHeld, CANCELED",
             "SlotHoldFailed, HELD", "SlotHoldFailed, CONFIRMED", "SlotHoldFailed, FAILED",
-            "SlotBooked, REQUESTED", "SlotBooked, CONFIRMED", "SlotBooked, FAILED", "SlotBooked, BLOCKED",
+            "SlotBooked, REQUESTED", "SlotBooked, CONFIRMED",
             "SlotBookFailed, REQUESTED", "SlotBookFailed, CONFIRMED", "SlotBookFailed, FAILED",
             "HoldExpired, REQUESTED", "HoldExpired, CONFIRMED", "HoldExpired, FAILED",
             "SlotsBlocked, FAILED", "SlotsBlocked, BLOCKED", "SlotsBlocked, CANCELED"
@@ -184,6 +202,34 @@ class SlotResultServiceTest {
         assertThat(referral.getReferralStatus()).isEqualTo(referralBefore);
         verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
         verify(consumedEventRepository).save(any(ConsumedEvent.class));
+    }
+
+    @ParameterizedTest(name = "SlotBooked: 예약이 {0}이면 ReleaseSlot 발행")
+    @EnumSource(value = ReservationStatus.class, names = {"BLOCKED", "FAILED", "CANCELED"})
+    @DisplayName("보상: 이미 끝난 예약에 SlotBooked가 오면 ReleaseSlot으로 슬롯을 풀고, 예약·의뢰 상태와 이력은 그대로 둔다")
+    void releasesSlotWhenReservationTerminated(ReservationStatus status) {
+        Reservation reservation = stored(status, referral);
+        ReferralStatus referralBefore = referral.getReferralStatus();
+
+        handle("SlotBooked", reservation);
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(status);
+        assertThat(referral.getReferralStatus()).isEqualTo(referralBefore);
+        verify(slotCommandOutbox).recordOutbox(reservation, "ReleaseSlot");
+        verifyNoInteractions(referralHistoryRepository, examinationService);
+        verify(consumedEventRepository).save(any(ConsumedEvent.class));
+    }
+
+    @Test
+    @DisplayName("보상: 예약이 CONFIRMED면 SlotBooked 중복 수신이므로 슬롯을 풀지 않는다")
+    void doesNotReleaseSlotWhenConfirmed() {
+        Reservation reservation = stored(ReservationStatus.CONFIRMED, referral);
+
+        handle("SlotBooked", reservation);
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
+        verify(slotCommandOutbox, never()).recordOutbox(any(Reservation.class), any(String.class));
+        verifyNoInteractions(referralHistoryRepository, examinationService);
     }
 
     @Test
@@ -280,6 +326,13 @@ class SlotResultServiceTest {
         given(reservationRepository.findReferralIdById(reservation.getId())).willReturn(Optional.of(owner.getId()));
         given(referralRepository.findByIdForUpdate(owner.getId())).willReturn(Optional.of(owner));
         given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+        return reservation;
+    }
+
+    // 재예약으로 만든 예약(attemptNo 2)
+    private Reservation storedRetry(ReservationStatus status, Referral owner) {
+        Reservation reservation = stored(status, owner);
+        ReflectionTestUtils.setField(reservation, "attemptNo", 2);
         return reservation;
     }
 
