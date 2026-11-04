@@ -39,7 +39,6 @@ import static healoworld.referral_service.support.DomainFixtures.reservationIn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
 
@@ -183,22 +182,16 @@ class SlotResultServiceTest {
         assertHistory(before, ReferralStatus.NEEDS_RESCHEDULE, Reason.RESERVATION_BLOCKED, eventId);
     }
 
-    @ParameterizedTest(name = "{0}: Outbox는 UPDATE 이후 다시 읽은 예약으로 기록한다")
+    @ParameterizedTest(name = "{0}: UPDATE 이후 예약을 다시 읽지 않고 {2}를 기록한다")
     @CsvSource({"SlotHeld, REQUESTED, BookSlot", "SlotBookFailed, HELD, ReleaseHold", "HoldExpired, HELD, ReleaseHold"})
-    @DisplayName("조건부 UPDATE는 영속성 컨텍스트를 비우므로 Outbox 페이로드에 바뀐 상태가 실리도록 예약을 다시 읽는다")
-    void recordsOutboxWithReloadedReservation(String eventType, ReservationStatus status, String command) {
+    @DisplayName("커맨드 페이로드는 바뀌지 않는 식별자만 담으므로 처음 읽은 예약으로 Outbox를 기록한다")
+    void recordsOutboxWithoutReload(String eventType, ReservationStatus status, String command) {
         Reservation reservation = stored(status, referral);
-        ReservationStatus[] statusAtRecord = new ReservationStatus[1];
-        given(slotCommandOutbox.recordOutbox(any(Reservation.class), eq(command))).willAnswer(inv -> {
-            statusAtRecord[0] = inv.<Reservation>getArgument(0).getReservationStatus();
-            return UUID.randomUUID();
-        });
 
         handle(eventType, reservation);
 
-        // 잠금 직후 한 번 + UPDATE 이후 다시 한 번
-        verify(reservationRepository, times(2)).findById(reservation.getId());
-        assertThat(statusAtRecord[0]).isNotEqualTo(status);
+        verify(reservationRepository).findById(reservation.getId());   // 잠금 직후 한 번만
+        verify(slotCommandOutbox).recordOutbox(reservation, command);
     }
 
     @Test

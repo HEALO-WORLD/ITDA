@@ -104,7 +104,6 @@ public class ReservationService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        // 시간 체크 2시간 전
         if (!now.isBefore(reservation.getStartTime().minusHours(2))) {
             throw new BaseException(ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
         }
@@ -114,19 +113,13 @@ public class ReservationService {
         if (reservationRepository.cancelIfConfirmed(reservation.getId(), userId, now) == 0) {
             throw new BaseException(ErrorCode.INVALID_RESERVATION_STATUS);
         }
-
         if (referralRepository.cancelIfCancelable(referral.getId(), userId, now) == 0) {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
         }
 
-        Reservation canceled = reservationRepository.findById(reservation.getId())
-                .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
-
-        // ReleaseSlot 이벤트 발행 (Outbox 기록)
         String eventType = "ReleaseSlot";
-        UUID eventId = slotCommandOutbox.recordOutbox(canceled, eventType);
+        UUID eventId = slotCommandOutbox.recordOutbox(reservation, eventType);
 
-        // referralHistory 기록
         ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, ReferralStatus.CANCELED, Reason.CANCELED_BY_REQUESTER, eventId, userId);
         referralHistoryRepository.save(history);
     }
