@@ -2,9 +2,11 @@ package healoworld.institution_service.infrastructure.repository;
 
 import healoworld.institution_service.domain.entity.Equipment;
 import healoworld.institution_service.domain.enums.Modality;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -28,4 +30,11 @@ public interface EquipmentRepository extends JpaRepository<Equipment, UUID> {
             @Param("modality") Modality modality,
             Pageable pageable
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select e from Equipment e
+        where e.id = :equipmentId and e.deletedAt is null
+        """)
+    Optional<Equipment> findForUpdateById(@Param("equipmentId") UUID equipmentId);
 }
