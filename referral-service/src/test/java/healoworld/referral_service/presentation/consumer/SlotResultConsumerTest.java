@@ -1,7 +1,7 @@
-package healoworld.referral_service.presentation.messaging;
+package healoworld.referral_service.presentation.consumer;
 
 import healoworld.referral_service.application.service.SlotResultService;
-import healoworld.referral_service.global.outbox.ReservationEventPayload;
+import healoworld.referral_service.application.event.result.SlotResultMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,7 +19,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
-class SlotResultListenerTest {
+class SlotResultConsumerTest {
     private static final String PAYLOAD = "{}";
 
     @Mock
@@ -29,16 +29,16 @@ class SlotResultListenerTest {
     private JsonMapper jsonMapper;
 
     @InjectMocks
-    private SlotResultListener slotResultListener;
+    private SlotResultConsumer slotResultConsumer;
 
     @Test
-    @DisplayName("헤더의 eventId·eventType과 payload의 예약 ID를 서비스에 넘긴다 (referralId는 없어도 된다)")
+    @DisplayName("헤더의 eventId·eventType과 payload의 예약 ID를 서비스에 넘긴다 (slot-results에는 referralId가 없다)")
     void delegates() {
         UUID eventId = UUID.randomUUID();
         UUID reservationId = UUID.randomUUID();
-        stubPayload(reservationId, null);
+        stubPayload(reservationId);
 
-        slotResultListener.onSlotResult(eventId.toString(), "SlotHeld", PAYLOAD);
+        slotResultConsumer.consume(eventId.toString(), "SlotHeld", PAYLOAD);
 
         verify(slotResultService).handle(eventId, "SlotHeld", reservationId);
     }
@@ -46,9 +46,9 @@ class SlotResultListenerTest {
     @Test
     @DisplayName("SlotsBlocked인데 예약이 없는 슬롯이면 서비스를 호출하지 않고 끝낸다")
     void slotsBlockedWithoutReservation() {
-        stubPayload(null, null);
+        stubPayload(null);
 
-        slotResultListener.onSlotResult(UUID.randomUUID().toString(), "SlotsBlocked", PAYLOAD);
+        slotResultConsumer.consume(UUID.randomUUID().toString(), "SlotsBlocked", PAYLOAD);
 
         verifyNoInteractions(slotResultService);
     }
@@ -56,9 +56,9 @@ class SlotResultListenerTest {
     @Test
     @DisplayName("SlotsBlocked가 아닌데 reservationId가 없으면 계약 위반으로 재시도 없이 실패한다")
     void missingReservationId() {
-        stubPayload(null, null);
+        stubPayload(null);
 
-        assertThatThrownBy(() -> slotResultListener.onSlotResult(UUID.randomUUID().toString(), "SlotHeld", PAYLOAD))
+        assertThatThrownBy(() -> slotResultConsumer.consume(UUID.randomUUID().toString(), "SlotHeld", PAYLOAD))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(slotResultService);
     }
@@ -66,14 +66,13 @@ class SlotResultListenerTest {
     @Test
     @DisplayName("eventId 헤더가 UUID가 아니면 재시도 없이 실패한다")
     void invalidEventId() {
-        assertThatThrownBy(() -> slotResultListener.onSlotResult("not-a-uuid", "SlotHeld", PAYLOAD))
+        assertThatThrownBy(() -> slotResultConsumer.consume("not-a-uuid", "SlotHeld", PAYLOAD))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(slotResultService);
     }
 
-    private void stubPayload(UUID reservationId, UUID referralId) {
-        ReservationEventPayload payload = new ReservationEventPayload(reservationId, referralId, 1, UUID.randomUUID(),
-                null, null, null, null, null, null, null, null, LocalDateTime.now());
-        given(jsonMapper.readValue(PAYLOAD, ReservationEventPayload.class)).willReturn(payload);
+    private void stubPayload(UUID reservationId) {
+        SlotResultMessage message = new SlotResultMessage(UUID.randomUUID(), "SlotHeld", LocalDateTime.now(), UUID.randomUUID(), reservationId);
+        given(jsonMapper.readValue(PAYLOAD, SlotResultMessage.class)).willReturn(message);
     }
 }

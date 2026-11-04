@@ -5,6 +5,7 @@ import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
+import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -77,8 +79,10 @@ public class ReservationService {
         if (!(userId.equals(reservation.getReferral().getReferrerId()) || role == RoleType.ADMIN)) {
             throw new BaseException(ErrorCode.RESERVATION_NOT_FOUND);
         }
-        reservation.delete(userId);
-        reservationRepository.save(reservation);
+
+        if (reservationRepository.softDeleteIf(reservationId, userId, LocalDateTime.now(), List.of(ReservationStatus.FAILED, ReservationStatus.CANCELED, ReservationStatus.BLOCKED)) == 0){
+            throw new BaseException(ErrorCode.INVALID_RESERVATION_STATUS);
+        }
     }
 
     // 예약 취소
@@ -98,26 +102,25 @@ public class ReservationService {
             throw new BaseException(ErrorCode.RESERVATION_NOT_FOUND);
         }
 
-        // 시간 체크 2시간 전
-        if (!LocalDateTime.now().isBefore(reservation.getStartTime().minusHours(2))) {
+        LocalDateTime now = LocalDateTime.now();
+
+        if (!now.isBefore(reservation.getStartTime().minusHours(2))) {
             throw new BaseException(ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
         }
 
         ReferralStatus fromStatus = referral.getReferralStatus();
 
-        // reservation status CANCELED 변경
-        reservation.cancel();
-        reservationRepository.save(reservation);
+        if (reservationRepository.cancelIfConfirmed(reservation.getId(), userId, now) == 0) {
+            throw new BaseException(ErrorCode.INVALID_RESERVATION_STATUS);
+        }
+        if (referralRepository.cancelIfCancelable(referral.getId(), userId, now) == 0) {
+            throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
+        }
 
-        // referral status CANCELED 변경
-        referral.cancel();
-
-        // ReleaseSlot 이벤트 발행 (Outbox 기록)
         String eventType = "ReleaseSlot";
         UUID eventId = slotCommandOutbox.recordOutbox(reservation, eventType);
 
-        // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.CANCELED_BY_REQUESTER, eventId, userId);
+        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, ReferralStatus.CANCELED, Reason.CANCELED_BY_REQUESTER, eventId, userId);
         referralHistoryRepository.save(history);
     }
 }
