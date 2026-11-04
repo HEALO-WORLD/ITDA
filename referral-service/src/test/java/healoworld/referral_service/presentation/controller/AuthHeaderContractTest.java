@@ -29,6 +29,7 @@ import org.springframework.data.jpa.mapping.JpaMetamodelMappingContext;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Optional;
@@ -85,6 +86,9 @@ class AuthHeaderContractTest {
 
     @MockitoBean
     private ExaminationResultService examinationResultService;
+
+    @MockitoBean
+    private InstitutionClient institutionClient;
 
     // 메인 클래스의 @EnableJpaAuditing이 웹 슬라이스 테스트에서도 JPA 메타모델을 찾기 때문에 대체한다
     @MockitoBean

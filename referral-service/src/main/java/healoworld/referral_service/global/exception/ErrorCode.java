@@ -8,7 +8,12 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum ErrorCode {
 
+    // institution
+    INSTITUTION_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "기관 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요."),
+
     // referral
+    REFERRAL_FORBIDDEN(HttpStatus.FORBIDDEN, "본인 소속 기관으로만 의뢰를 생성할 수 있습니다."),
+    PARTNERSHIP_NOT_ACTIVE(HttpStatus.FORBIDDEN, "협력 관계가 아닌 검사기관입니다."),
     REFERRAL_ACCESS_DENIED(HttpStatus.FORBIDDEN, "의뢰에 대한 권한이 없습니다."),
     REFERRAL_NOT_FOUND(HttpStatus.NOT_FOUND, "의뢰를 찾을 수 없습니다."),
     INVALID_REFERRAL_STATUS(HttpStatus.CONFLICT, "현재 의뢰상태에서는 처리할 수 없습니다."),
