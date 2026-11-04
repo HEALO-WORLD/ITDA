@@ -12,4 +12,8 @@ public enum InstitutionType {
 
     private final String description;
     private final Role memberRole;
+
+    public boolean isMedical() {
+        return this == REQUESTER || this == EXAM;
+    }
 }
