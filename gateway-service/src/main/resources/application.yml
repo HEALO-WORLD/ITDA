@@ -2,6 +2,8 @@ server:
   port: 8080
 
 spring:
+  reactor:
+    context-propagation: auto   # WebFlux에서 traceId를 MDC로 전파
   application:
     name: gateway-service
   config:
@@ -47,6 +49,9 @@ eureka:
     registry-fetch-interval-seconds: 5
 
 management:
+  tracing:
+    sampling:
+      probability: 1.0   # 개발 단계: 모든 요청 샘플링 (운영 시 낮춤)
   endpoints:
     web:
       exposure:
@@ -149,3 +154,11 @@ gateway:
           - "GET /api/v1/referrals/*"
           - "GET /api/v1/referrals/reservations"
           - "GET /api/v1/referrals/reservations/*"
+
+# 공통 로그 설정 (모든 서비스 동일, 서비스별 상세 레벨은 아래에 추가)
+logging:
+  include-application-name: true   # 로그에 [서비스명] 출력
+  level:
+    root: INFO
+    healoworld: INFO
+    org.apache.kafka: WARN         # Kafka 클라이언트 접속·설정 로그 소음 감소
