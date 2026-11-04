@@ -15,4 +15,10 @@ public interface InstitutionRepository extends JpaRepository<Institution, UUID> 
     // 가입용 기관 목록: 활성 + 삭제 안 됨 + 운영사 제외
     List<Institution> findAllByActiveTrueAndDeletedAtIsNullAndTypeNot(InstitutionType type);
 
+    // 요양기관기호 중복 확인
+    boolean existsByCareInstitutionCode(String careInstitutionCode);
+
+    // 삭제 안 된 기관 전체 조회
+    List<Institution> findAllByDeletedAtIsNullOrderByCreatedAtDesc();
+
 }
