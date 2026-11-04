@@ -6,13 +6,16 @@ import healoworld.slot_service.application.event.command.ReleaseHoldEvent;
 import healoworld.slot_service.application.event.command.ReleaseSlotEvent;
 import healoworld.slot_service.application.service.SlotCommandHandler;
 import healoworld.slot_service.domain.entity.Slot;
+import healoworld.slot_service.domain.entity.SlotStatusHistory;
 import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
 import healoworld.slot_service.global.inbox.ConsumedEventId;
 import healoworld.slot_service.global.inbox.ConsumedEventRepository;
 import healoworld.slot_service.global.outbox.OutboxEvent;
 import healoworld.slot_service.global.outbox.OutboxEventRepository;
 import healoworld.slot_service.global.outbox.OutboxPublisher;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
+import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
 import healoworld.slot_service.support.FixedClockConfig;
 import healoworld.slot_service.support.fixture.SlotFixture;
 import org.junit.jupiter.api.AfterEach;
@@ -28,6 +31,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.util.List;
 import java.util.UUID;
 
+import static healoworld.slot_service.support.SlotStatusHistoryTestSupport.singleHistory;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
@@ -40,6 +44,9 @@ class SlotCommandHandlerTest {
 
     @Autowired
     private SlotRepository slotRepository;
+
+    @Autowired
+    private SlotStatusHistoryRepository slotStatusHistoryRepository;
 
     @Autowired
     private OutboxEventRepository outboxEventRepository;
@@ -58,6 +65,7 @@ class SlotCommandHandlerTest {
     void tearDown() {
         outboxEventRepository.deleteAllInBatch();
         consumedEventRepository.deleteAllInBatch();
+        slotStatusHistoryRepository.deleteAllInBatch();
         slotRepository.deleteAllInBatch();
     }
 
@@ -289,6 +297,70 @@ class SlotCommandHandlerTest {
         slotCommandHandler.handleReleaseSlot(request);
 
         assertThat(consumedEventRepository.findAll()).hasSize(1);
+    }
+
+    // ---------- 상태 이력: 수신한 이벤트 ID가 source_event_id로 남는지 ----------
+
+    @Test
+    void 이력_HoldRequested의_eventId를_source_event_id로_남긴다() {
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.available());
+        HoldRequestedEvent request = holdRequested(slot.getId());
+
+        slotCommandHandler.handleHoldRequested(request);
+
+        SlotStatusHistory history = singleHistory(slotStatusHistoryRepository);
+        assertThat(history.getReason()).isEqualTo(SlotStatusChangeReason.HOLD);
+        assertThat(history.getSourceEventId()).isEqualTo(request.eventId());
+    }
+
+    @Test
+    void 이력_BookSlot의_eventId를_source_event_id로_남긴다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.held(reservationId, FixedClockConfig.NOW.plusMinutes(3)));
+        BookSlotEvent request = bookSlot(slot.getId(), reservationId);
+
+        slotCommandHandler.handleBookSlot(request);
+
+        SlotStatusHistory history = singleHistory(slotStatusHistoryRepository);
+        assertThat(history.getReason()).isEqualTo(SlotStatusChangeReason.BOOK);
+        assertThat(history.getSourceEventId()).isEqualTo(request.eventId());
+    }
+
+    @Test
+    void 이력_ReleaseHold의_eventId를_source_event_id로_남긴다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.held(reservationId, FixedClockConfig.NOW.plusMinutes(3)));
+        ReleaseHoldEvent request = releaseHold(slot.getId(), reservationId);
+
+        slotCommandHandler.handleReleaseHold(request);
+
+        SlotStatusHistory history = singleHistory(slotStatusHistoryRepository);
+        assertThat(history.getReason()).isEqualTo(SlotStatusChangeReason.RELEASE_HOLD);
+        assertThat(history.getSourceEventId()).isEqualTo(request.eventId());
+    }
+
+    @Test
+    void 이력_ReleaseSlot의_eventId를_source_event_id로_남긴다() {
+        UUID reservationId = UUID.randomUUID();
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.booked(reservationId));
+        ReleaseSlotEvent request = releaseSlot(slot.getId(), reservationId);
+
+        slotCommandHandler.handleReleaseSlot(request);
+
+        SlotStatusHistory history = singleHistory(slotStatusHistoryRepository);
+        assertThat(history.getReason()).isEqualTo(SlotStatusChangeReason.RELEASE_SLOT);
+        assertThat(history.getSourceEventId()).isEqualTo(request.eventId());
+    }
+
+    @Test
+    void 이력_같은_이벤트를_두_번_받아도_이력은_한_번만_남긴다() {
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.available());
+        HoldRequestedEvent request = holdRequested(slot.getId());
+
+        slotCommandHandler.handleHoldRequested(request);
+        slotCommandHandler.handleHoldRequested(request);
+
+        singleHistory(slotStatusHistoryRepository);
     }
 
     private OutboxEvent singleOutbox() {
