@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: itda
+    folder: ITDA
+    type: file
+    disableDeletion: false        # JSON 파일을 지웠을 때 Grafana에서도 해당 대시보드를 삭제
+    allowUiUpdates: true          # UI에서 수정 가능
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
