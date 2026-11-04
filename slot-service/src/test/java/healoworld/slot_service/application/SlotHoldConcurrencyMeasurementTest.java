@@ -2,6 +2,7 @@ package healoworld.slot_service.application;
 
 import healoworld.slot_service.application.service.SlotHoldService;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
+import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
 import healoworld.slot_service.support.ConcurrentHoldRunner;
 import healoworld.slot_service.support.ConcurrentHoldRunner.RoundResult;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -25,6 +26,7 @@ class SlotHoldConcurrencyMeasurementTest {
 
     @Autowired SlotHoldService slotHoldService;
     @Autowired SlotRepository slotRepository;
+    @Autowired SlotStatusHistoryRepository slotStatusHistoryRepository;
 
     @ParameterizedTest(name = "스레드 {0}개")
     @ValueSource(ints = {10, 50, 100})
@@ -33,6 +35,7 @@ class SlotHoldConcurrencyMeasurementTest {
         // 연습 회차
         for (int i = 0; i < WARM_UP; i++) {
             ConcurrentHoldRunner.run(slotHoldService, slotRepository, threadCount);
+            slotStatusHistoryRepository.deleteAllInBatch();
             slotRepository.deleteAllInBatch();
         }
 
@@ -40,6 +43,7 @@ class SlotHoldConcurrencyMeasurementTest {
         List<RoundResult> results = new ArrayList<>();
         for (int i = 0; i < ROUNDS; i++) {
             results.add(ConcurrentHoldRunner.run(slotHoldService, slotRepository, threadCount));
+            slotStatusHistoryRepository.deleteAllInBatch();
             slotRepository.deleteAllInBatch();
         }
 

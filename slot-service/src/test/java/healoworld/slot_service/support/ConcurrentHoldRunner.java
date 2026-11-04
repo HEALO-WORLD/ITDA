@@ -41,7 +41,7 @@ public final class ConcurrentHoldRunner {
                     ready.countDown();
                     try {
                         start.await();
-                        HoldResult result = service.hold(slotId, reservationId);
+                        HoldResult result = service.hold(slotId, reservationId, UUID.randomUUID());
                         if (result.isSuccess()) success.incrementAndGet();
                         else fail.incrementAndGet();
                     } catch (Exception e) {

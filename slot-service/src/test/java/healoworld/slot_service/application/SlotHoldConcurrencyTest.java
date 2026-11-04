@@ -2,6 +2,7 @@ package healoworld.slot_service.application;
 
 import healoworld.slot_service.application.service.SlotHoldService;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
+import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
 import healoworld.slot_service.support.ConcurrentHoldRunner;
 import healoworld.slot_service.support.ConcurrentHoldRunner.RoundResult;
 import org.junit.jupiter.api.AfterEach;
@@ -22,8 +23,12 @@ class SlotHoldConcurrencyTest {
     @Autowired
     SlotRepository slotRepository;
 
+    @Autowired
+    SlotStatusHistoryRepository slotStatusHistoryRepository;
+
     @AfterEach
     void tearDown() {
+        slotStatusHistoryRepository.deleteAllInBatch();
         slotRepository.deleteAllInBatch();   // DELETE FROM p_slots
     }
 

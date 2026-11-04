@@ -75,12 +75,14 @@ gateway:
           - "GET,POST /api/v1/institutions"
           - "PATCH,DELETE /api/v1/institutions/*"
           - "POST /api/v1/slots/*/release"
+          - "GET /api/v1/slots/*/status-histories"
 
       # ── 검사기관 사용자만 ──
       - roles: [ EXAMINER ]
         rules:
           - "POST /api/v1/institutions/*/equipments"
           - "PATCH /api/v1/equipments/*"
+          - "POST /api/v1/equipments/*/exam-types"
           - "PUT /api/v1/equipments/*/operating-hours"
           - "GET /api/v1/equipments/*/status-histories"
           - "POST /api/v1/examinations/*/results"
@@ -107,6 +109,7 @@ gateway:
           - "GET /api/v1/institutions/*/equipments"
           - "GET /api/v1/equipments/*"
           - "GET /api/v1/equipments/*/operating-hours"
+          - "GET /api/v1/equipments/*/exam-types"
           - "GET /api/v1/exam-types"
           - "GET /api/v1/notifications"
           - "GET /api/v1/notifications/unread-count"
@@ -126,8 +129,6 @@ gateway:
       # ── 의뢰기관 사용자 + 관리자 ──
       - roles: [ REQUESTER, ADMIN ]
         rules:
-          - "POST /api/v1/slots/*/hold"
-          - "POST /api/v1/slots/*/confirm"
           - "POST /api/v1/referrals"
           - "POST /api/v1/referrals/*/reschedule"
           - "GET /api/v1/referrals"
