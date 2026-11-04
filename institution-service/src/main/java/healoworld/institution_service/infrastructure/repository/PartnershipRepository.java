@@ -40,4 +40,13 @@ public interface PartnershipRepository extends JpaRepository<Partnership, UUID> 
             "and p.deletedAt is null")
     boolean existsByInstitutionIdAndStatusIn(@Param("institutionId") UUID institutionId,
                                              @Param("statuses") Collection<PartnershipStatus> statuses);
+
+    @Query("select count(p) > 0 from Partnership p " +
+            "where ((p.requesterInstitution.id = :institutionId and p.examInstitution.id = :otherInstitutionId) " +
+            "    or (p.requesterInstitution.id = :otherInstitutionId and p.examInstitution.id = :institutionId)) " +
+            "and p.status in :statuses " +
+            "and p.deletedAt is null")
+    boolean existsBetweenInstitutionsAndStatusIn(@Param("institutionId") UUID institutionId,
+                                                 @Param("otherInstitutionId") UUID otherInstitutionId,
+                                                 @Param("statuses") Collection<PartnershipStatus> statuses);
 }
