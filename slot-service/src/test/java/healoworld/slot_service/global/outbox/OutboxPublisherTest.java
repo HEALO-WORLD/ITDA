@@ -1,7 +1,14 @@
 package healoworld.slot_service.global.outbox;
 
+import brave.Tracing;
 import healoworld.slot_service.support.FixedClockConfig;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.brave.bridge.BraveCurrentTraceContext;
+import io.micrometer.tracing.brave.bridge.BravePropagator;
+import io.micrometer.tracing.brave.bridge.BraveTracer;
+import io.micrometer.tracing.brave.bridge.W3CPropagation;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +24,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -36,11 +44,23 @@ class OutboxPublisherTest {
 
     private OutboxPublisher outboxPublisher;
 
+    // 운영과 같은 W3C 전파 방식의 실제 Brave tracer
+    private Tracing tracing;
+    private Tracer tracer;
+
     @BeforeEach
     void setUp() {
         ZoneId zone = ZoneId.systemDefault();
         Clock clock = Clock.fixed(FixedClockConfig.NOW.atZone(zone).toInstant(), zone);
-        outboxPublisher = new OutboxPublisher(outboxEventRepository, kafkaTemplate, clock);
+        tracing = Tracing.newBuilder().traceId128Bit(true).propagationFactory(new W3CPropagation()).build();
+        tracer = new BraveTracer(tracing.tracer(), new BraveCurrentTraceContext(tracing.currentTraceContext()));
+        outboxPublisher = new OutboxPublisher(outboxEventRepository, kafkaTemplate, clock,
+                tracer, new BravePropagator(tracing));
+    }
+
+    @AfterEach
+    void tearDown() {
+        tracing.close();
     }
 
     @Test
@@ -88,6 +108,42 @@ class OutboxPublisherTest {
         assertThat(record.value()).isEqualTo(event.getPayload());
         assertThat(header(record, "eventId")).isEqualTo(event.getId().toString());
         assertThat(header(record, "eventType")).isEqualTo("SlotHeld");
+    }
+
+    @Test
+    void 저장_시점의_traceparent가_있으면_같은_traceId로_발행한다() {
+        String traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        OutboxEvent event = outboxEvent("SlotHeld");
+        event.assignTraceParent("00-" + traceId + "-00f067aa0ba902b7-01");
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
+
+        AtomicReference<String> traceIdWhenSending = new AtomicReference<>();
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
+            traceIdWhenSending.set(tracer.currentSpan().context().traceId());
+            return success();
+        });
+
+        outboxPublisher.publish();
+
+        assertThat(traceIdWhenSending.get()).isEqualTo(traceId);
+        assertThat(tracer.currentSpan()).isNull();   // 발행 후 span 범위를 닫는다
+    }
+
+    @Test
+    void traceparent가_없으면_trace_없이_발행한다() {
+        OutboxEvent event = outboxEvent("HoldExpired");
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
+
+        AtomicReference<Object> spanWhenSending = new AtomicReference<>("미호출");
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
+            spanWhenSending.set(tracer.currentSpan());
+            return success();
+        });
+
+        outboxPublisher.publish();
+
+        assertThat(spanWhenSending.get()).isNull();
+        verify(outboxEventRepository).markPublished(event.getId(), FixedClockConfig.NOW);
     }
 
     private OutboxEvent outboxEvent(String eventType) {
