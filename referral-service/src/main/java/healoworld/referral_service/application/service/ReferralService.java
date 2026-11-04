@@ -23,6 +23,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -94,8 +96,10 @@ public class ReferralService {
         if (!(userId.equals(referral.getReferrerId()) || role == RoleType.ADMIN)) {
             throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
         }
-        referral.delete(userId);
-        referralRepository.save(referral);
+
+        if (referralRepository.softDeleteIf(referralId, userId, LocalDateTime.now(), List.of(ReferralStatus.FAILED, ReferralStatus.CANCELED)) == 0) {
+            throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
+        }
     }
 
     public ReservationResponse createRescheduledReservation(UUID userId, RoleType role, UUID referralId, CreateReservationRequest request) {
@@ -109,10 +113,12 @@ public class ReferralService {
         referral.validateReschedulable();
         UUID outboxEventId = UUID.randomUUID();
         Reservation reservation = reservationService.createReservation(outboxEventId, referral, request);
-        referral.reschedule(reservation.getId());
 
+        if (referralRepository.rescheduleIfNeedsReschedule(referralId, reservation.getId(), userId, LocalDateTime.now()) == 0) {
+            throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
+        }
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, ReferralStatus.NEEDS_RESCHEDULE, referral.getReferralStatus(), Reason.RESCHEDULED, outboxEventId, userId);
+        ReferralHistory history = ReferralHistory.create(referral, reservation, ReferralStatus.NEEDS_RESCHEDULE, ReferralStatus.PENDING, Reason.RESCHEDULED, outboxEventId, userId);
         referralHistoryRepository.save(history);
         return ReservationResponse.from(reservation);
     }
