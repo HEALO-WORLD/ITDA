@@ -16,6 +16,8 @@ public interface EquipmentExamTypeRepository extends JpaRepository<EquipmentExam
 
     Optional<EquipmentExamType> findByEquipmentIdAndExamTypeId(UUID equipmentId, UUID examTypeId);
 
+    Optional<EquipmentExamType> findByEquipmentIdAndExamTypeIdAndDeletedAtIsNull(UUID equipmentId, UUID examTypeId);
+
     boolean existsByEquipmentIdAndExamTypeIdAndDeletedAtIsNull(UUID equipmentId, UUID examTypeId);
 
     List<EquipmentExamType> findAllByEquipmentIdAndDeletedAtIsNull(UUID equipmentId);
@@ -28,7 +30,7 @@ public interface EquipmentExamTypeRepository extends JpaRepository<EquipmentExam
                 et.id,
                 et.name,
                 et.modality,
-                et.durationMinutes
+                eet.durationMinutes
             )
             from EquipmentExamType eet, ExamType et
             where eet.examTypeId = et.id

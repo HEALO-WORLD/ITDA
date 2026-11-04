@@ -36,7 +36,7 @@ public class ExamTypeService {
             throw new BaseException(ErrorCode.INVALID_INPUT);
         }
 
-        if (userRole != Role.REQUESTER) {
+        if (userRole != Role.ADMIN) {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
 
@@ -44,8 +44,7 @@ public class ExamTypeService {
 
         ExamType examType = ExamType.create(
                 request.getName(),
-                request.getModality(),
-                request.getDurationMinutes()
+                request.getModality()
         );
 
         ExamType savedExamType = examTypeRepository.save(examType);
@@ -65,7 +64,7 @@ public class ExamTypeService {
             throw new BaseException(ErrorCode.INVALID_INPUT);
         }
 
-        if (userRole != Role.REQUESTER && userRole != Role.EXAMINER) {
+        if (userRole != Role.REQUESTER && userRole != Role.EXAMINER && userRole != Role.ADMIN) {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
 
@@ -94,7 +93,7 @@ public class ExamTypeService {
             throw new BaseException(ErrorCode.INVALID_INPUT);
         }
 
-        if (userRole != Role.REQUESTER) {
+        if (userRole != Role.ADMIN) {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
 
@@ -104,7 +103,7 @@ public class ExamTypeService {
                         new BaseException(ErrorCode.RESOURCE_NOT_FOUND)
                 );
 
-        examType.update(request.getName(), request.getDurationMinutes());
+        examType.update(request.getName());
 
         return ExamTypeResponse.from(examType);
     }
@@ -114,28 +113,14 @@ public class ExamTypeService {
                 || request.getName() == null
                 || request.getName().isBlank()
                 || request.getName().length() > 50
-                || request.getModality() == null
-                || request.getDurationMinutes() == null
-                || request.getDurationMinutes() < 1) {
+                || request.getModality() == null) {
             throw new BaseException(ErrorCode.INVALID_INPUT);
         }
     }
 
     private void validateUpdateRequest(ExamTypeUpdateRequest request) {
-        if (request == null
-                || (request.getName() == null
-                && request.getDurationMinutes() == null)) {
-            throw new BaseException(ErrorCode.INVALID_INPUT);
-        }
-
-        if (request.getName() != null
-                && (request.getName().isBlank()
-                || request.getName().length() > 50)) {
-            throw new BaseException(ErrorCode.INVALID_INPUT);
-        }
-
-        if (request.getDurationMinutes() != null
-                && request.getDurationMinutes() < 1) {
+        if (request == null || request.getName() == null
+                || request.getName().isBlank() || request.getName().length() > 50) {
             throw new BaseException(ErrorCode.INVALID_INPUT);
         }
     }

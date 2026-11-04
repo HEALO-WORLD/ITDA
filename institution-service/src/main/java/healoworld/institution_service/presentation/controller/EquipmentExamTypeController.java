@@ -5,6 +5,7 @@ import healoworld.institution_service.domain.enums.Role;
 import healoworld.institution_service.global.dto.ApiResponse;
 import healoworld.institution_service.global.dto.PagedResponse;
 import healoworld.institution_service.presentation.dto.request.EquipmentExamTypeCreateRequest;
+import healoworld.institution_service.presentation.dto.request.EquipmentExamTypeUpdateRequest;
 import healoworld.institution_service.presentation.dto.response.EquipmentExamTypeResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,22 @@ public class EquipmentExamTypeController {
         );
 
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("장비의 지원 검사 유형이 등록되었습니다.", response));
+    }
+
+    @PatchMapping("/{examTypeId}")
+    public ResponseEntity<ApiResponse<EquipmentExamTypeResponse>> updateEquipmentExamType(
+            @PathVariable("equipmentId") UUID equipmentId,
+            @PathVariable("examTypeId") UUID examTypeId,
+            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader("X-Institution-Id") UUID userInstitutionId,
+            @RequestHeader("X-Role") Role userRole,
+            @Valid @RequestBody EquipmentExamTypeUpdateRequest request
+    ) {
+        EquipmentExamTypeResponse response = equipmentExamTypeService.updateEquipmentExamType(
+                equipmentId, examTypeId, request, userId, userInstitutionId, userRole
+        );
+
+        return ResponseEntity.ok(ApiResponse.ok("장비별 검사 소요시간이 수정되었습니다.", response));
     }
 
     @GetMapping

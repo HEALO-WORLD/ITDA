@@ -26,7 +26,10 @@ public class EquipmentExamType extends BaseEntity {
     @Column(name = "exam_type_id", nullable = false, updatable = false)
     private UUID examTypeId;
 
-    private EquipmentExamType(Equipment equipment, ExamType examType) {
+    @Column(name = "duration_minutes", nullable = false)
+    private Integer durationMinutes;
+
+    private EquipmentExamType(Equipment equipment, ExamType examType, Integer durationMinutes) {
         Objects.requireNonNull(equipment, "장비는 필수입니다.");
         Objects.requireNonNull(examType, "검사 유형은 필수입니다.");
 
@@ -45,12 +48,21 @@ public class EquipmentExamType extends BaseEntity {
 
         this.equipmentId = equipment.getId();
         this.examTypeId = examType.getId();
+        changeDurationMinutes(durationMinutes);
     }
 
     public static EquipmentExamType create(
             Equipment equipment,
-            ExamType examType
+            ExamType examType,
+            Integer durationMinutes
     ) {
-        return new EquipmentExamType(equipment, examType);
+        return new EquipmentExamType(equipment, examType, durationMinutes);
+    }
+
+    public void changeDurationMinutes(Integer durationMinutes) {
+        if (durationMinutes == null || durationMinutes < 1) {
+            throw new IllegalArgumentException("검사 소요시간은 필수이며 1분 이상이어야 합니다.");
+        }
+        this.durationMinutes = durationMinutes;
     }
 }
