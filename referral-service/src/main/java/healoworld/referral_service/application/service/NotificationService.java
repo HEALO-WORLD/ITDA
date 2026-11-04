@@ -1,14 +1,16 @@
 package healoworld.referral_service.application.service;
 
+import healoworld.referral_service.domain.entity.IncidentReferral;
+import healoworld.referral_service.domain.entity.Notification;
+import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.repository.NotificationRepository;
+import healoworld.referral_service.infrastructure.repository.NotificationSpecifications;
 import healoworld.referral_service.presentation.dto.response.NotificationReadResponse;
 import healoworld.referral_service.presentation.dto.response.NotificationResponse;
 import healoworld.referral_service.presentation.dto.response.UnreadCountResponse;
-import healoworld.referral_service.domain.entity.Notification;
-import healoworld.referral_service.infrastructure.repository.NotificationRepository;
-import healoworld.referral_service.infrastructure.repository.NotificationSpecifications;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,7 @@ import java.util.UUID;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private static final String RESCHEDULE_REQUIRED = "RESCHEDULE_REQUIRED";
 
     // 내 알림 목록 (referralId, isRead는 선택 필터)
     public PagedResponse<NotificationResponse> getMyNotifications(UUID userId, UUID referralId, Boolean isRead,
@@ -60,5 +63,38 @@ public class NotificationService {
             throw new BaseException(ErrorCode.NOTIFICATION_ACCESS_DENIED);
         }
         return notification;
+    }
+
+
+    // 장비 장애로 재예약이 필요한 경우 의뢰 담당자에게 알림 생성
+    @Transactional
+    public void createRescheduleRequired(
+            IncidentReferral task,
+            Referral referral
+    ) {
+        UUID recipientUserId = referral.getReferrerId();
+
+        // 동일한 장애 작업으로 이미 생성된 알림이 있으면 중복 생성하지 않음
+        if (notificationRepository
+                .existsByIncidentReferralIdAndRecipientUserIdAndType(
+                        task.getId(),
+                        recipientUserId,
+                        RESCHEDULE_REQUIRED
+                )) {
+            return;
+        }
+
+        Notification notification = Notification.create(
+                recipientUserId,
+                referral.getId(),
+                task.getReservationId(),
+                task.getId(),
+                task.getIncident().getSourceEventId(),
+                RESCHEDULE_REQUIRED,
+                "검사 예약 재조정 필요",
+                "장비 장애로 기존 검사 예약을 진행할 수 없어 새로운 검사 일정 선택이 필요합니다."
+        );
+
+        notificationRepository.saveAndFlush(notification);
     }
 }
