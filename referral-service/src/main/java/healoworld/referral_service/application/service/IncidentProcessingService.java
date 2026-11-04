@@ -59,26 +59,35 @@ public class IncidentProcessingService {
     private final TransactionTemplate newTransaction;
     private final Duration lockDuration;
     private final Duration retryDelay;
+    private final NotificationService notificationService;
 
-    public IncidentProcessingService(IncidentReferralRepository incidentReferralRepository,
-                                     IncidentAffectedReferralRepository incidentAffectedReferralRepository,
-                                     IncidentReservationRepository incidentReservationRepository,
-                                     PlatformTransactionManager transactionManager,
-                                     @Value("${itda.incident-processing.lock-duration:PT5M}") Duration lockDuration,
-                                     @Value("${itda.incident-processing.retry-delay:PT1M}") Duration retryDelay) {
+    public IncidentProcessingService(
+            IncidentReferralRepository incidentReferralRepository,
+            IncidentAffectedReferralRepository incidentAffectedReferralRepository,
+            IncidentReservationRepository incidentReservationRepository,
+            NotificationService notificationService,
+            PlatformTransactionManager transactionManager,
+            @Value("${itda.incident-processing.lock-duration:PT5M}") Duration lockDuration,
+            @Value("${itda.incident-processing.retry-delay:PT1M}") Duration retryDelay
+    ) {
         this.incidentReferralRepository = incidentReferralRepository;
         this.incidentAffectedReferralRepository = incidentAffectedReferralRepository;
         this.incidentReservationRepository = incidentReservationRepository;
+        this.notificationService = notificationService;
+
         this.newTransaction = new TransactionTemplate(transactionManager);
-        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.newTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW
+        );
+
         this.lockDuration = lockDuration;
         this.retryDelay = retryDelay;
     }
 
     // 트랜잭션: 호출한 쪽 트랜잭션에 참여하지 않는다(NOT_SUPPORTED). DB 작업은 모두 newTransaction 안에서만 한다
     //  T1 선점: claim()을 독립 트랜잭션으로 커밋해 다른 작업자가 즉시 PROCESSING을 보게 한다. 0이면 아무것도 하지 않는다
-    //  T2 처리: 의뢰 → 예약 순서로 FOR UPDATE 잠금 → 상태 판단 → block()/requestReschedule() → markSucceeded()까지 한 트랜잭션
-    //          markSucceeded()가 0이면(잠금이 다른 작업자에게 넘어감) 예외로 T2 전체를 롤백해 예약·의뢰 변경도 취소한다
+    //  T2 처리: 의뢰 → 예약 순서로 FOR UPDATE 잠금 → 상태 변경·알림 저장 → markSucceeded()까지 한 트랜잭션
+    //          markSucceeded()가 0이면 잠금 상실로 T2를 롤백해 예약·의뢰·알림 변경을 모두 취소한다
     //  T3 실패 기록: T2가 롤백된 뒤 새 트랜잭션에서 markFailed(). 내 잠금이 아니면 0이 되어 다른 작업자의 기록을 덮어쓰지 않는다
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Outcome process(UUID incidentReferralId) {
@@ -108,23 +117,50 @@ public class IncidentProcessingService {
         }
     }
 
-    // T2: 잠금 → 판단 → 변경 → 성공 기록
+    // T2: 잠금 → 판단 → 상태 변경 및 알림 저장 → 성공 기록
     private void handle(UUID incidentReferralId, LocalDateTime lockedUntil) {
         IncidentReferral task = incidentReferralRepository.findById(incidentReferralId)
-                .orElseThrow(() -> new ProcessingFailure(DATA_INCONSISTENCY, "작업이 존재하지 않습니다."));
+                .orElseThrow(() -> new ProcessingFailure(
+                        DATA_INCONSISTENCY,
+                        "작업이 존재하지 않습니다."
+                ));
+
         UUID referralId = task.getReferralId();
         UUID reservationId = task.getReservationId();
 
         Referral referral = incidentAffectedReferralRepository.findByIdForUpdate(referralId)
-                .orElseThrow(() -> new ProcessingFailure(DATA_INCONSISTENCY, "의뢰가 존재하지 않습니다. referralId=" + referralId));
+                .orElseThrow(() -> new ProcessingFailure(
+                        DATA_INCONSISTENCY,
+                        "의뢰가 존재하지 않습니다. referralId=" + referralId
+                ));
+
         Reservation reservation = incidentReservationRepository.findByIdForUpdate(reservationId)
-                .orElseThrow(() -> new ProcessingFailure(DATA_INCONSISTENCY, "예약이 존재하지 않습니다. reservationId=" + reservationId));
+                .orElseThrow(() -> new ProcessingFailure(
+                        DATA_INCONSISTENCY,
+                        "예약이 존재하지 않습니다. reservationId=" + reservationId
+                ));
 
-        String resultCode = decideAndApply(referral, reservation, referralId, reservationId);
+        String resultCode = decideAndApply(
+                referral,
+                reservation,
+                referralId,
+                reservationId
+        );
 
-        // 반드시 마지막에 호출한다. flushAutomatically로 위의 예약·의뢰 변경이 먼저 UPDATE되고,
-        // clearAutomatically로 영속성 컨텍스트가 비워지므로 이후에는 referral·reservation 객체를 쓰지 않는다
-        int updated = incidentReferralRepository.markSucceeded(incidentReferralId, lockedUntil, resultCode, now());
+        // 실제 예약이 차단되고 의뢰가 재조정 필요 상태가 됐을 때만 알림을 저장한다
+        if (RESCHEDULE_REQUIRED.equals(resultCode)) {
+            notificationService.createRescheduleRequired(task, referral);
+        }
+
+        // 반드시 마지막에 호출한다. flushAutomatically로 상태·알림 INSERT가 반영되고,
+        // clearAutomatically로 영속성 컨텍스트가 비워지므로 이후에는 엔티티를 사용하지 않는다
+        int updated = incidentReferralRepository.markSucceeded(
+                incidentReferralId,
+                lockedUntil,
+                resultCode,
+                now()
+        );
+
         if (updated == 0) {
             throw new LeaseLostException();
         }

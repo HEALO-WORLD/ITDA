@@ -2,10 +2,13 @@ package healoworld.slot_service.application;
 
 import healoworld.slot_service.application.service.SlotHoldExpiryService;
 import healoworld.slot_service.domain.entity.Slot;
+import healoworld.slot_service.domain.entity.SlotStatusHistory;
 import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
 import healoworld.slot_service.global.outbox.OutboxEvent;
 import healoworld.slot_service.global.outbox.OutboxEventRepository;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
+import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
 import healoworld.slot_service.support.FixedClockConfig;
 import healoworld.slot_service.support.fixture.SlotFixture;
 import org.junit.jupiter.api.AfterEach;
@@ -23,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static healoworld.slot_service.support.SlotStatusHistoryTestSupport.singleHistory;
 import static org.assertj.core.api.Assertions.assertThat;
 
 // 고정 시각 FixedClockConfig.NOW(2026-10-30T10:00) 기준으로 HOLD 만료를 검증한다
@@ -40,6 +44,9 @@ class SlotHoldExpiryServiceTest {
     private SlotRepository slotRepository;
 
     @Autowired
+    private SlotStatusHistoryRepository slotStatusHistoryRepository;
+
+    @Autowired
     private OutboxEventRepository outboxEventRepository;
 
     @Autowired
@@ -48,6 +55,7 @@ class SlotHoldExpiryServiceTest {
     @AfterEach
     void tearDown() {
         outboxEventRepository.deleteAllInBatch();
+        slotStatusHistoryRepository.deleteAllInBatch();
         slotRepository.deleteAllInBatch();
     }
 
@@ -169,6 +177,52 @@ class SlotHoldExpiryServiceTest {
         List<Slot> result = slotRepository.findExpiredHolds(SlotStatus.HELD, NOW, PageRequest.of(0, 100));
 
         assertThat(result).extracting(Slot::getId).containsExactly(older.getId(), newer.getId());
+    }
+
+    // ---------- 상태 이력 ----------
+
+    @Test
+    void 만료하면_HELD에서_AVAILABLE로_시스템_이력을_남긴다() {
+        UUID reservationId = UUID.randomUUID();
+        LocalDateTime heldUntil = NOW.minusSeconds(1);
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.held(reservationId, heldUntil));
+
+        slotHoldExpiryService.expire(slot.getId(), reservationId, heldUntil);
+
+        SlotStatusHistory history = singleHistory(slotStatusHistoryRepository);
+        assertThat(history.getSlot().getId()).isEqualTo(slot.getId());
+        assertThat(history.getReservationId()).isEqualTo(reservationId);   // 해제 전 예약 ID를 남긴다
+        assertThat(history.getFromStatus()).isEqualTo(SlotStatus.HELD);
+        assertThat(history.getToStatus()).isEqualTo(SlotStatus.AVAILABLE);
+        assertThat(history.getReason()).isEqualTo(SlotStatusChangeReason.HOLD_EXPIRED);
+        assertThat(history.getSourceEventId()).isNull();
+        assertThat(history.getChangedBy()).isNull();
+
+        Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
+        assertThat(history.getChangedAt()).isEqualTo(saved.getUpdatedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void 만료_대상이_아니면_이력을_남기지_않는다() {
+        UUID reservationId = UUID.randomUUID();
+        LocalDateTime heldUntil = NOW.plusSeconds(1);
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.held(reservationId, heldUntil));
+
+        slotHoldExpiryService.expire(slot.getId(), reservationId, heldUntil);
+
+        assertThat(slotStatusHistoryRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void 같은_슬롯을_두_번_처리해도_이력은_한_번만_남긴다() {
+        UUID reservationId = UUID.randomUUID();
+        LocalDateTime heldUntil = NOW.minusMinutes(1);
+        Slot slot = slotRepository.saveAndFlush(SlotFixture.held(reservationId, heldUntil));
+
+        slotHoldExpiryService.expire(slot.getId(), reservationId, heldUntil);
+        slotHoldExpiryService.expire(slot.getId(), reservationId, heldUntil);
+
+        singleHistory(slotStatusHistoryRepository);
     }
 
     private OutboxEvent singleOutbox() {

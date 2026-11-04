@@ -3,6 +3,7 @@ package healoworld.slot_service.application;
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
+import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
 import healoworld.slot_service.support.fixture.SlotFixture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +44,9 @@ class SlotBookExpiryRaceTest {
     private SlotRepository slotRepository;
 
     @Autowired
+    private SlotStatusHistoryRepository slotStatusHistoryRepository;
+
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     private TransactionTemplate tx;
@@ -57,6 +61,7 @@ class SlotBookExpiryRaceTest {
     @AfterEach
     void tearDown() {
         executor.shutdownNow();
+        slotStatusHistoryRepository.deleteAllInBatch();
         slotRepository.deleteAllInBatch();
     }
 

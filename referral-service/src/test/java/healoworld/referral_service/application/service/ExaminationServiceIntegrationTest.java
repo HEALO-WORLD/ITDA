@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * ExaminationService 통합 테스트
- *
+ * <p>
  * - 실제 PostgreSQL을 사용하여 검사 생성·조회·상태 변경을 검증한다.
  * - 의뢰·예약·검사 간 연결 관계 및 검사 시작 조건을 검증한다.
  * - 검사 결과 등록과 중복 요청 처리의 정합성을 확인한다.
@@ -117,7 +117,7 @@ class ExaminationServiceIntegrationTest {
 
     /**
      * 상태 변경 및 결과 등록 테스트에 사용할 검사 데이터를 생성한다.
-     *
+     * <p>
      * 검사 시작 조건 자체를 검증하는 테스트가 아니므로
      * 필요한 상태는 Repository의 조건부 UPDATE를 통해 준비한다.
      */
@@ -152,9 +152,9 @@ class ExaminationServiceIntegrationTest {
     /**
      * 검사 시작 조건 검증을 위한 의뢰·예약·검사 데이터를 생성한다.
      *
-     * @param confirmReferral 의뢰 확정 여부
+     * @param confirmReferral    의뢰 확정 여부
      * @param confirmReservation 예약 확정 여부
-     * @param sameReservation 의뢰의 현재 예약과 검사 예약의 일치 여부
+     * @param sameReservation    의뢰의 현재 예약과 검사 예약의 일치 여부
      */
     private UUID createExaminationForStartTest(
             boolean confirmReferral,
@@ -323,6 +323,38 @@ class ExaminationServiceIntegrationTest {
         );
     }
 
+    @Test
+    @DisplayName("최초 예약 확정 시 검사 1건 생성 및 중복 생성 방지")
+    void syncScheduledExaminationCreatesOnce() {
+        // given
+        UUID referralId = UUID.randomUUID();
+        UUID reservationId = UUID.randomUUID();
+        UUID institutionId = UUID.randomUUID();
+
+        // when
+        UUID firstId = examinationService.syncScheduledExamination(
+                referralId, reservationId, institutionId
+        );
+
+        // 동일한 요청 재실행
+        UUID secondId = examinationService.syncScheduledExamination(
+                referralId, reservationId, institutionId
+        );
+
+        // then
+        Examination examination = examinationRepository
+                .findById(firstId)
+                .orElseThrow();
+
+        assertThat(firstId).isEqualTo(secondId);
+        assertThat(examination.getStatus())
+                .isEqualTo(ExaminationStatus.SCHEDULED);
+        assertThat(examination.getReservationId())
+                .isEqualTo(reservationId);
+        assertThat(examinationRepository.countByReferralId(referralId))
+                .isEqualTo(1);
+    }
+
     // =========================================================
     // 2. 재예약 연결 변경
     // =========================================================
@@ -433,6 +465,54 @@ class ExaminationServiceIntegrationTest {
                 ),
                 ErrorCode.EXAMINATION_NOT_FOUND
         );
+    }
+
+    @Test
+    @DisplayName("재예약 확정 시 기존 검사 기록을 새 예약에 연결")
+    void syncScheduledExaminationUpdatesReservation() {
+        // given
+        UUID firstInstitutionId = UUID.randomUUID();
+        UUID newInstitutionId = UUID.randomUUID();
+        UUID referralId = UUID.randomUUID();
+        UUID firstReservationId = UUID.randomUUID();
+        UUID newReservationId = UUID.randomUUID();
+        UUID institutionId = UUID.randomUUID();
+
+        UUID originalExaminationId =
+                examinationService.syncScheduledExamination(
+                        referralId,
+                        firstReservationId,
+                        firstInstitutionId
+                );
+
+        // when
+        UUID updatedExaminationId =
+                examinationService.syncScheduledExamination(
+                        referralId,
+                        newReservationId,
+                        newInstitutionId
+                );
+
+        // then
+        Examination examination = examinationRepository
+                .findById(updatedExaminationId)
+                .orElseThrow();
+
+        // 검사 ID는 그대로 유지
+        assertThat(updatedExaminationId)
+                .isEqualTo(originalExaminationId);
+
+        // 예약 ID만 변경
+        assertThat(examination.getReservationId())
+                .isEqualTo(newReservationId);
+
+        // 검사기관 ID도 새 검사기관으로 변경됐는지 확인
+        assertThat(examination.getExamInstitutionId())
+                .isEqualTo(newInstitutionId);
+
+        // 검사 중복 생성 방지
+        assertThat(examinationRepository.countByReferralId(referralId))
+                .isEqualTo(1);
     }
 
     // =========================================================

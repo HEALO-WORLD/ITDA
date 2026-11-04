@@ -61,7 +61,7 @@ public class SlotCommandHandler {
                     event.slotId(), event.reservationId());
             saveHoldFailed(event, HoldFailureReason.SLOT_CONFLICT, now);
         } else {
-            HoldResult result = slotHoldService.hold(event.slotId(), event.reservationId());
+            HoldResult result = slotHoldService.hold(event.slotId(), event.reservationId(), event.eventId());
             if (result.isSuccess()) {
                 SlotHeldEvent held = SlotHeldEvent.of(event, result.getHeldUntil(), now);
                 saveOutbox(held.eventId(), event.slotId(), SlotHeldEvent.TYPE, held, now);
@@ -82,7 +82,7 @@ public class SlotCommandHandler {
 
         LocalDateTime now = LocalDateTime.now(clock);
 
-        switch (slotBookService.book(event.slotId(), event.reservationId())) {
+        switch (slotBookService.book(event.slotId(), event.reservationId(), event.eventId())) {
             // 같은 예약으로 이미 확정된 경우도 성공으로 다시 알려 Referral이 확정 처리를 이어갈 수 있게 한다
             case BOOKED, ALREADY_BOOKED -> {
                 SlotBookedEvent booked = SlotBookedEvent.of(event, now);
@@ -109,7 +109,7 @@ public class SlotCommandHandler {
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
-        ReleaseOutcome outcome = slotReleaseService.releaseHold(event.slotId(), event.reservationId());
+        ReleaseOutcome outcome = slotReleaseService.releaseHold(event.slotId(), event.reservationId(), event.eventId());
         log.info("ReleaseHold 처리. slotId={}, reservationId={}, result={}",
                 event.slotId(), event.reservationId(), outcome);
 
@@ -125,7 +125,7 @@ public class SlotCommandHandler {
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
-        ReleaseOutcome outcome = slotReleaseService.releaseSlot(event.slotId(), event.reservationId());
+        ReleaseOutcome outcome = slotReleaseService.releaseSlot(event.slotId(), event.reservationId(), event.eventId());
         log.info("ReleaseSlot 처리. slotId={}, reservationId={}, result={}",
                 event.slotId(), event.reservationId(), outcome);
 

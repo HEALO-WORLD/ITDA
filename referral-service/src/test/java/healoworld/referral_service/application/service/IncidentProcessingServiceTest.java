@@ -6,6 +6,8 @@ import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
+import healoworld.referral_service.global.exception.BaseException;
+import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.IncidentAffectedReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
@@ -17,8 +19,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import healoworld.referral_service.global.exception.BaseException;
-import healoworld.referral_service.global.exception.ErrorCode;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,7 +26,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.sql.SQLException;
-
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -34,9 +33,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -61,6 +58,9 @@ class IncidentProcessingServiceTest {
     @Mock
     private PlatformTransactionManager transactionManager;
 
+    @Mock
+    private NotificationService notificationService;
+
     private IncidentProcessingService service;
 
     private final UUID taskId = UUID.randomUUID();
@@ -69,8 +69,15 @@ class IncidentProcessingServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new IncidentProcessingService(incidentReferralRepository, incidentAffectedReferralRepository,
-                incidentReservationRepository, transactionManager, Duration.ofMinutes(5), Duration.ofMinutes(1));
+        service = new IncidentProcessingService(
+                incidentReferralRepository,
+                incidentAffectedReferralRepository,
+                incidentReservationRepository,
+                notificationService,
+                transactionManager,
+                Duration.ofMinutes(5),
+                Duration.ofMinutes(1)
+        );
     }
 
     // 의뢰·예약을 원하는 상태로 만들고 의뢰의 현재 예약을 그 예약으로 연결한다
@@ -137,15 +144,29 @@ class IncidentProcessingServiceTest {
     }
 
     @Test
-    @DisplayName("의뢰·예약이 모두 CONFIRMED이고 현재 예약이면 예약 BLOCKED, 의뢰 NEEDS_RESCHEDULE, RESCHEDULE_REQUIRED")
+    @DisplayName("정상 처리 시 예약 차단, 의뢰 재조정 필요 변경 및 알림 생성")
     void normalProcessing() {
         givenState(ReferralStatus.CONFIRMED, ReservationStatus.CONFIRMED);
         givenLockedRows();
         givenMarkSucceeded(1);
 
-        assertThat(service.process(taskId, NOW)).isEqualTo(Outcome.SUCCEEDED);
-        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.BLOCKED);
-        assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(service.process(taskId, NOW))
+                .isEqualTo(Outcome.SUCCEEDED);
+
+        assertThat(reservation.getReservationStatus())
+                .isEqualTo(ReservationStatus.BLOCKED);
+
+        assertThat(referral.getReferralStatus())
+                .isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+
+        // 재조정 필요 알림 생성 요청 확인
+        then(notificationService)
+                .should()
+                .createRescheduleRequired(
+                        any(IncidentReferral.class),
+                        eq(referral)
+                );
+
         assertSucceededWith(IncidentProcessingService.RESCHEDULE_REQUIRED);
     }
 
@@ -160,6 +181,9 @@ class IncidentProcessingServiceTest {
         assertThat(service.process(taskId, NOW)).isEqualTo(Outcome.SUCCEEDED);
         assertThat(reservation.getEndedAt()).isEqualTo(endedAt);
         assertSucceededWith(IncidentProcessingService.ALREADY_BLOCKED);
+
+        // 이미 차단된 예약에는 중복 알림을 생성하지 않음
+        then(notificationService).shouldHaveNoInteractions();
     }
 
     @Test
@@ -172,6 +196,9 @@ class IncidentProcessingServiceTest {
         assertThat(service.process(taskId, NOW)).isEqualTo(Outcome.SUCCEEDED);
         assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.CANCELED);
         assertSucceededWith(IncidentProcessingService.SKIPPED_CANCELED);
+
+        // 취소된 의뢰에는 알림을 생성하지 않음
+        then(notificationService).shouldHaveNoInteractions();
     }
 
     @Test
@@ -185,6 +212,7 @@ class IncidentProcessingServiceTest {
         assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.CANCELED);
         assertSucceededWith(IncidentProcessingService.SKIPPED_CANCELED);
+        then(notificationService).shouldHaveNoInteractions();
     }
 
     @Test
@@ -199,6 +227,7 @@ class IncidentProcessingServiceTest {
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
         assertSucceededWith(IncidentProcessingService.SKIPPED_NOT_CURRENT);
+        then(notificationService).shouldHaveNoInteractions();
     }
 
     @Test

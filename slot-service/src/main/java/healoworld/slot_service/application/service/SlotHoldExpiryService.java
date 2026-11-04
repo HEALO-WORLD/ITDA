@@ -2,6 +2,7 @@ package healoworld.slot_service.application.service;
 
 import healoworld.slot_service.application.event.result.HoldExpiredEvent;
 import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
 import healoworld.slot_service.global.outbox.OutboxEvent;
 import healoworld.slot_service.global.outbox.OutboxEventRepository;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
@@ -26,6 +27,7 @@ public class SlotHoldExpiryService {
 
     private final SlotRepository slotRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final SlotStatusHistoryRecorder slotStatusHistoryRecorder;
     private final JsonMapper jsonMapper;
     private final Clock clock;
 
@@ -41,6 +43,10 @@ public class SlotHoldExpiryService {
                     slotId, reservationId);
             return false;
         }
+
+        // 스케줄러와 BookSlot(만료 후 도착) 양쪽에서 호출되지만, 만료는 시간이 지나 생긴 결과라 시스템 변경으로 남긴다
+        slotStatusHistoryRecorder.recordBySystem(slotId, reservationId,
+                SlotStatus.HELD, SlotStatus.AVAILABLE, SlotStatusChangeReason.HOLD_EXPIRED, now);
 
         // 결과 이벤트는 slot-results에 key = slotId로 발행한다
         HoldExpiredEvent event = HoldExpiredEvent.of(slotId, reservationId, heldUntil, now);
