@@ -2,6 +2,7 @@ package healoworld.slot_service.application.service;
 
 import healoworld.slot_service.application.dto.ReleaseOutcome;
 import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
@@ -22,14 +23,18 @@ import java.util.UUID;
 public class SlotReleaseService {
 
     private final SlotRepository slotRepository;
+    private final SlotStatusHistoryRecorder slotStatusHistoryRecorder;
     private final Clock clock;
 
     // 확정 실패 보상: 같은 예약으로 HELD인 슬롯을 AVAILABLE로 되돌린다
+    // eventId: ReleaseHold 이벤트 ID. 상태 이력의 source_event_id로 남긴다
     @Transactional
-    public ReleaseOutcome releaseHold(UUID slotId, UUID reservationId) {
+    public ReleaseOutcome releaseHold(UUID slotId, UUID reservationId, UUID eventId) {
         LocalDateTime now = LocalDateTime.now(clock);
 
         if (slotRepository.releaseHoldIfHeld(slotId, reservationId, now, SlotStatus.HELD, SlotStatus.AVAILABLE) == 1) {
+            slotStatusHistoryRecorder.recordByEvent(slotId, reservationId,
+                    SlotStatus.HELD, SlotStatus.AVAILABLE, SlotStatusChangeReason.RELEASE_HOLD, eventId, now);
             return ReleaseOutcome.RELEASED;
         }
 
@@ -44,14 +49,20 @@ public class SlotReleaseService {
     }
 
     // 예약 취소: 같은 예약으로 BOOKED면 AVAILABLE로 되돌리고, 장애로 UNAVAILABLE이면 예약 연결만 끊는다
+    // eventId: ReleaseSlot 이벤트 ID. 상태 이력의 source_event_id로 남긴다
     @Transactional
-    public ReleaseOutcome releaseSlot(UUID slotId, UUID reservationId) {
+    public ReleaseOutcome releaseSlot(UUID slotId, UUID reservationId, UUID eventId) {
         LocalDateTime now = LocalDateTime.now(clock);
 
         if (slotRepository.releaseBookedSlot(slotId, reservationId, now, SlotStatus.BOOKED, SlotStatus.AVAILABLE) == 1) {
+            slotStatusHistoryRecorder.recordByEvent(slotId, reservationId,
+                    SlotStatus.BOOKED, SlotStatus.AVAILABLE, SlotStatusChangeReason.RELEASE_SLOT, eventId, now);
             return ReleaseOutcome.RELEASED;
         }
+        // 상태는 UNAVAILABLE 그대로지만 예약 연결이 끊긴 것도 추적할 수 있게 이력을 남긴다
         if (slotRepository.detachReservationIfUnavailable(slotId, reservationId, now, SlotStatus.UNAVAILABLE) == 1) {
+            slotStatusHistoryRecorder.recordByEvent(slotId, reservationId,
+                    SlotStatus.UNAVAILABLE, SlotStatus.UNAVAILABLE, SlotStatusChangeReason.RELEASE_SLOT, eventId, now);
             return ReleaseOutcome.DETACHED;
         }
         return ReleaseOutcome.NOT_APPLICABLE;
@@ -59,21 +70,35 @@ public class SlotReleaseService {
 
     // ADMIN 강제 해제: 같은 예약으로 HELD·BOOKED면 반환하고, UNAVAILABLE이면 예약 연결만 끊는다.
     // Referral과 Slot의 상태 불일치를 관리자가 정리하는 용도라, 해제할 대상이 없으면 예외로 알린다
+    // changedBy: 강제 해제를 요청한 관리자 ID. 상태 이력의 changed_by로 남긴다
     @Transactional
-    public ReleaseOutcome forceRelease(UUID slotId, UUID reservationId) {
+    public ReleaseOutcome forceRelease(UUID slotId, UUID reservationId, UUID changedBy) {
         if (!slotRepository.existsById(slotId)) {
             throw new BaseException(ErrorCode.SLOT_NOT_FOUND);
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
-        int released = slotRepository.releaseHoldIfHeld(slotId, reservationId, now, SlotStatus.HELD, SlotStatus.AVAILABLE)
-                + slotRepository.releaseBookedSlot(slotId, reservationId, now, SlotStatus.BOOKED, SlotStatus.AVAILABLE);
-        if (released == 1) {
-            log.warn("관리자 슬롯 강제 해제. slotId={}, reservationId={}", slotId, reservationId);
+
+        // 이력에 이전 상태를 남겨야 하므로 HELD 해제와 BOOKED 해제를 따로 시도한다
+        SlotStatus fromStatus = null;
+        if (slotRepository.releaseHoldIfHeld(slotId, reservationId, now, SlotStatus.HELD, SlotStatus.AVAILABLE) == 1) {
+            fromStatus = SlotStatus.HELD;
+        } else if (slotRepository.releaseBookedSlot(slotId, reservationId, now, SlotStatus.BOOKED, SlotStatus.AVAILABLE) == 1) {
+            fromStatus = SlotStatus.BOOKED;
+        }
+        if (fromStatus != null) {
+            slotStatusHistoryRecorder.recordByUser(slotId, reservationId,
+                    fromStatus, SlotStatus.AVAILABLE, SlotStatusChangeReason.ADMIN_RELEASE, changedBy, now);
+            log.warn("관리자 슬롯 강제 해제. slotId={}, reservationId={}, from={}, adminId={}",
+                    slotId, reservationId, fromStatus, changedBy);
             return ReleaseOutcome.RELEASED;
         }
+
         if (slotRepository.detachReservationIfUnavailable(slotId, reservationId, now, SlotStatus.UNAVAILABLE) == 1) {
-            log.warn("관리자 슬롯 예약 연결 해제(UNAVAILABLE 유지). slotId={}, reservationId={}", slotId, reservationId);
+            slotStatusHistoryRecorder.recordByUser(slotId, reservationId,
+                    SlotStatus.UNAVAILABLE, SlotStatus.UNAVAILABLE, SlotStatusChangeReason.ADMIN_RELEASE, changedBy, now);
+            log.warn("관리자 슬롯 예약 연결 해제(UNAVAILABLE 유지). slotId={}, reservationId={}, adminId={}",
+                    slotId, reservationId, changedBy);
             return ReleaseOutcome.DETACHED;
         }
         throw new BaseException(ErrorCode.SLOT_NOT_RELEASABLE);

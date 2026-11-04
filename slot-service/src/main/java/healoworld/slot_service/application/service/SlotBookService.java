@@ -3,6 +3,7 @@ package healoworld.slot_service.application.service;
 import healoworld.slot_service.application.dto.BookOutcome;
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,16 +22,23 @@ public class SlotBookService {
 
     private final SlotRepository slotRepository;
     private final SlotHoldExpiryService slotHoldExpiryService;
+    private final SlotStatusHistoryRecorder slotStatusHistoryRecorder;
     private final Clock clock;
 
+    // eventId: 이 확정을 요청한 BookSlot 이벤트 ID. 상태 이력의 source_event_id로 남긴다
     @Transactional
-    public BookOutcome book(UUID slotId, UUID reservationId) {
+    public BookOutcome book(UUID slotId, UUID reservationId, UUID eventId) {
         LocalDateTime now = LocalDateTime.now(clock);
 
         int updated = slotRepository.bookIfHeld(slotId, reservationId, now, SlotStatus.HELD, SlotStatus.BOOKED);
         if (updated == 1) {
+            slotStatusHistoryRecorder.recordByEvent(slotId, reservationId,
+                    SlotStatus.HELD, SlotStatus.BOOKED, SlotStatusChangeReason.BOOK, eventId, now);
             return BookOutcome.BOOKED;
         }
+
+        // 아래는 상태가 바뀌지 않은 경우라 이력을 남기지 않는다.
+        // 단, 만료된 HOLD는 expire()가 HOLD_EXPIRED 이력을 남긴다
 
         // 0행: 없는 슬롯인지, 이미 확정된 건지, 만료된 건지, 남의 슬롯인지 구분
         Slot slot = slotRepository.findById(slotId).orElse(null);
