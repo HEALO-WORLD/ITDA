@@ -1,6 +1,7 @@
 package healoworld.institution_service.presentation.controller;
 
 import healoworld.institution_service.application.service.institution.InstitutionService;
+import healoworld.institution_service.domain.enums.Role;
 import healoworld.institution_service.global.dto.ApiResponse;
 import healoworld.institution_service.presentation.dto.request.InstitutionCreateRequest;
 import healoworld.institution_service.presentation.dto.request.InstitutionUpdateRequest;
@@ -55,4 +56,12 @@ public class InstitutionController {
         return ResponseEntity.ok(ApiResponse.ok("기관이 삭제되었습니다.", null));
     }
 
+    @GetMapping("/{institutionId}")
+    public ResponseEntity<ApiResponse<InstitutionResponse>> getInstitutionDetail(
+            @PathVariable UUID institutionId,
+            @RequestHeader("X-Institution-Id") UUID myInstitutionId,
+            @RequestHeader("X-Role") Role role) {
+        return ResponseEntity.ok(ApiResponse.ok("기관 상세 정보입니다.",
+                institutionService.getInstitutionDetail(institutionId, myInstitutionId, role)));
+    }
 }
