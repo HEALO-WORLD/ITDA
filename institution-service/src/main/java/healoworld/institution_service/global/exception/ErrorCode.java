@@ -18,6 +18,13 @@ public enum ErrorCode {
     // institution
     INSTITUTION_NOT_FOUND(HttpStatus.NOT_FOUND, "기관을 찾을 수 없습니다."),
     SIGNUP_NOT_ALLOWED_INSTITUTION(HttpStatus.BAD_REQUEST, "가입할 수 없는 기관입니다."),
+    INVALID_INSTITUTION_NAME(HttpStatus.BAD_REQUEST, "기관명은 공백이 아닌 최대 100자여야 합니다."),
+    INVALID_INSTITUTION_ADDRESS(HttpStatus.BAD_REQUEST, "주소는 공백이 아닌 최대 255자여야 합니다."),
+    INVALID_CARE_INSTITUTION_CODE(HttpStatus.BAD_REQUEST, "의료기관은 숫자 8자리 요양기관기호가 필요하며, 운영사 기관은 가질 수 없습니다."),
+    INSTITUTION_TYPE_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "등록할 수 없는 기관 유형입니다."),
+    DUPLICATE_CARE_INSTITUTION_CODE(HttpStatus.CONFLICT, "이미 등록된 요양기관기호입니다."),
+    INSTITUTION_HAS_ACTIVE_PARTNERSHIP(HttpStatus.CONFLICT, "진행 중이거나 활성 상태인 협약이 있어 삭제할 수 없습니다."),
+    INSTITUTION_HAS_USERS(HttpStatus.CONFLICT, "소속 사용자가 있어 삭제할 수 없습니다."),
 
     // equipment
     INSTITUTION_NOT_AVAILABLE(HttpStatus.CONFLICT, "활성 검사기관에만 장비를 등록할 수 있습니다."),

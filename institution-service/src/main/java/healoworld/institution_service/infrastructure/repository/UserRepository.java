@@ -21,4 +21,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     @EntityGraph(attributePaths = "institution")
     Optional<User> findWithInstitutionByIdAndDeletedAtIsNull(UUID id);
+
+    // 소속 사용자 존재 확인
+    boolean existsByInstitutionIdAndDeletedAtIsNull(UUID institutionId);
 }
