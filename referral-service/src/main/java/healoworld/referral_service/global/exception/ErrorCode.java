@@ -12,6 +12,7 @@ public enum ErrorCode {
     REFERRAL_ACCESS_DENIED(HttpStatus.FORBIDDEN, "의뢰에 대한 권한이 없습니다."),
     REFERRAL_NOT_FOUND(HttpStatus.NOT_FOUND, "의뢰를 찾을 수 없습니다."),
     INVALID_REFERRAL_STATUS(HttpStatus.CONFLICT, "현재 의뢰상태에서는 처리할 수 없습니다."),
+    REFERRAL_IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "이미 사용된 멱등 키입니다."),
 
     // reservation
     RESERVATION_ACCESS_DENIED(HttpStatus.FORBIDDEN, "예약에 대한 권한이 없습니다."),

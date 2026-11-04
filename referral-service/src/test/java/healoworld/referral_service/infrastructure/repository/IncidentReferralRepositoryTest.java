@@ -29,9 +29,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.within;
+import static org.assertj.core.api.Assertions.*;
 
 // 테스트 전용 PostgreSQL(itda_referral_test)에 연결해 제약 조건, 상태별 조회, 조건부 UPDATE를 검증한다
 // 동시성 테스트를 제외한 테스트는 끝나면 롤백된다
@@ -236,11 +234,37 @@ class IncidentReferralRepositoryTest {
         assertThat(failed.getProcessedAt()).isNull();
         assertThat(failed.getRetryCount()).isZero();
 
-        LocalDateTime lockedUntil = now().plusMinutes(5);
-        assertThat(incidentReferralRepository.claim(job.getId(), now(), lockedUntil)).isEqualTo(1);
+        // 재시도 시각 이전에는 선점할 수 없음
+        LocalDateTime beforeRetry = nextRetryAt.minusMinutes(1);
+
+        assertThat(incidentReferralRepository.claim(
+                job.getId(),
+                beforeRetry,
+                beforeRetry.plusMinutes(5)
+        )).as("재시도 시각 이전에는 선점 불가").isZero();
+
+        // 재시도 시각에 도달하면 선점 가능
+        LocalDateTime lockedUntil = nextRetryAt.plusMinutes(5);
+
+        assertThat(incidentReferralRepository.claim(
+                job.getId(),
+                nextRetryAt,
+                lockedUntil
+        )).as("재시도 시각 도달 후 선점 성공").isEqualTo(1);
+
+        // 재시도 횟수가 증가하는지 확인
         assertThat(reload(job.getId()).getRetryCount()).isEqualTo(1);
-        assertThat(incidentReferralRepository.markSucceeded(job.getId(), lockedUntil, null, now())).isEqualTo(1);
-        assertThat(reload(job.getId()).getProcessingStatus()).isEqualTo(IncidentProcessingStatus.SUCCEEDED);
+
+        // 정상 처리 완료
+        assertThat(incidentReferralRepository.markSucceeded(
+                job.getId(),
+                lockedUntil,
+                null,
+                nextRetryAt
+        )).isEqualTo(1);
+
+        assertThat(reload(job.getId()).getProcessingStatus())
+                .isEqualTo(IncidentProcessingStatus.SUCCEEDED);
     }
 
     @Test

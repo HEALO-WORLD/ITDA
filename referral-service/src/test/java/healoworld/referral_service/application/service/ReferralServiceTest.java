@@ -10,6 +10,7 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
+import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
@@ -21,10 +22,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.Optional;
 import java.util.UUID;
 
+import static healoworld.referral_service.support.DomainFixtures.EXAM_START;
 import static healoworld.referral_service.support.DomainFixtures.referralIn;
 import static healoworld.referral_service.support.DomainFixtures.reservation;
 import static healoworld.referral_service.support.DomainFixtures.reservationRequest;
@@ -52,6 +55,9 @@ class ReferralServiceTest {
     @Mock
     private ReservationService reservationService;
 
+    @Mock
+    private ReservationRepository reservationRepository;
+
     @InjectMocks
     private ReferralService referralService;
 
@@ -71,7 +77,7 @@ class ReferralServiceTest {
             referralService.createReferral(USER_ID, request);
 
             ArgumentCaptor<Referral> captor = ArgumentCaptor.forClass(Referral.class);
-            verify(referralRepository).save(captor.capture());
+            verify(referralRepository).saveAndFlush(captor.capture());
             Referral saved = captor.getValue();
 
             assertThat(saved.getReferrerId()).isEqualTo(USER_ID);
@@ -93,16 +99,115 @@ class ReferralServiceTest {
         }
 
         @Test
-        @DisplayName("이미 처리된 멱등키면 기존 의뢰를 반환하고 의뢰와 예약을 새로 만들지 않는다")
+        @DisplayName("이미 처리된 멱등키로 같은 내용이 오면 기존 의뢰를 반환하고 의뢰와 예약을 새로 만들지 않는다")
         void duplicatedIdempotencyKey() {
             Referral existing = referralIn(ReferralStatus.PENDING, USER_ID);
-            CreateReferralRequest request = createRequest(existing.getIdempotencyKey(), reservationRequest());
+            Reservation first = storedWithFirstReservation(existing);
 
+            assertThat(referralService.createReferral(USER_ID, sameRequestAs(existing, first.getSlotId())).getId())
+                    .isEqualTo(existing.getId());
+
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("같은 멱등키인데 환자 이름이 다르면 IDEMPOTENCY_CONFLICT")
+        void differentPatientName() {
+            Referral existing = referralIn(ReferralStatus.PENDING, USER_ID);
+            Reservation first = storedWithFirstReservation(existing);
+            CreateReferralRequest request = requestOf(existing.getIdempotencyKey(), existing.getReferringInstitutionId(),
+                    existing.getExamTypeId(), "다른환자", first.getSlotId());
+
+            assertConflictWithoutCreating(() -> referralService.createReferral(USER_ID, request));
+        }
+
+        @Test
+        @DisplayName("같은 멱등키인데 검사 종류가 다르면 IDEMPOTENCY_CONFLICT")
+        void differentExamType() {
+            Referral existing = referralIn(ReferralStatus.PENDING, USER_ID);
+            Reservation first = storedWithFirstReservation(existing);
+            CreateReferralRequest request = requestOf(existing.getIdempotencyKey(), existing.getReferringInstitutionId(),
+                    UUID.randomUUID(), existing.getPatientName(), first.getSlotId());
+
+            assertConflictWithoutCreating(() -> referralService.createReferral(USER_ID, request));
+        }
+
+        @Test
+        @DisplayName("같은 멱등키인데 첫 예약의 슬롯과 다르면 IDEMPOTENCY_CONFLICT")
+        void differentSlot() {
+            Referral existing = referralIn(ReferralStatus.PENDING, USER_ID);
+            storedWithFirstReservation(existing);
+
+            assertConflictWithoutCreating(() -> referralService.createReferral(USER_ID, sameRequestAs(existing, UUID.randomUUID())));
+        }
+
+        @Test
+        @DisplayName("같은 멱등키를 다른 사용자가 쓰면 기존 의뢰를 넘겨주지 않고 IDEMPOTENCY_CONFLICT")
+        void otherUser() {
+            Referral existing = referralIn(ReferralStatus.PENDING, USER_ID);
+            Reservation first = storedWithFirstReservation(existing);
+
+            assertConflictWithoutCreating(() -> referralService.createReferral(OTHER_USER_ID, sameRequestAs(existing, first.getSlotId())));
+        }
+
+        @Test
+        @DisplayName("의뢰는 있는데 첫 예약을 찾을 수 없으면 IDEMPOTENCY_CONFLICT")
+        void firstReservationMissing() {
+            Referral existing = referralIn(ReferralStatus.PENDING, USER_ID);
             given(referralRepository.findByIdempotencyKey(existing.getIdempotencyKey())).willReturn(Optional.of(existing));
+            given(reservationRepository.findByReferralIdAndAttemptNo(existing.getId(), 1)).willReturn(Optional.empty());
 
-            assertThat(referralService.createReferral(USER_ID, request)).isNotNull();
+            assertConflictWithoutCreating(() -> referralService.createReferral(USER_ID, sameRequestAs(existing, UUID.randomUUID())));
+        }
 
-            verify(referralRepository, never()).save(any());
+        @Test
+        @DisplayName("동시 요청으로 저장 시 멱등키 유니크 위반이 나면 IDEMPOTENCY_CONFLICT, 예약은 만들지 않는다")
+        void concurrentSave() {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+            given(referralRepository.saveAndFlush(any(Referral.class)))
+                    .willThrow(new DataIntegrityViolationException("duplicate idempotency_key"));
+
+            assertErrorCode(() -> referralService.createReferral(USER_ID, request), ErrorCode.REFERRAL_IDEMPOTENCY_CONFLICT);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        // 기존 의뢰와 첫 예약을 조회되게 준비한다
+        private Reservation storedWithFirstReservation(Referral existing) {
+            Reservation first = reservation(existing, 1);
+            given(referralRepository.findByIdempotencyKey(existing.getIdempotencyKey())).willReturn(Optional.of(existing));
+            given(reservationRepository.findByReferralIdAndAttemptNo(existing.getId(), 1)).willReturn(Optional.of(first));
+            return first;
+        }
+
+        private CreateReferralRequest sameRequestAs(Referral existing, UUID slotId) {
+            return requestOf(existing.getIdempotencyKey(), existing.getReferringInstitutionId(), existing.getExamTypeId(),
+                    existing.getPatientName(), slotId);
+        }
+
+        private CreateReferralRequest requestOf(UUID idempotencyKey, UUID referringInstitutionId, UUID examTypeId,
+                                                String patientName, UUID slotId) {
+            CreateReservationRequest reservation = CreateReservationRequest.builder()
+                    .slotId(slotId)
+                    .examInstitutionId(UUID.randomUUID())
+                    .equipmentId(UUID.randomUUID())
+                    .examDate(EXAM_START)
+                    .startTime(EXAM_START)
+                    .endTime(EXAM_START.plusHours(1))
+                    .build();
+            return CreateReferralRequest.builder()
+                    .referringInstitutionId(referringInstitutionId)
+                    .examTypeId(examTypeId)
+                    .patientName(patientName)
+                    .idempotencyKey(idempotencyKey)
+                    .reservation(reservation)
+                    .build();
+        }
+
+        private void assertConflictWithoutCreating(Runnable action) {
+            assertErrorCode(action, ErrorCode.REFERRAL_IDEMPOTENCY_CONFLICT);
+            verify(referralRepository, never()).saveAndFlush(any());
             verifyNoInteractions(reservationService, referralHistoryRepository);
         }
     }
@@ -197,7 +302,7 @@ class ReferralServiceTest {
             Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
             CreateReservationRequest request = reservationRequest();
             Reservation newReservation = reservation(referral, 2);
-            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
             given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(newReservation);
 
             ReservationResponse response =
@@ -225,7 +330,7 @@ class ReferralServiceTest {
         void admin() {
             Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, OTHER_USER_ID);
             CreateReservationRequest request = reservationRequest();
-            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
             given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(reservation(referral, 2));
 
             referralService.createRescheduledReservation(USER_ID, RoleType.ADMIN, referral.getId(), request);
@@ -242,7 +347,7 @@ class ReferralServiceTest {
         @DisplayName("다른 사람의 의뢰는 재예약할 수 없고 예약도 만들지 않는다")
         void otherUser() {
             Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, OTHER_USER_ID);
-            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
 
             assertErrorCode(() -> referralService.createRescheduledReservation(
                     USER_ID, RoleType.REQUESTER, referral.getId(), reservationRequest()), ErrorCode.REFERRAL_NOT_FOUND);
@@ -254,7 +359,7 @@ class ReferralServiceTest {
         @DisplayName("재조정 필요 상태가 아니면 예약을 만들기 전에 실패한다")
         void invalidStatus() {
             Referral referral = referralIn(ReferralStatus.PENDING, USER_ID);
-            given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
 
             assertErrorCode(() -> referralService.createRescheduledReservation(
                     USER_ID, RoleType.REQUESTER, referral.getId(), reservationRequest()), ErrorCode.INVALID_REFERRAL_STATUS);
@@ -265,7 +370,7 @@ class ReferralServiceTest {
         @DisplayName("의뢰가 없으면 REFERRAL_NOT_FOUND")
         void notFound() {
             UUID referralId = UUID.randomUUID();
-            given(referralRepository.findById(referralId)).willReturn(Optional.empty());
+            given(referralRepository.findByIdForUpdate(referralId)).willReturn(Optional.empty());
 
             assertErrorCode(() -> referralService.createRescheduledReservation(
                     USER_ID, RoleType.ADMIN, referralId, reservationRequest()), ErrorCode.REFERRAL_NOT_FOUND);

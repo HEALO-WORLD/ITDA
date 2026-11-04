@@ -7,12 +7,17 @@ import healoworld.institution_service.global.exception.ErrorCode;
 import healoworld.institution_service.infrastructure.repository.InstitutionRepository;
 import healoworld.institution_service.infrastructure.repository.UserRepository;
 import healoworld.institution_service.presentation.dto.request.SignupRequest;
+import healoworld.institution_service.presentation.dto.response.MyInfoResponse;
 import healoworld.institution_service.presentation.dto.response.SignupResponse;
+import healoworld.institution_service.presentation.dto.response.UserSummaryResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -53,5 +58,27 @@ public class UserService {
         return SignupResponse.from(user);
     }
 
+    @Transactional(readOnly = true)
+    public List<UserSummaryResponse> getUsers(Boolean active) {
+        List<User> users = (active == null)
+                ? userRepository.findAllByDeletedAtIsNullOrderByCreatedAtDesc()
+                : userRepository.findAllByActiveAndDeletedAtIsNullOrderByCreatedAtDesc(active);
+        return users.stream().map(UserSummaryResponse::from).toList();
+    }
+
+    @Transactional
+    public UserSummaryResponse approve(UUID userId) {
+        User user = userRepository.findWithInstitutionByIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new BaseException(ErrorCode.USER_NOT_FOUND));
+        user.approve();
+        return UserSummaryResponse.from(user);
+    }
+
+    @Transactional(readOnly = true)
+    public MyInfoResponse getMyInfo(UUID userId) {
+        User user = userRepository.findWithInstitutionByIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new BaseException(ErrorCode.USER_NOT_FOUND));
+        return MyInfoResponse.from(user);
+    }
 
 }

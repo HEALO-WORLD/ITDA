@@ -112,6 +112,13 @@ public class Referral extends BaseEntity {
         softDelete(userId);
     }
 
+    public boolean isSameRequest(UUID userId, UUID referringInstitutionId, UUID examTypeId, String patientName) {
+        return referringInstitutionId.equals(this.referringInstitutionId)
+                && examTypeId.equals(this.examTypeId)
+                && patientName.equals(this.patientName)
+                && userId.equals(this.referrerId);
+    }
+
     private void validateReferralStatus(ReferralStatus... allowedStatuses) {
         for (ReferralStatus status : allowedStatuses) {
             if (this.referralStatus == status) {

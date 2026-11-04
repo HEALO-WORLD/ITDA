@@ -2,6 +2,8 @@ package healoworld.institution_service.domain.entity;
 
 import healoworld.institution_service.domain.enums.Role;
 import healoworld.institution_service.global.entity.BaseEntity;
+import healoworld.institution_service.global.exception.BaseException;
+import healoworld.institution_service.global.exception.ErrorCode;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -44,5 +46,12 @@ public class User extends BaseEntity {
         user.role = institution.getType().getMemberRole();
         user.active = false;
         return user;
+    }
+
+    public void approve() {
+        if (this.active) {
+            throw new BaseException(ErrorCode.USER_ALREADY_APPROVED);
+        }
+        this.active = true;
     }
 }

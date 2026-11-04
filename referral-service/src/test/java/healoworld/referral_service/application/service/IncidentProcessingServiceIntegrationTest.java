@@ -1,32 +1,24 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.application.service.IncidentProcessingService.Outcome;
-import healoworld.referral_service.domain.entity.EquipmentIncident;
-import healoworld.referral_service.domain.entity.IncidentReferral;
-import healoworld.referral_service.domain.entity.Referral;
-import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.entity.*;
 import healoworld.referral_service.domain.enums.*;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
-import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
-import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
-import healoworld.referral_service.infrastructure.repository.IncidentAffectedReferralRepository;
-import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
-import healoworld.referral_service.infrastructure.repository.ReferralRepository;
-import healoworld.referral_service.infrastructure.repository.ReservationRepository;
+import healoworld.referral_service.infrastructure.repository.*;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -41,11 +33,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,14 +43,14 @@ import static org.mockito.Mockito.reset;
 
 /**
  * IncidentProcessingService 통합 테스트 (테스트 전용 PostgreSQL)
- *
+ * <p>
  * - 서비스는 선점·처리·실패 기록을 각각 실제로 커밋하므로 테스트 트랜잭션을 끄고, 테스트가 만든 행만 끝날 때 ID로 지운다.
  * - 운영 코드에는 예약 확정(Saga) 처리가 아직 없으므로, 확정된 의뢰·예약은 도메인 메서드로 직접 만든다.
- *   Kafka·Gateway를 거치는 E2E 검증은 이 테스트의 범위가 아니다.
+ * Kafka·Gateway를 거치는 E2E 검증은 이 테스트의 범위가 아니다.
  */
 @DataJpaTest
 @ExtendWith(OutputCaptureExtension.class)
-@Import({IncidentProcessingService.class, ExaminationService.class, QuerydslConfig.class})
+@Import({IncidentProcessingService.class, NotificationService.class, ExaminationService.class, QuerydslConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -75,6 +63,9 @@ class IncidentProcessingServiceIntegrationTest {
 
     @Autowired
     private ExaminationService examinationService;
+
+    @Autowired
+    private NotificationRepository notificationRepository;
 
     // 실패 주입 테스트에서만 일부 메서드를 바꾸고, 나머지 테스트에서는 실제 Repository처럼 동작한다
     @MockitoSpyBean
@@ -113,6 +104,10 @@ class IncidentProcessingServiceIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        // 본 테스트에서 만든 알림만 삭제 (장애 작업 및 의뢰 삭제보다 먼저 실행)
+        notificationRepository.deleteAll(notificationRepository.findAll().stream()
+                .filter(notification -> referralIds.contains(notification.getReferralId()))
+                .toList());
         examinationRepository.deleteAllById(examinationIds);
         incidentReferralRepository.deleteAll(incidentReferralRepository.findAll().stream()
                 .filter(task -> incidentIds.contains(task.getIncident().getId()))
@@ -173,6 +168,12 @@ class IncidentProcessingServiceIntegrationTest {
         return incidentReferralRepository.findById(id).orElseThrow();
     }
 
+    private List<Notification> notificationsFor(UUID referralId) {
+        return notificationRepository.findAll().stream()
+                .filter(notification -> referralId.equals(notification.getReferralId()))
+                .toList();
+    }
+
     private void assertUnchanged(Booking booking) {
         assertThat(referral(booking.referralId()).getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
         assertThat(reservation(booking.reservationId()).getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
@@ -183,6 +184,14 @@ class IncidentProcessingServiceIntegrationTest {
     void processConfirmedBooking() {
         Booking booking = confirmedBooking();
         UUID taskId = pendingTask(booking);
+
+        // 트랜잭션 안에서 장애 원본 이벤트 ID 조회
+        UUID expectedSourceEventId = tx().execute(status ->
+                incidentReferralRepository.findById(taskId)
+                        .orElseThrow()
+                        .getIncident()
+                        .getSourceEventId()
+        );
 
         Outcome outcome = incidentProcessingService.process(taskId);
 
@@ -196,6 +205,19 @@ class IncidentProcessingServiceIntegrationTest {
         assertThat(done.getResultCode()).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
         assertThat(done.getProcessedAt()).isNotNull();
         assertThat(done.getLockedUntil()).isNull();
+
+        // 예약 차단과 같은 DB 트랜잭션에서 알림이 생성됐는지 검증
+        List<Notification> notifications = notificationsFor(booking.referralId());
+        assertThat(notifications).hasSize(1);
+        Notification notification = notifications.getFirst();
+        assertThat(notification.getRecipientUserId()).isEqualTo(referral(booking.referralId()).getReferrerId());
+        assertThat(notification.getReferralId()).isEqualTo(booking.referralId());
+        assertThat(notification.getReservationId()).isEqualTo(booking.reservationId());
+        assertThat(notification.getIncidentReferralId()).isEqualTo(taskId);
+        assertThat(notification.getSourceEventId()).isEqualTo(expectedSourceEventId);
+        assertThat(notification.getType()).isEqualTo("RESCHEDULE_REQUIRED");
+        assertThat(notification.isRead()).isFalse();
+        assertThat(notification.getCreatedAt()).isNotNull();
     }
 
     @Test
@@ -208,6 +230,7 @@ class IncidentProcessingServiceIntegrationTest {
 
         assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.NOT_CLAIMED);
         assertThat(task(taskId).getProcessedAt()).isEqualTo(processedAt);
+        assertThat(notificationsFor(booking.referralId())).hasSize(1);
     }
 
     @Test
@@ -222,6 +245,7 @@ class IncidentProcessingServiceIntegrationTest {
         assertThat(outcomes).filteredOn(outcome -> outcome == Outcome.NOT_CLAIMED).hasSize(9);
         assertThat(reservation(booking.reservationId()).getReservationStatus()).isEqualTo(ReservationStatus.BLOCKED);
         assertThat(task(taskId).getResultCode()).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
+        assertThat(notificationsFor(booking.referralId())).hasSize(1);
     }
 
     @Test
@@ -236,6 +260,7 @@ class IncidentProcessingServiceIntegrationTest {
         assertThat(List.of(task(first).getResultCode(), task(second).getResultCode())).containsExactlyInAnyOrder(
                 IncidentProcessingService.RESCHEDULE_REQUIRED, IncidentProcessingService.ALREADY_BLOCKED);
         assertThat(referral(booking.referralId()).getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(notificationsFor(booking.referralId())).hasSize(1);
     }
 
     @Test
@@ -249,6 +274,7 @@ class IncidentProcessingServiceIntegrationTest {
         assertThat(incidentProcessingService.process(secondTask)).isEqualTo(Outcome.SUCCEEDED);
         assertThat(task(secondTask).getResultCode()).isEqualTo(IncidentProcessingService.ALREADY_BLOCKED);
         assertThat(reservation(booking.reservationId()).getEndedAt()).isEqualTo(endedAt);
+        assertThat(notificationsFor(booking.referralId())).hasSize(1);
     }
 
     @Test
@@ -276,6 +302,7 @@ class IncidentProcessingServiceIntegrationTest {
         Referral referral = referral(booking.referralId());
         assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
         assertThat(referral.getCurrentReservationId()).isEqualTo(newReservationId);
+        assertThat(notificationsFor(booking.referralId())).isEmpty();
     }
 
     @Test
@@ -293,6 +320,7 @@ class IncidentProcessingServiceIntegrationTest {
         assertThat(task(taskId).getResultCode()).isEqualTo(IncidentProcessingService.SKIPPED_CANCELED);
         assertThat(reservation(booking.reservationId()).getReservationStatus()).isEqualTo(ReservationStatus.CANCELED);
         assertThat(referral(booking.referralId()).getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(notificationsFor(booking.referralId())).isEmpty();
     }
 
     @Test
@@ -331,6 +359,7 @@ class IncidentProcessingServiceIntegrationTest {
         assertThat(failed.getNextRetryAt()).isNotNull();
         assertThat(failed.getLockedUntil()).isNull();
         assertThat(failed.getResultCode()).isNull();
+        assertThat(notificationsFor(booking.referralId())).isEmpty();
     }
 
     @Test
@@ -371,7 +400,8 @@ class IncidentProcessingServiceIntegrationTest {
         doAnswer(invocation -> {
             throw new IllegalStateException("일시 오류");
         }).when(incidentReferralRepository).markSucceeded(any(), any(), any(), any());
-        incidentProcessingService.process(taskId);
+        assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.FAILED);
+        assertThat(notificationsFor(booking.referralId())).isEmpty();
         reset(incidentReferralRepository);
         LocalDateTime afterRetryTime = task(taskId).getNextRetryAt().plusSeconds(1);
 
@@ -379,6 +409,7 @@ class IncidentProcessingServiceIntegrationTest {
         IncidentReferral done = task(taskId);
         assertThat(done.getResultCode()).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
         assertThat(done.getRetryCount()).isEqualTo(1);
+        assertThat(notificationsFor(booking.referralId())).hasSize(1);
     }
 
     @Test
@@ -417,6 +448,7 @@ class IncidentProcessingServiceIntegrationTest {
             assertThat(afterA.getProcessingStatus()).isEqualTo(IncidentProcessingStatus.PROCESSING);
             assertThat(afterA.getLockedUntil()).isEqualTo(leaseOfB);
             assertThat(afterA.getLastError()).isNull();
+            assertThat(notificationsFor(booking.referralId())).isEmpty();
         } finally {
             releaseLock.countDown();
             executor.shutdown();
@@ -452,11 +484,11 @@ class IncidentProcessingServiceIntegrationTest {
         incidentProcessingService.process(taskId);
 
         assertThatThrownBy(() -> examinationService.changeStatus(
-                        examinationId,
-                        booking.examInstitutionId(),
-                        RoleType.EXAMINER,
-                        ExaminationStatus.IN_PROGRESS
-                ))
+                examinationId,
+                booking.examInstitutionId(),
+                RoleType.EXAMINER,
+                ExaminationStatus.IN_PROGRESS
+        ))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.EXAMINATION_START_NOT_ALLOWED);
         assertThat(examinationRepository.findById(examinationId).orElseThrow().getStatus())
@@ -498,7 +530,7 @@ class IncidentProcessingServiceIntegrationTest {
 
     // 같은 작업을 threadCount개 스레드에서 동시에 실행한다
     private <T> List<T> runConcurrently(int threadCount, java.util.concurrent.Callable<T> action) throws Exception {
-        return runConcurrently(threadCount, java.util.Collections.nCopies(threadCount, (UUID) null), ignored -> action.call());
+        return runConcurrently(threadCount, java.util.Collections.nCopies(threadCount, null), ignored -> action.call());
     }
 
     private <T> List<T> runConcurrently(int threadCount, List<UUID> inputs, ThrowingFunction<T> action)

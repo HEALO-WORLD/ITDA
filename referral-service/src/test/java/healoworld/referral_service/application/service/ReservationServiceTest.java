@@ -11,6 +11,7 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
+import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -36,6 +38,7 @@ import static healoworld.referral_service.support.DomainFixtures.reservationRequ
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -52,6 +55,9 @@ class ReservationServiceTest {
 
     @Mock
     private SlotCommandOutbox slotCommandOutbox;
+
+    @Mock
+    private ReferralRepository referralRepository;
 
     @InjectMocks
     private ReservationService reservationService;
@@ -209,7 +215,7 @@ class ReservationServiceTest {
         @DisplayName("의뢰기관은 확정 예약을 취소하고 ReleaseSlot 발행과 취소 이력을 같은 eventId로 남긴다")
         void success() {
             UUID releaseEventId = UUID.randomUUID();
-            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+            stored(confirmed);
             given(slotCommandOutbox.recordOutbox(confirmed, "ReleaseSlot")).willReturn(releaseEventId);
 
             reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
@@ -228,7 +234,7 @@ class ReservationServiceTest {
         @Test
         @DisplayName("관리자는 다른 기관의 예약도 취소할 수 있다")
         void admin() {
-            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+            stored(confirmed);
 
             reservationService.cancelReservation(OTHER_USER_ID, UUID.randomUUID(), RoleType.ADMIN, confirmed.getId());
 
@@ -239,7 +245,7 @@ class ReservationServiceTest {
         @Test
         @DisplayName("다른 기관은 취소할 수 없고 존재를 숨긴다")
         void otherInstitution() {
-            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+            stored(confirmed);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_NOT_FOUND);
@@ -251,7 +257,7 @@ class ReservationServiceTest {
         @DisplayName("없는 예약이면 NOT_FOUND")
         void notFound() {
             UUID reservationId = UUID.randomUUID();
-            given(reservationRepository.findById(reservationId)).willReturn(Optional.empty());
+            given(reservationRepository.findReferralIdById(reservationId)).willReturn(Optional.empty());
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), RoleType.ADMIN, reservationId),
                     ErrorCode.RESERVATION_NOT_FOUND);
@@ -261,7 +267,7 @@ class ReservationServiceTest {
         @DisplayName("시작 2시간 전 직전까지는 취소할 수 있다")
         void justBeforeDeadline() {
             startsIn(confirmed, LocalDateTime.now().plusHours(2).plusMinutes(1));
-            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+            stored(confirmed);
 
             reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
 
@@ -272,7 +278,7 @@ class ReservationServiceTest {
         @DisplayName("시작 2시간 전이 지나면 취소할 수 없다")
         void afterDeadline() {
             startsIn(confirmed, LocalDateTime.now().plusHours(1).plusMinutes(59));
-            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+            stored(confirmed);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
@@ -284,7 +290,7 @@ class ReservationServiceTest {
         @DisplayName("이미 시작한 예약은 취소할 수 없다")
         void alreadyStarted() {
             startsIn(confirmed, LocalDateTime.now().minusHours(3));
-            given(reservationRepository.findById(confirmed.getId())).willReturn(Optional.of(confirmed));
+            stored(confirmed);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
@@ -295,11 +301,32 @@ class ReservationServiceTest {
         void notConfirmed() {
             Reservation requested = reservationIn(ReservationStatus.REQUESTED, referral);
             startsIn(requested, LocalDateTime.now().plusDays(1));
-            given(reservationRepository.findById(requested.getId())).willReturn(Optional.of(requested));
+            stored(requested);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, requested.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
             verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("의뢰 ID만 먼저 조회하고, 의뢰를 잠근 뒤에 예약을 읽는다")
+        void locksReferralBeforeReadingReservation() {
+            stored(confirmed);
+
+            reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
+
+            InOrder inOrder = inOrder(reservationRepository, referralRepository);
+            inOrder.verify(reservationRepository).findReferralIdById(confirmed.getId());
+            inOrder.verify(referralRepository).findByIdForUpdate(confirmedReferral.getId());
+            inOrder.verify(reservationRepository).findById(confirmed.getId());
+        }
+
+        // 의뢰 ID 조회 → 의뢰 잠금 → 예약 조회 순서로 준비한다
+        private void stored(Reservation reservation) {
+            Referral owner = reservation.getReferral();
+            given(reservationRepository.findReferralIdById(reservation.getId())).willReturn(Optional.of(owner.getId()));
+            given(referralRepository.findByIdForUpdate(owner.getId())).willReturn(Optional.of(owner));
+            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
         }
     }
 

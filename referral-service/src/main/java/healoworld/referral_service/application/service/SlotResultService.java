@@ -6,8 +6,12 @@ import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
+import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.global.inbox.ConsumedEvent;
+import healoworld.referral_service.global.inbox.ConsumedEventId;
+import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
@@ -17,6 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.UUID;
 
 @Slf4j
@@ -24,64 +30,83 @@ import java.util.UUID;
 @Transactional
 @RequiredArgsConstructor
 public class SlotResultService {
-    private final ReservationRepository reservationRepository;
     private final ReferralRepository referralRepository;
+    private final ReservationRepository reservationRepository;
     private final ReferralHistoryRepository referralHistoryRepository;
+    private final ConsumedEventRepository consumedEventRepository;
     private final SlotCommandOutbox slotCommandOutbox;
 
-    public void handle(UUID eventId, String eventType, UUID reservationId, UUID referralId) {
+    public static final String CONSUMER = "referral-service";
+    private final ExaminationService examinationService;
 
-        Referral referral = referralRepository.findById(referralId)
+    public void handle(UUID eventId, String eventType, UUID reservationId) {
+        UUID referralId = reservationRepository.findReferralIdById(reservationId)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
+
+        Referral referral = referralRepository.findByIdForUpdate(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
 
         Reservation reservation = reservationRepository.findById(reservationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
 
+        if (consumedEventRepository.existsById(new ConsumedEventId(eventId, CONSUMER))) {
+            log.info("이미 처리한 이벤트, 건너뜀. eventId={}, eventType={}", eventId, eventType);
+            return;
+        }
+
         switch (eventType) {
             case "SlotHeld":
-                bookSlotHandler(referral, reservation);
+                if (isExpected(reservation, eventId, eventType, ReservationStatus.REQUESTED)) {
+                    bookSlotHandler(referral, reservation, eventId);
+                }
                 break;
 
             case "SlotHoldFailed":
-                slotHoldFailedHandler(referral, reservation, eventId);
+                if (isExpected(reservation, eventId, eventType, ReservationStatus.REQUESTED)) {
+                    slotHoldFailedHandler(referral, reservation, eventId);
+                }
                 break;
 
             case "SlotBooked":
-                slotBookedHandler(referral, reservation, eventId);
+                if (isExpected(reservation, eventId, eventType, ReservationStatus.HELD)) {
+                    slotBookedHandler(referral, reservation, eventId);
+                }
                 break;
 
             case "SlotBookFailed":
-                slotBookFailedHandler(referral, reservation);
+                if (isExpected(reservation, eventId, eventType, ReservationStatus.HELD)) {
+                    slotBookFailedHandler(referral, reservation, eventId);
+                }
                 break;
 
             case "SlotsBlocked":
-                slotsBlockedHandler(referral, reservation, eventId);
+                if (isExpected(reservation, eventId, eventType, ReservationStatus.REQUESTED, ReservationStatus.HELD, ReservationStatus.CONFIRMED)) {
+                    slotsBlockedHandler(referral, reservation, eventId);
+                }
                 break;
 
             case "HoldExpired":
-                holdExpiredHandler(referral, reservation);
+                if (isExpected(reservation, eventId, eventType, ReservationStatus.HELD)) {
+                    holdExpiredHandler(referral, reservation, eventId);
+                }
                 break;
 
             default:
                 log.warn("slot-results 알 수 없는 eventType, 처리 생략. eventId={}, eventType={}", eventId, eventType);
-                return;
+                break;
         }
-        log.info("slot-results 핸들러 완료(커밋 전). eventId={}, eventType={}, reservationId={}, reservationStatus={}, referralStatus={}",
-                eventId, eventType, reservation.getId(), reservation.getReservationStatus(), referral.getReferralStatus());
+        consumedEventRepository.save(ConsumedEvent.create(eventId, CONSUMER, eventType, LocalDateTime.now()));
     }
 
     // SlotHeld 이벤트 수신
-    private void bookSlotHandler(Referral referral, Reservation reservation) {
+    private void bookSlotHandler(Referral referral, Reservation reservation, UUID eventId) {
         // reservation status HELD 변경
         reservation.hold();
-
-        // BookSlot 이벤트 발행 (Outbox 기록)
-        String eventType = "BookSlot";
-        slotCommandOutbox.recordOutbox(reservation, eventType);
+        slotCommandOutbox.recordOutbox(reservation, "BookSlot");
     }
 
     // SlotHoldFailed 이벤트 수신
-    private void slotHoldFailedHandler(Referral referral, Reservation reservation, UUID outboxEventId) {
+    private void slotHoldFailedHandler(Referral referral, Reservation reservation, UUID eventId) {
         ReferralStatus fromStatus = referral.getReferralStatus();
 
         // failureReason SLOT_CONFLICT or EQUIPMENT_FAILURE
@@ -92,12 +117,12 @@ public class SlotResultService {
         referral.fail();
         // 전 상태가 needs_reschedule이면 needs_reschedule로
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_FAILED, outboxEventId, null);
+        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_FAILED, eventId, null);
         referralHistoryRepository.save(history);
     }
 
     // SlotBooked 이벤트 수신
-    private void slotBookedHandler(Referral referral, Reservation reservation, UUID outboxEventId) {
+    private void slotBookedHandler(Referral referral, Reservation reservation, UUID eventId) {
         ReferralStatus fromStatus = referral.getReferralStatus();
 
         // reservation status CONFIRMED 변경
@@ -108,15 +133,20 @@ public class SlotResultService {
         referral.confirm();
 
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_CONFIRMED, outboxEventId, null);
+        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_CONFIRMED, eventId, null);
         referralHistoryRepository.save(history);
+
         // 검사 생성
+        examinationService.syncScheduledExamination(
+                referral.getId(),
+                reservation.getId(),
+                reservation.getExamInstitutionId()
+        );
     }
 
     // SlotBookFailed 이벤트 수신
-    private void slotBookFailedHandler(Referral referral, Reservation reservation) {
+    private void slotBookFailedHandler(Referral referral, Reservation reservation, UUID eventId) {
         ReferralStatus fromStatus = referral.getReferralStatus();
-
         // reservation status FAILED 변경
         // failureReason CONFIRM_FAILED 변경
         reservation.fail(FailureReason.CONFIRM_FAILED);
@@ -125,16 +155,15 @@ public class SlotResultService {
         referral.fail();
 
         // ReleaseHold 이벤트 발행 이벤트 발행 (Outbox 기록)
-        String eventType = "ReleaseHold";
-        UUID eventId = slotCommandOutbox.recordOutbox(reservation, eventType);
+        UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, "ReleaseHold");
 
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_FAILED, eventId, null);
+        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_FAILED, outboxEventId, null);
         referralHistoryRepository.save(history);
     }
 
     // HoldExpired 이벤트 수신
-    private void holdExpiredHandler(Referral referral, Reservation reservation) {
+    private void holdExpiredHandler(Referral referral, Reservation reservation, UUID eventId) {
         ReferralStatus fromStatus = referral.getReferralStatus();
 
         // reservation status FAILED 변경
@@ -145,18 +174,18 @@ public class SlotResultService {
         referral.fail();
 
         // ReleaseHold 이벤트 발행
-        String eventType = "ReleaseHold";
-        UUID eventId = slotCommandOutbox.recordOutbox(reservation, eventType);
+        UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, "ReleaseHold");
 
 
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_FAILED, eventId, null);
+        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_FAILED, outboxEventId, null);
         referralHistoryRepository.save(history);
     }
 
     // SlotsBlocked 이벤트 수신
-    private void slotsBlockedHandler(Referral referral, Reservation reservation, UUID outboxEventId) {
+    private void slotsBlockedHandler(Referral referral, Reservation reservation, UUID eventId) {
         ReferralStatus fromStatus = referral.getReferralStatus();
+
         // reservation status BLOCKED 변경
         // failureReason EQUIPMENT_FAILURE 변경
         reservation.block();
@@ -165,7 +194,13 @@ public class SlotResultService {
         referral.requestReschedule();
 
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_BLOCKED, outboxEventId, null);
+        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, referral.getReferralStatus(), Reason.RESERVATION_BLOCKED, eventId, null);
         referralHistoryRepository.save(history);
+    }
+
+    private boolean isExpected(Reservation reservation, UUID eventId, String eventType, ReservationStatus... expected) {
+        if (Arrays.asList(expected).contains(reservation.getReservationStatus())) return true;
+        log.info("기대하지 않은 상태의 이벤트 무시. eventType={}, eventId={}, reservationId={}, status={}", eventType, eventId, reservation.getId(), reservation.getReservationStatus());
+        return false;
     }
 }
