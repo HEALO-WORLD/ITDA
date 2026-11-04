@@ -1,7 +1,7 @@
-package healoworld.referral_service.presentation.messaging;
+package healoworld.referral_service.presentation.consumer;
 
+import healoworld.referral_service.application.event.result.SlotResultMessage;
 import healoworld.referral_service.application.service.SlotResultService;
-import healoworld.referral_service.global.outbox.ReservationEventPayload;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -15,19 +15,19 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 @Component
-public class SlotResultListener {
+public class SlotResultConsumer {
     private final SlotResultService slotResultService;
     private final JsonMapper jsonMapper;
 
     @KafkaListener(topics = "slot-results")
-    public void onSlotResult(@Header("eventId") String id,
+    public void consume(@Header("eventId") String id,
                              @Header("eventType") String eventType,
                              @Payload String payload) {
 
         log.info("slot-results 수신. eventId={}, eventType={}", id, eventType);
 
         UUID eventId = UUID.fromString(id);
-        ReservationEventPayload payloadJson = jsonMapper.readValue(payload, ReservationEventPayload.class);
+        SlotResultMessage payloadJson = jsonMapper.readValue(payload, SlotResultMessage.class);
         log.debug("slot-results 파싱 완료. eventId={}, reservationId={}", id, payloadJson.reservationId());
 
         if (payloadJson.reservationId() == null) {

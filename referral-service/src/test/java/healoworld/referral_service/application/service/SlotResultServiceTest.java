@@ -16,6 +16,7 @@ import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
+import healoworld.referral_service.support.ConditionalUpdateStubs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -68,9 +69,13 @@ class SlotResultServiceTest {
 
     private Referral referral;
 
+    // 조건부 UPDATE를 DB처럼 흉내 낸다 (기대 상태가 맞으면 바꾸고 1, 아니면 0)
+    private ConditionalUpdateStubs updates;
+
     @BeforeEach
     void setUp() {
         referral = referralIn(ReferralStatus.PENDING, USER_ID);
+        updates = new ConditionalUpdateStubs(reservationRepository, referralRepository);
     }
 
     @Test
@@ -95,6 +100,8 @@ class SlotResultServiceTest {
 
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.FAILED);
         assertThat(reservation.getFailureReason()).isEqualTo(FailureReason.SLOT_CONFLICT);
+        assertThat(reservation.getEndedAt()).isNotNull();
+        assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.FAILED);
         assertHistory(ReferralStatus.PENDING, ReferralStatus.FAILED, Reason.RESERVATION_FAILED, eventId);
         verifyNoInteractions(slotCommandOutbox);
     }
@@ -108,6 +115,7 @@ class SlotResultServiceTest {
 
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(reservation.getConfirmedAt()).isNotNull();
+        assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
         assertHistory(ReferralStatus.PENDING, ReferralStatus.CONFIRMED, Reason.RESERVATION_CONFIRMED, eventId);
     }
 
@@ -139,6 +147,7 @@ class SlotResultServiceTest {
 
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.FAILED);
         assertThat(reservation.getFailureReason()).isEqualTo(FailureReason.CONFIRM_FAILED);
+        assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.FAILED);
         assertHistory(ReferralStatus.PENDING, ReferralStatus.FAILED, Reason.RESERVATION_FAILED, releaseEventId);
     }
 
@@ -153,6 +162,7 @@ class SlotResultServiceTest {
 
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.FAILED);
         assertThat(reservation.getFailureReason()).isEqualTo(FailureReason.HOLD_EXPIRED);
+        assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.FAILED);
         assertHistory(ReferralStatus.PENDING, ReferralStatus.FAILED, Reason.RESERVATION_FAILED, releaseEventId);
     }
 
@@ -168,7 +178,44 @@ class SlotResultServiceTest {
 
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.BLOCKED);
         assertThat(reservation.getFailureReason()).isEqualTo(FailureReason.EQUIPMENT_FAILURE);
+        assertThat(target.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
         assertHistory(before, ReferralStatus.NEEDS_RESCHEDULE, Reason.RESERVATION_BLOCKED, eventId);
+    }
+
+    @ParameterizedTest(name = "{0}: UPDATE 이후 예약을 다시 읽지 않고 {2}를 기록한다")
+    @CsvSource({"SlotHeld, REQUESTED, BookSlot", "SlotBookFailed, HELD, ReleaseHold", "HoldExpired, HELD, ReleaseHold"})
+    @DisplayName("커맨드 페이로드는 바뀌지 않는 식별자만 담으므로 처음 읽은 예약으로 Outbox를 기록한다")
+    void recordsOutboxWithoutReload(String eventType, ReservationStatus status, String command) {
+        Reservation reservation = stored(status, referral);
+
+        handle(eventType, reservation);
+
+        verify(reservationRepository).findById(reservation.getId());   // 잠금 직후 한 번만
+        verify(slotCommandOutbox).recordOutbox(reservation, command);
+    }
+
+    @Test
+    @DisplayName("SlotHeld: 조건부 UPDATE가 0행이면(이미 바뀜) BookSlot을 발행하지 않고 inbox에만 기록한다")
+    void slotHeldUpdateMissed() {
+        Reservation reservation = stored(ReservationStatus.REQUESTED, referral);
+        // given(...)은 기존 시뮬레이터 stub을 한 번 호출하므로 doReturn으로 덮어쓴다
+        doReturn(0).when(reservationRepository).holdIfRequested(any(), any());
+
+        handle("SlotHeld", reservation);
+
+        verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        verify(consumedEventRepository).save(any(ConsumedEvent.class));
+    }
+
+    @Test
+    @DisplayName("SlotBooked: 예약은 확정됐는데 의뢰가 PENDING이 아니면 예외로 예약 변경까지 롤백되게 하고 이력·검사·inbox를 남기지 않는다")
+    void slotBookedReferralNotPending() {
+        Referral confirmedReferral = referralIn(ReferralStatus.CONFIRMED, USER_ID);
+        Reservation reservation = stored(ReservationStatus.HELD, confirmedReferral);
+
+        assertErrorCode(() -> handle("SlotBooked", reservation), ErrorCode.INVALID_REFERRAL_STATUS);
+        verifyNoInteractions(referralHistoryRepository, examinationService);
+        verify(consumedEventRepository, never()).save(any());
     }
 
     @Test
@@ -326,6 +373,7 @@ class SlotResultServiceTest {
         given(reservationRepository.findReferralIdById(reservation.getId())).willReturn(Optional.of(owner.getId()));
         given(referralRepository.findByIdForUpdate(owner.getId())).willReturn(Optional.of(owner));
         given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+        updates.register(reservation);
         return reservation;
     }
 

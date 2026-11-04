@@ -15,6 +15,7 @@ import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
+import healoworld.referral_service.support.ConditionalUpdateStubs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -37,8 +38,10 @@ import static healoworld.referral_service.support.DomainFixtures.reservationIn;
 import static healoworld.referral_service.support.DomainFixtures.reservationRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -64,9 +67,13 @@ class ReservationServiceTest {
 
     private Referral referral;
 
+    // 조건부 UPDATE를 DB처럼 흉내 낸다 (기대 상태가 맞으면 바꾸고 1, 아니면 0)
+    private ConditionalUpdateStubs updates;
+
     @BeforeEach
     void setUp() {
         referral = referralIn(ReferralStatus.PENDING, USER_ID);
+        updates = new ConditionalUpdateStubs(reservationRepository, referralRepository);
     }
 
     @Nested
@@ -170,10 +177,14 @@ class ReservationServiceTest {
         void success() {
             Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
             given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
+            updates.register(reservation);
 
             reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.REQUESTER);
 
             assertThat(reservation.getDeletedAt()).isNotNull();
+            assertThat(reservation.getDeletedBy()).isEqualTo(USER_ID);
+            // 조건부 UPDATE 뒤 detached 엔티티를 다시 save(merge)하면 안 된다
+            verify(reservationRepository, never()).save(any());
         }
 
         @Test
@@ -181,6 +192,7 @@ class ReservationServiceTest {
         void otherUser() {
             Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
             given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
+            updates.register(reservation);
 
             assertErrorCode(() -> reservationService.deleteReservation(OTHER_USER_ID, reservation.getId(), RoleType.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
@@ -192,9 +204,11 @@ class ReservationServiceTest {
         void invalidStatus() {
             Reservation reservation = reservationIn(ReservationStatus.CONFIRMED, referral);
             given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
+            updates.register(reservation);
 
             assertErrorCode(() -> reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.REQUESTER),
                     ErrorCode.INVALID_RESERVATION_STATUS);
+            assertThat(reservation.getDeletedAt()).isNull();
         }
     }
 
@@ -309,6 +323,30 @@ class ReservationServiceTest {
         }
 
         @Test
+        @DisplayName("이미 취소된 예약을 다시 취소하면 409이고 아무것도 기록하지 않는다")
+        void alreadyCanceled() {
+            Reservation canceled = reservationIn(ReservationStatus.CANCELED, confirmedReferral);
+            startsIn(canceled, LocalDateTime.now().plusDays(1));
+            stored(canceled);
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, canceled.getId()),
+                    ErrorCode.INVALID_RESERVATION_STATUS);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("예약은 확정인데 의뢰가 취소할 수 없는 상태면 예외로 예약 변경까지 롤백되게 하고 아무것도 기록하지 않는다")
+        void referralNotCancelable() {
+            Reservation reservation = reservationIn(ReservationStatus.CONFIRMED, referral);   // 의뢰는 PENDING
+            startsIn(reservation, LocalDateTime.now().plusDays(1));
+            stored(reservation);
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, reservation.getId()),
+                    ErrorCode.INVALID_REFERRAL_STATUS);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+        }
+
+        @Test
         @DisplayName("의뢰 ID만 먼저 조회하고, 의뢰를 잠근 뒤에 예약을 읽는다")
         void locksReferralBeforeReadingReservation() {
             stored(confirmed);
@@ -327,6 +365,7 @@ class ReservationServiceTest {
             given(reservationRepository.findReferralIdById(reservation.getId())).willReturn(Optional.of(owner.getId()));
             given(referralRepository.findByIdForUpdate(owner.getId())).willReturn(Optional.of(owner));
             given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+            updates.register(reservation);
         }
     }
 
