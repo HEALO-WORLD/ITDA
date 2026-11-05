@@ -90,6 +90,8 @@ gateway:
       # ── 검사기관 사용자만 ──
       - roles: [ EXAMINER ]
         rules:
+          - "PATCH /api/v1/partnerships/*/approve"
+          - "PATCH /api/v1/partnerships/*/reject"
           - "POST /api/v1/institutions/*/equipments"
           - "PATCH /api/v1/equipments/*"
           - "POST /api/v1/equipments/*/exam-types"
@@ -105,16 +107,14 @@ gateway:
       # ── 의뢰기관 사용자만 ──
       - roles: [ REQUESTER ]
         rules:
+          - "POST /api/v1/partnerships"
           - "PATCH /api/v1/referrals/reservations/*/cancel"
           - "GET /api/v1/referrals/*/results"
 
       # ── 기관 사용자 (의뢰 + 검사) ──
       - roles: [ REQUESTER, EXAMINER ]
         rules:
-          - "POST /api/v1/partnerships"
           - "GET /api/v1/partnerships/me"
-          - "PATCH /api/v1/partnerships/*/approve"
-          - "PATCH /api/v1/partnerships/*/reject"
           - "GET /api/v1/institutions/*/equipments"
           - "GET /api/v1/equipments/*"
           - "GET /api/v1/equipments/*/operating-hours"
