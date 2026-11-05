@@ -27,7 +27,12 @@ public enum ErrorCode {
     REFERENCE_DATA_NOT_READY(HttpStatus.CONFLICT, "조회에 필요한 기관·협약 정보가 준비되지 않았습니다."),
     SLOT_NOT_FOUND(HttpStatus.NOT_FOUND, "슬롯을 찾을 수 없습니다."),
     SLOT_NOT_RELEASABLE(HttpStatus.CONFLICT, "요청한 예약으로 확보·예약된 슬롯이 아닙니다."),
-    ADMIN_ONLY(HttpStatus.FORBIDDEN, "관리자만 접근 권한이 있습니다.");
+    ADMIN_ONLY(HttpStatus.FORBIDDEN, "관리자만 접근 권한이 있습니다."),
+
+    // equipment
+    REFERENCE_NOT_AVAILABLE(HttpStatus.CONFLICT,"장비 또는 운영시간을 사용할 수 없습니다."),
+    REFERENCE_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE,"기준정보 서비스를 일시적으로 사용할 수 없습니다."),
+    REFERENCE_RESPONSE_INVALID(HttpStatus.BAD_GATEWAY,"기준정보 서비스의 응답이 올바르지 않습니다.");
 
 
     private final HttpStatus status;

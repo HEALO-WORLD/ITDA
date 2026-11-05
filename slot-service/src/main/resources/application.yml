@@ -2,6 +2,13 @@ server:
   port: 8082
 
 spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          institution-service:
+            connectTimeout: 2000
+            readTimeout: 3000
   application:
     name: slot-service
   config:
