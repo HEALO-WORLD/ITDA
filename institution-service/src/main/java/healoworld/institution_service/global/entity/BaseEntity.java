@@ -39,4 +39,9 @@ public abstract class BaseEntity {
         this.deletedAt = LocalDateTime.now();
         this.deletedBy = deletedBy;
     }
+
+    protected void restore() {
+        this.deletedAt = null;
+        this.deletedBy = null;
+    }
 }
