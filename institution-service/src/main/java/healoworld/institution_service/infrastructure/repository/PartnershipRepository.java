@@ -1,5 +1,6 @@
 package healoworld.institution_service.infrastructure.repository;
 
+import healoworld.institution_service.domain.entity.Institution;
 import healoworld.institution_service.domain.entity.Partnership;
 import healoworld.institution_service.domain.enums.PartnershipStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -8,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface PartnershipRepository extends JpaRepository<Partnership, UUID> {
@@ -40,4 +42,16 @@ public interface PartnershipRepository extends JpaRepository<Partnership, UUID> 
             "and p.deletedAt is null")
     boolean existsByInstitutionIdAndStatusIn(@Param("institutionId") UUID institutionId,
                                              @Param("statuses") Collection<PartnershipStatus> statuses);
+
+    @Query("select count(p) > 0 from Partnership p " +
+            "where ((p.requesterInstitution.id = :institutionId and p.examInstitution.id = :otherInstitutionId) " +
+            "    or (p.requesterInstitution.id = :otherInstitutionId and p.examInstitution.id = :institutionId)) " +
+            "and p.status in :statuses " +
+            "and p.deletedAt is null")
+    boolean existsBetweenInstitutionsAndStatusIn(@Param("institutionId") UUID institutionId,
+                                                 @Param("otherInstitutionId") UUID otherInstitutionId,
+                                                 @Param("statuses") Collection<PartnershipStatus> statuses);
+
+    Optional<Partnership> findByRequesterInstitutionIdAndExamInstitutionId(UUID requesterInstitutionId,
+                                                                           UUID examInstitutionId);
 }

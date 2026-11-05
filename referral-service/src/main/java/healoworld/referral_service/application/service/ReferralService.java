@@ -1,5 +1,6 @@
 package healoworld.referral_service.application.service;
 
+import feign.FeignException;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
@@ -9,6 +10,7 @@ import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -18,24 +20,29 @@ import healoworld.referral_service.presentation.dto.request.ReferralSearchCondit
 import healoworld.referral_service.presentation.dto.response.ReferralResponse;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Service
 @Transactional
+@Slf4j
 @RequiredArgsConstructor
 public class ReferralService {
     private final ReferralRepository referralRepository;
     private final ReferralHistoryRepository referralHistoryRepository;
     private final ReservationService reservationService;
     private final ReservationRepository reservationRepository;
+    private final InstitutionClient institutionClient;
 
-    public ReferralResponse createReferral(UUID userId, CreateReferralRequest createReferralRequest) {
+    public ReferralResponse createReferral(UUID userId, UUID institutionId, CreateReferralRequest createReferralRequest) {
         Optional<Referral> referral = referralRepository.findByIdempotencyKey(createReferralRequest.getIdempotencyKey());
         if (referral.isPresent()) {
             Optional<Reservation> firstReservation = reservationRepository.findByReferralIdAndAttemptNo(referral.get().getId(), 1);
@@ -48,6 +55,15 @@ public class ReferralService {
                 return ReferralResponse.from(referral.get());
             }
             throw new BaseException(ErrorCode.REFERRAL_IDEMPOTENCY_CONFLICT);
+        }
+
+        if (!institutionId.equals(createReferralRequest.getReferringInstitutionId())) {
+            throw new BaseException(ErrorCode.REFERRAL_FORBIDDEN);
+        }
+
+        if (!isActivePartnership(createReferralRequest.getReferringInstitutionId(), createReferralRequest.getReservation().getExamInstitutionId())
+        ) {
+            throw new BaseException(ErrorCode.PARTNERSHIP_NOT_ACTIVE);
         }
 
         Referral createdReferral = Referral.create(createReferralRequest.getReferringInstitutionId(), userId, createReferralRequest.getExamTypeId(), createReferralRequest.getPatientName(), createReferralRequest.getIdempotencyKey());
@@ -94,8 +110,10 @@ public class ReferralService {
         if (!(userId.equals(referral.getReferrerId()) || role == RoleType.ADMIN)) {
             throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
         }
-        referral.delete(userId);
-        referralRepository.save(referral);
+
+        if (referralRepository.softDeleteIf(referralId, userId, LocalDateTime.now(), List.of(ReferralStatus.FAILED, ReferralStatus.CANCELED)) == 0) {
+            throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
+        }
     }
 
     public ReservationResponse createRescheduledReservation(UUID userId, RoleType role, UUID referralId, CreateReservationRequest request) {
@@ -107,13 +125,30 @@ public class ReferralService {
         }
 
         referral.validateReschedulable();
+
+        if (!isActivePartnership(referral.getReferringInstitutionId(), request.getExamInstitutionId())
+        ) {
+            throw new BaseException(ErrorCode.PARTNERSHIP_NOT_ACTIVE);
+        }
+
         UUID outboxEventId = UUID.randomUUID();
         Reservation reservation = reservationService.createReservation(outboxEventId, referral, request);
-        referral.reschedule(reservation.getId());
 
+        if (referralRepository.rescheduleIfNeedsReschedule(referralId, reservation.getId(), userId, LocalDateTime.now()) == 0) {
+            throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
+        }
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, ReferralStatus.NEEDS_RESCHEDULE, referral.getReferralStatus(), Reason.RESCHEDULED, outboxEventId, userId);
+        ReferralHistory history = ReferralHistory.create(referral, reservation, ReferralStatus.NEEDS_RESCHEDULE, ReferralStatus.PENDING, Reason.RESCHEDULED, outboxEventId, userId);
         referralHistoryRepository.save(history);
         return ReservationResponse.from(reservation);
+    }
+
+    private boolean isActivePartnership(UUID requester, UUID examInstitution) {
+        try {
+            return institutionClient.check(requester, examInstitution).active();
+        } catch (FeignException e) {
+            log.warn("협력 관계 확인 실패. requester={}, exam={}", requester, examInstitution, e);
+            throw new BaseException(ErrorCode.INSTITUTION_SERVICE_UNAVAILABLE);   // 503
+        }
     }
 }

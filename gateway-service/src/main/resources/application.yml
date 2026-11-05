@@ -2,6 +2,8 @@ server:
   port: 8080
 
 spring:
+  reactor:
+    context-propagation: auto   # WebFlux에서 traceId를 MDC로 전파
   application:
     name: gateway-service
   config:
@@ -47,6 +49,9 @@ eureka:
     registry-fetch-interval-seconds: 5
 
 management:
+  tracing:
+    sampling:
+      probability: 1.0   # 개발 단계: 모든 요청 샘플링 (운영 시 낮춤)
   endpoints:
     web:
       exposure:
@@ -54,6 +59,9 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true   # p95/p99 계산용 bucket 메트릭 노출
 
 jwt:
   secret: ${JWT_SECRET}
@@ -76,13 +84,18 @@ gateway:
           - "PATCH,DELETE /api/v1/institutions/*"
           - "POST /api/v1/slots/*/release"
           - "GET /api/v1/slots/*/status-histories"
+          - "POST /api/v1/exam-types"
+          - "PATCH /api/v1/exam-types/*"
 
       # ── 검사기관 사용자만 ──
       - roles: [ EXAMINER ]
         rules:
+          - "PATCH /api/v1/partnerships/*/approve"
+          - "PATCH /api/v1/partnerships/*/reject"
           - "POST /api/v1/institutions/*/equipments"
           - "PATCH /api/v1/equipments/*"
           - "POST /api/v1/equipments/*/exam-types"
+          - "PATCH /api/v1/equipments/*/exam-types/*"
           - "PUT /api/v1/equipments/*/operating-hours"
           - "GET /api/v1/equipments/*/status-histories"
           - "POST /api/v1/examinations/*/results"
@@ -94,23 +107,18 @@ gateway:
       # ── 의뢰기관 사용자만 ──
       - roles: [ REQUESTER ]
         rules:
-          - "POST /api/v1/exam-types"
-          - "PATCH /api/v1/exam-types/*"
+          - "POST /api/v1/partnerships"
           - "PATCH /api/v1/referrals/reservations/*/cancel"
           - "GET /api/v1/referrals/*/results"
 
       # ── 기관 사용자 (의뢰 + 검사) ──
       - roles: [ REQUESTER, EXAMINER ]
         rules:
-          - "POST /api/v1/partnerships"
           - "GET /api/v1/partnerships/me"
-          - "PATCH /api/v1/partnerships/*/approve"
-          - "PATCH /api/v1/partnerships/*/reject"
           - "GET /api/v1/institutions/*/equipments"
           - "GET /api/v1/equipments/*"
           - "GET /api/v1/equipments/*/operating-hours"
           - "GET /api/v1/equipments/*/exam-types"
-          - "GET /api/v1/exam-types"
           - "GET /api/v1/notifications"
           - "GET /api/v1/notifications/unread-count"
           - "PATCH /api/v1/notifications/*/read"
@@ -139,6 +147,7 @@ gateway:
       # ── 로그인 사용자 전체 ──
       - roles: [ REQUESTER, EXAMINER, ADMIN ]
         rules:
+          - "GET /api/v1/exam-types"
           - "GET /api/v1/users/me"
           - "GET /api/v1/institutions/*"
           - "PATCH /api/v1/partnerships/*/terminate"
@@ -149,3 +158,11 @@ gateway:
           - "GET /api/v1/referrals/*"
           - "GET /api/v1/referrals/reservations"
           - "GET /api/v1/referrals/reservations/*"
+
+# 공통 로그 설정 (모든 서비스 동일, 서비스별 상세 레벨은 아래에 추가)
+logging:
+  include-application-name: true   # 로그에 [서비스명] 출력
+  level:
+    root: INFO
+    healoworld: INFO
+    org.apache.kafka: WARN         # Kafka 클라이언트 접속·설정 로그 소음 감소

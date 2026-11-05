@@ -8,12 +8,17 @@ import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
+import healoworld.referral_service.infrastructure.client.institution.PartnershipCheckResponse;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
+import healoworld.referral_service.presentation.dto.response.ReferralResponse;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
+import healoworld.referral_service.support.ConditionalUpdateStubs;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -23,6 +28,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import feign.FeignException;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -37,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -58,8 +65,26 @@ class ReferralServiceTest {
     @Mock
     private ReservationRepository reservationRepository;
 
+    @Mock
+    private InstitutionClient institutionClient;
+
     @InjectMocks
     private ReferralService referralService;
+
+    // 조건부 UPDATE를 DB처럼 흉내 낸다 (기대 상태가 맞으면 바꾸고 1, 아니면 0)
+    private ConditionalUpdateStubs updates;
+
+    @BeforeEach
+    void setUp() {
+        updates = new ConditionalUpdateStubs(reservationRepository, referralRepository);
+        // 기본은 협력 관계가 있는 기관. 검증 실패 케이스는 테스트에서 덮어쓴다
+        lenient().when(institutionClient.check(any(), any())).thenReturn(new PartnershipCheckResponse(true));
+    }
+
+    // 헤더의 소속 기관이 본문의 의뢰기관과 같은 정상 요청으로 생성한다
+    private ReferralResponse create(UUID userId, CreateReferralRequest request) {
+        return referralService.createReferral(userId, request.getReferringInstitutionId(), request);
+    }
 
     @Nested
     @DisplayName("createReferral")
@@ -74,8 +99,9 @@ class ReferralServiceTest {
             given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
             given(reservationService.createReservation(any(UUID.class), any(Referral.class), eq(reservationRequest))).willReturn(reservation);
 
-            referralService.createReferral(USER_ID, request);
+            create(USER_ID, request);
 
+            verify(institutionClient).check(request.getReferringInstitutionId(), reservationRequest.getExamInstitutionId());
             ArgumentCaptor<Referral> captor = ArgumentCaptor.forClass(Referral.class);
             verify(referralRepository).saveAndFlush(captor.capture());
             Referral saved = captor.getValue();
@@ -104,9 +130,44 @@ class ReferralServiceTest {
             Referral existing = referralIn(ReferralStatus.PENDING, USER_ID);
             Reservation first = storedWithFirstReservation(existing);
 
-            assertThat(referralService.createReferral(USER_ID, sameRequestAs(existing, first.getSlotId())).getId())
+            assertThat(create(USER_ID, sameRequestAs(existing, first.getSlotId())).getId())
                     .isEqualTo(existing.getId());
 
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(reservationService, referralHistoryRepository, institutionClient);
+        }
+
+        @Test
+        @DisplayName("헤더의 소속 기관과 본문의 의뢰기관이 다르면 FORBIDDEN, 협력 관계 확인도 저장도 하지 않는다")
+        void otherInstitution() {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+
+            assertErrorCode(() -> referralService.createReferral(USER_ID, UUID.randomUUID(), request), ErrorCode.REFERRAL_FORBIDDEN);
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(institutionClient, reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("검사기관과 협력 관계가 아니면 PARTNERSHIP_NOT_ACTIVE(403), 의뢰·예약을 만들지 않는다")
+        void notPartner() {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+            given(institutionClient.check(any(), any())).willReturn(new PartnershipCheckResponse(false));
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.PARTNERSHIP_NOT_ACTIVE);
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("institution-service 호출이 실패하면 503(INSTITUTION_SERVICE_UNAVAILABLE), 의뢰·예약을 만들지 않는다")
+        void institutionServiceDown() {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+            given(institutionClient.check(any(), any())).willThrow(FeignException.class);
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.INSTITUTION_SERVICE_UNAVAILABLE);
             verify(referralRepository, never()).saveAndFlush(any());
             verifyNoInteractions(reservationService, referralHistoryRepository);
         }
@@ -119,7 +180,7 @@ class ReferralServiceTest {
             CreateReferralRequest request = requestOf(existing.getIdempotencyKey(), existing.getReferringInstitutionId(),
                     existing.getExamTypeId(), "다른환자", first.getSlotId());
 
-            assertConflictWithoutCreating(() -> referralService.createReferral(USER_ID, request));
+            assertConflictWithoutCreating(() -> create(USER_ID, request));
         }
 
         @Test
@@ -130,7 +191,7 @@ class ReferralServiceTest {
             CreateReferralRequest request = requestOf(existing.getIdempotencyKey(), existing.getReferringInstitutionId(),
                     UUID.randomUUID(), existing.getPatientName(), first.getSlotId());
 
-            assertConflictWithoutCreating(() -> referralService.createReferral(USER_ID, request));
+            assertConflictWithoutCreating(() -> create(USER_ID, request));
         }
 
         @Test
@@ -139,7 +200,7 @@ class ReferralServiceTest {
             Referral existing = referralIn(ReferralStatus.PENDING, USER_ID);
             storedWithFirstReservation(existing);
 
-            assertConflictWithoutCreating(() -> referralService.createReferral(USER_ID, sameRequestAs(existing, UUID.randomUUID())));
+            assertConflictWithoutCreating(() -> create(USER_ID, sameRequestAs(existing, UUID.randomUUID())));
         }
 
         @Test
@@ -148,7 +209,7 @@ class ReferralServiceTest {
             Referral existing = referralIn(ReferralStatus.PENDING, USER_ID);
             Reservation first = storedWithFirstReservation(existing);
 
-            assertConflictWithoutCreating(() -> referralService.createReferral(OTHER_USER_ID, sameRequestAs(existing, first.getSlotId())));
+            assertConflictWithoutCreating(() -> create(OTHER_USER_ID, sameRequestAs(existing, first.getSlotId())));
         }
 
         @Test
@@ -158,7 +219,7 @@ class ReferralServiceTest {
             given(referralRepository.findByIdempotencyKey(existing.getIdempotencyKey())).willReturn(Optional.of(existing));
             given(reservationRepository.findByReferralIdAndAttemptNo(existing.getId(), 1)).willReturn(Optional.empty());
 
-            assertConflictWithoutCreating(() -> referralService.createReferral(USER_ID, sameRequestAs(existing, UUID.randomUUID())));
+            assertConflictWithoutCreating(() -> create(USER_ID, sameRequestAs(existing, UUID.randomUUID())));
         }
 
         @Test
@@ -169,7 +230,7 @@ class ReferralServiceTest {
             given(referralRepository.saveAndFlush(any(Referral.class)))
                     .willThrow(new DataIntegrityViolationException("duplicate idempotency_key"));
 
-            assertErrorCode(() -> referralService.createReferral(USER_ID, request), ErrorCode.REFERRAL_IDEMPOTENCY_CONFLICT);
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.REFERRAL_IDEMPOTENCY_CONFLICT);
             verifyNoInteractions(reservationService, referralHistoryRepository);
         }
 
@@ -264,6 +325,7 @@ class ReferralServiceTest {
         void success() {
             Referral referral = referralIn(ReferralStatus.FAILED, USER_ID);
             given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+            updates.register(referral);
 
             referralService.deleteReferral(USER_ID, referral.getId(), RoleType.REQUESTER);
 
@@ -276,6 +338,7 @@ class ReferralServiceTest {
         void otherUser() {
             Referral referral = referralIn(ReferralStatus.FAILED, OTHER_USER_ID);
             given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+            updates.register(referral);
 
             assertErrorCode(() -> referralService.deleteReferral(USER_ID, referral.getId(), RoleType.REQUESTER),
                     ErrorCode.REFERRAL_NOT_FOUND);
@@ -287,9 +350,11 @@ class ReferralServiceTest {
         void invalidStatus() {
             Referral referral = referralIn(ReferralStatus.PENDING, USER_ID);
             given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+            updates.register(referral);
 
             assertErrorCode(() -> referralService.deleteReferral(USER_ID, referral.getId(), RoleType.REQUESTER),
                     ErrorCode.INVALID_REFERRAL_STATUS);
+            assertThat(referral.getDeletedAt()).isNull();
         }
     }
 
@@ -304,6 +369,7 @@ class ReferralServiceTest {
             Reservation newReservation = reservation(referral, 2);
             given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
             given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(newReservation);
+            updates.register(referral);
 
             ReservationResponse response =
                     referralService.createRescheduledReservation(USER_ID, RoleType.REQUESTER, referral.getId(), request);
@@ -311,6 +377,7 @@ class ReferralServiceTest {
             assertThat(response.getId()).isEqualTo(newReservation.getId());
             assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
             assertThat(referral.getCurrentReservationId()).isEqualTo(newReservation.getId());
+            assertThat(referral.getUpdatedBy()).isEqualTo(USER_ID);
 
             ArgumentCaptor<UUID> eventIdCaptor = ArgumentCaptor.forClass(UUID.class);
             verify(reservationService).createReservation(eventIdCaptor.capture(), eq(referral), eq(request));
@@ -332,6 +399,7 @@ class ReferralServiceTest {
             CreateReservationRequest request = reservationRequest();
             given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
             given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(reservation(referral, 2));
+            updates.register(referral);
 
             referralService.createRescheduledReservation(USER_ID, RoleType.ADMIN, referral.getId(), request);
 
@@ -364,6 +432,34 @@ class ReferralServiceTest {
             assertErrorCode(() -> referralService.createRescheduledReservation(
                     USER_ID, RoleType.REQUESTER, referral.getId(), reservationRequest()), ErrorCode.INVALID_REFERRAL_STATUS);
             verifyNoInteractions(reservationService);
+        }
+
+        @Test
+        @DisplayName("새 검사기관과 협력 관계가 아니면 PARTNERSHIP_NOT_ACTIVE(403), 예약을 만들지 않는다")
+        void notPartner() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            CreateReservationRequest request = reservationRequest();
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+            given(institutionClient.check(referral.getReferringInstitutionId(), request.getExamInstitutionId()))
+                    .willReturn(new PartnershipCheckResponse(false));
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, RoleType.REQUESTER, referral.getId(), request), ErrorCode.PARTNERSHIP_NOT_ACTIVE);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("새 예약을 만든 뒤 의뢰 UPDATE가 0행이면 예외로 새 예약까지 롤백되게 하고 이력을 남기지 않는다")
+        void rescheduleUpdateMissed() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            CreateReservationRequest request = reservationRequest();
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+            given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(reservation(referral, 2));
+            // 시뮬레이터에 등록하지 않은 의뢰라 UPDATE가 0행이 된다
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, RoleType.REQUESTER, referral.getId(), request), ErrorCode.INVALID_REFERRAL_STATUS);
+            verifyNoInteractions(referralHistoryRepository);
         }
 
         @Test

@@ -1,5 +1,7 @@
 package healoworld.slot_service.application;
 
+import healoworld.slot_service.support.PostgresContainerSupport;
+
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
@@ -32,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 // 확정 쪽은 만료 1초 전, 만료 쪽은 만료 1초 후 시각을 써서 각자 조건을 만족하는 상황(인스턴스 간 시계 차이, 경계 시각)을 만든다.
 @SpringBootTest
 @ActiveProfiles("test")
-class SlotBookExpiryRaceTest {
+class SlotBookExpiryRaceTest extends PostgresContainerSupport {
 
     private static final LocalDateTime HELD_UNTIL = LocalDateTime.of(2026, 10, 30, 10, 5);
     private static final LocalDateTime BOOK_NOW = HELD_UNTIL.minusSeconds(1);     // 확정 조건 held_until > now 만족

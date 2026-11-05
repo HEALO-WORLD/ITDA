@@ -15,14 +15,12 @@ public class ExamTypeResponse {
     private final UUID id;
     private final String name;
     private final Modality modality;
-    private final Integer durationMinutes;
 
     public static ExamTypeResponse from(ExamType examType) {
         return new ExamTypeResponse(
                 examType.getId(),
                 examType.getName(),
-                examType.getModality(),
-                examType.getDurationMinutes()
+                examType.getModality()
         );
     }
 }

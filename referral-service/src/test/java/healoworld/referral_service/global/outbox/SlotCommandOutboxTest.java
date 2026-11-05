@@ -55,8 +55,9 @@ class SlotCommandOutboxTest {
         assertThat(payload.get("reservationId").asString()).isEqualTo(reservation.getId().toString());
         assertThat(payload.get("referralId").asString()).isEqualTo(reservation.getReferral().getId().toString());
         assertThat(payload.get("slotId").asString()).isEqualTo(reservation.getSlotId().toString());
-        assertThat(payload.get("reservationStatus").asString()).isEqualTo("HELD");
         assertThat(payload.get("occurredAt").isNull()).isFalse();
+        // slot-service와의 계약: 위 6개 필드만 보낸다 (변하는 상태 값은 담지 않는다)
+        assertThat(payload.size()).isEqualTo(6);
     }
 
     @Test

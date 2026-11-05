@@ -1,5 +1,7 @@
 package healoworld.slot_service.application;
 
+import healoworld.slot_service.support.PostgresContainerSupport;
+
 import healoworld.slot_service.application.dto.HoldResult;
 import healoworld.slot_service.application.service.SlotHoldService;
 import healoworld.slot_service.domain.entity.Slot;
@@ -32,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(FixedClockConfig.class)
-class SlotHoldServiceTest {
+class SlotHoldServiceTest extends PostgresContainerSupport {
 
     @Autowired
     private SlotHoldService slotHoldService;
