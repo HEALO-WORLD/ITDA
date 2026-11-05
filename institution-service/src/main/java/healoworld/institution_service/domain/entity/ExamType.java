@@ -29,9 +29,7 @@ public class ExamType extends BaseEntity {
     private Modality modality;
 
     private ExamType(String name, Modality modality) {
-        validateName(name);
-
-        this.name = name;
+        this.name = normalizeName(name);
         this.modality = Objects.requireNonNull(modality, "검사 종류는 필수입니다.");
     }
 
@@ -40,13 +38,14 @@ public class ExamType extends BaseEntity {
     }
 
     public void update(String name) {
-        validateName(name);
-        this.name = name;
+        this.name = normalizeName(name);
     }
 
-    private void validateName(String name) {
-        if (name == null || name.isBlank() || name.length() > 50) {
+    private static String normalizeName(String name) {
+        String normalizedName = name == null ? null : name.trim();
+        if (normalizedName == null || normalizedName.isBlank() || normalizedName.length() > 50) {
             throw new IllegalArgumentException("검사명은 공백이 아닌 최대 50자여야 합니다.");
         }
+        return normalizedName;
     }
 }
