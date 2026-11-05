@@ -31,6 +31,7 @@ public enum ErrorCode {
     FORBIDDEN(HttpStatus.FORBIDDEN, "요청을 처리할 권한이 없습니다."),
     SLOT_OUTSIDE_OPERATING_HOURS(HttpStatus.BAD_REQUEST, "슬롯은 장비 운영시간 안에 있어야 합니다."),
     SLOT_DURATION_MISMATCH(HttpStatus.BAD_REQUEST, "슬롯 길이는 장비별 검사 소요시간 이상이어야 합니다."),
+    SLOT_GENERATION_EMPTY(HttpStatus.BAD_REQUEST, "생성 가능한 미래 슬롯이 없습니다."),
 
     // equipment
     REFERENCE_NOT_AVAILABLE(HttpStatus.CONFLICT,"장비 또는 운영시간을 사용할 수 없습니다."),

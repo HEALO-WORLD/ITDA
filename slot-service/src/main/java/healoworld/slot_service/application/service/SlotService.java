@@ -1,5 +1,6 @@
 package healoworld.slot_service.application.service;
 
+import healoworld.slot_service.application.dto.SlotTimeRange;
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.domain.enums.SlotView;
@@ -10,6 +11,7 @@ import healoworld.slot_service.infrastructure.client.EquipmentSlotContextClient;
 import healoworld.slot_service.infrastructure.client.dto.EquipmentSlotContextResponse;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import healoworld.slot_service.presentation.dto.request.SlotCreateRequest;
+import healoworld.slot_service.presentation.dto.request.SlotGenerateRequest;
 import healoworld.slot_service.presentation.dto.request.SlotSearchRequest;
 import healoworld.slot_service.presentation.dto.response.SlotCreateResponse;
 import healoworld.slot_service.presentation.dto.response.SlotDetailResponse;
@@ -21,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -35,6 +38,8 @@ public class SlotService {
     private final EquipmentSlotContextClient equipmentSlotContextClient;
     private final SlotCreateWriter slotCreateWriter;
     private final Clock clock;
+
+    private final SlotGenerationPlanner slotGenerationPlanner;
 
     public SlotCreateResponse createSlot(
             SlotCreateRequest request,
@@ -163,6 +168,86 @@ public class SlotService {
         Slice<SlotDetailResponse> responses = slots.map(SlotDetailResponse::from);
 
         return SliceResponse.from(responses);
+    }
+
+    public List<SlotCreateResponse> generateSlots(
+            SlotGenerateRequest request,
+            UUID userId,
+            UUID userInstitutionId,
+            String userRole
+    ) {
+        validateCreationActor(userId, userInstitutionId, userRole);
+
+        if (request == null || request.getEquipmentId() == null
+                || request.getExamTypeId() == null || request.getDate() == null) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        LocalDate today = clock.instant().atZone(BUSINESS_ZONE).toLocalDate();
+        if (request.getDate().isBefore(today)) {
+            throw new BaseException(ErrorCode.SLOT_START_NOT_FUTURE);
+        }
+
+        EquipmentSlotContextResponse context =
+                equipmentSlotContextClient.getSlotContext(
+                        request.getEquipmentId(),
+                        request.getExamTypeId(),
+                        request.getDate()
+                );
+
+        validateEquipmentOwnership(context, userInstitutionId, userRole);
+
+        List<SlotTimeRange> candidates = slotGenerationPlanner.plan(
+                context.operatingStartTime(),
+                context.operatingEndTime(),
+                context.durationMinutes()
+        );
+
+        Instant now = clock.instant();
+        List<SlotTimeRange> ranges = new ArrayList<>();
+
+        for (SlotTimeRange range : candidates) {
+            if (request.getDate().atTime(range.startTime()).atZone(BUSINESS_ZONE)
+                    .toInstant().isAfter(now)) {
+                ranges.add(range);
+            }
+        }
+
+        if (ranges.isEmpty()) {
+            throw new BaseException(ErrorCode.SLOT_GENERATION_EMPTY);
+        }
+
+        return slotCreateWriter.createSlots(
+                request.getEquipmentId(),
+                request.getExamTypeId(),
+                request.getDate(),
+                ranges
+        );
+    }
+
+    private void validateCreationActor(
+            UUID userId,
+            UUID institutionId,
+            String role
+    ) {
+        if (userId == null || institutionId == null || role == null) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        if (!"EXAMINER".equals(role) && !"ADMIN".equals(role)) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    private void validateEquipmentOwnership(
+            EquipmentSlotContextResponse context,
+            UUID institutionId,
+            String role
+    ) {
+        if ("EXAMINER".equals(role)
+                && !institutionId.equals(context.institutionId())) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
     }
 
     private void validateRequiredFields(SlotCreateRequest request) {

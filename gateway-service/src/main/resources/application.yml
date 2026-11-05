@@ -127,6 +127,7 @@ gateway:
       - roles: [ EXAMINER, ADMIN ]
         rules:
           - "POST /api/v1/slots"
+          - "POST /api/v1/slots/generate"
           - "PATCH,DELETE /api/v1/slots/*"
           - "POST /api/v1/equipment-downtimes"
           - "PATCH,DELETE /api/v1/equipment-downtimes/*"
