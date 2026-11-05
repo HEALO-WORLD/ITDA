@@ -9,7 +9,7 @@ spring:
       - optional:file:.env[.properties]
       - optional:file:../.env[.properties]
   datasource:
-    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/institution_db
+    url: jdbc:postgresql://${DB_HOST:localhost}:${POSTGRES_PORT:5432}/institution_db
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -44,7 +44,7 @@ eureka:
     prefer-ip-address: true
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
 
 management:
   tracing:
