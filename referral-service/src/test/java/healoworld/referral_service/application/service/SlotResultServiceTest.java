@@ -66,6 +66,10 @@ class SlotResultServiceTest {
     @Mock
     private ExaminationService examinationService;
 
+    // SlotBooked 확정 직후 장비 장애 확인 (실제 동작은 SlotBookedIncidentLinkIntegrationTest에서 검증)
+    @Mock
+    private EquipmentIncidentService equipmentIncidentService;
+
     @InjectMocks
     private SlotResultService slotResultService;
 

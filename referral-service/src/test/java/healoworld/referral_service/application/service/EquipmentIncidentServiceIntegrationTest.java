@@ -5,6 +5,7 @@ import healoworld.referral_service.domain.enums.EquipmentIncidentStatus;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.repository.EquipmentIncidentLockRepository;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
 import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.AfterEach;
@@ -36,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * 그래서 테스트 트랜잭션도 끄고, 테스트가 만든 장애 행만 끝날 때 ID로 지운다(TestDatabaseGuard가 테스트 DB임을 보장).
  */
 @DataJpaTest
-@Import({EquipmentIncidentService.class, QuerydslConfig.class})
+@Import({EquipmentIncidentService.class, EquipmentIncidentLockRepository.class, QuerydslConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
