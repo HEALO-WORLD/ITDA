@@ -14,4 +14,6 @@ public interface EquipmentOperatingHoursRepository extends JpaRepository<Equipme
     List<EquipmentOperatingHours> findAllByEquipmentIdAndDeletedAtIsNullOrderByWeekAsc(UUID equipmentId);
 
     List<EquipmentOperatingHours> findAllByEquipmentIdOrderByWeekAsc(UUID equipmentId);
+
+    Optional<EquipmentOperatingHours> findByEquipmentIdAndWeekAndDeletedAtIsNull(UUID equipmentId, Integer week);
 }
