@@ -1,0 +1,130 @@
+# 애플리케이션 서비스 (인프라 compose 위에 덮어써서 사용)
+# 실행: docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+# 인프라만 띄우는 기존 방식(docker compose up -d)은 그대로 동작한다
+# 로컬에서 IDE로 같은 서비스를 띄워 두면 포트가 겹치니 먼저 종료한다
+# mem_limit: JVM은 이 한도의 75%를 최대 힙으로 잡는다(Dockerfile의 MaxRAMPercentage)
+#            한도가 없으면 Docker 전체 메모리 기준으로 힙을 잡아 서비스끼리 메모리를 다투게 된다
+
+x-app-env: &app-env
+  TZ: Asia/Seoul
+  DB_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_USER: ${POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  EUREKA_URL: http://eureka-server:8761/eureka/
+
+# 업무 서비스 공통 기동 조건: DB 준비, 토픽 생성 완료, Eureka 기동
+x-app-depends: &app-depends
+  postgres:
+    condition: service_healthy
+  kafka-init:
+    condition: service_completed_successfully
+  eureka-server:
+    condition: service_healthy
+
+services:
+  # 인프라에 헬스체크 추가 (앱이 준비된 뒤에 뜨도록)
+  postgres:
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  eureka-server:
+    build: ./eureka-server
+    image: itda/eureka-server:local
+    container_name: itda-eureka-server
+    mem_limit: 450m
+    ports:
+      - "127.0.0.1:8761:8761"
+    environment:
+      TZ: Asia/Seoul
+    healthcheck:
+      test: [ "CMD", "curl", "-fs", "http://localhost:8761/actuator/health" ]
+      interval: 10s
+      timeout: 3s
+      retries: 18
+      start_period: 30s
+
+  institution-service:
+    build: ./institution-service
+    image: itda/institution-service:local
+    container_name: itda-institution-service
+    mem_limit: 700m
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      <<: *app-env
+      JWT_SECRET: ${JWT_SECRET:?.env에 JWT_SECRET을 설정하세요}
+      SEED_ENABLED: ${SEED_ENABLED:-never}
+      DEV_TOKEN_ENABLED: ${DEV_TOKEN_ENABLED:-false}
+    depends_on: *app-depends
+    healthcheck:
+      test: [ "CMD", "curl", "-fs", "http://localhost:8081/actuator/health" ]
+      interval: 10s
+      timeout: 3s
+      retries: 18
+      start_period: 40s
+
+  slot-service:
+    build: ./slot-service
+    image: itda/slot-service:local
+    container_name: itda-slot-service
+    mem_limit: 700m
+    ports:
+      - "127.0.0.1:8082:8082"
+    environment:
+      <<: *app-env
+    depends_on: *app-depends
+    healthcheck:
+      test: [ "CMD", "curl", "-fs", "http://localhost:8082/actuator/health" ]
+      interval: 10s
+      timeout: 3s
+      retries: 18
+      start_period: 40s
+
+  referral-service:
+    build: ./referral-service
+    image: itda/referral-service:local
+    container_name: itda-referral-service
+    mem_limit: 700m
+    ports:
+      - "127.0.0.1:8083:8083"
+    environment:
+      <<: *app-env
+    depends_on: *app-depends
+    healthcheck:
+      test: [ "CMD", "curl", "-fs", "http://localhost:8083/actuator/health" ]
+      interval: 10s
+      timeout: 3s
+      retries: 18
+      start_period: 40s
+
+  gateway-service:
+    build: ./gateway-service
+    image: itda/gateway-service:local
+    container_name: itda-gateway-service
+    mem_limit: 450m
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      TZ: Asia/Seoul
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET:?.env에 JWT_SECRET을 설정하세요}
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      institution-service:
+        condition: service_healthy
+      slot-service:
+        condition: service_healthy
+      referral-service:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-fs", "http://localhost:8080/actuator/health" ]
+      interval: 10s
+      timeout: 3s
+      retries: 18
+      start_period: 30s
