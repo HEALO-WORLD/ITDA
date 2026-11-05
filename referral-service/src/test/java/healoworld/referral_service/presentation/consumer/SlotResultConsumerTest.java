@@ -2,6 +2,7 @@ package healoworld.referral_service.presentation.consumer;
 
 import healoworld.referral_service.application.service.SlotResultService;
 import healoworld.referral_service.application.event.result.SlotResultMessage;
+import healoworld.referral_service.application.event.result.SlotResultType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,7 +41,7 @@ class SlotResultConsumerTest {
 
         slotResultConsumer.consume(eventId.toString(), "SlotHeld", PAYLOAD);
 
-        verify(slotResultService).handle(eventId, "SlotHeld", reservationId);
+        verify(slotResultService).handle(eventId, SlotResultType.SLOT_HELD, reservationId);
     }
 
     @Test
@@ -61,6 +62,14 @@ class SlotResultConsumerTest {
         assertThatThrownBy(() -> slotResultConsumer.consume(UUID.randomUUID().toString(), "SlotHeld", PAYLOAD))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(slotResultService);
+    }
+
+    @Test
+    @DisplayName("모르는 eventType이면 payload를 해석하지 않고 서비스도 호출하지 않는다 (예외 없이 넘어가 DLT로 보내지 않는다)")
+    void unknownEventType() {
+        slotResultConsumer.consume(UUID.randomUUID().toString(), "SomethingNew", PAYLOAD);
+
+        verifyNoInteractions(slotResultService, jsonMapper);
     }
 
     @Test

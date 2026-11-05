@@ -1,5 +1,6 @@
 package healoworld.referral_service.application.service;
 
+import healoworld.referral_service.application.event.command.SlotCommandType;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
@@ -94,7 +95,7 @@ class ReservationServiceTest {
             assertThat(created.getSlotId()).isEqualTo(request.getSlotId());
             assertThat(created.getEquipmentId()).isEqualTo(request.getEquipmentId());
             verify(reservationRepository).save(created);
-            verify(slotCommandOutbox).recordOutbox(created, eventId, "HoldRequested");
+            verify(slotCommandOutbox).recordOutbox(created, eventId, SlotCommandType.HOLD_REQUESTED);
         }
 
         @Test
@@ -230,7 +231,7 @@ class ReservationServiceTest {
         void success() {
             UUID releaseEventId = UUID.randomUUID();
             stored(confirmed);
-            given(slotCommandOutbox.recordOutbox(confirmed, "ReleaseSlot")).willReturn(releaseEventId);
+            given(slotCommandOutbox.recordOutbox(confirmed, SlotCommandType.RELEASE_SLOT)).willReturn(releaseEventId);
 
             reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
 
