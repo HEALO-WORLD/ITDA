@@ -1,0 +1,8 @@
+# 빌드 결과물과 IDE 파일은 이미지 빌드에 필요 없다
+build
+.gradle
+out
+.idea
+*.iml
+.env
+*.log
