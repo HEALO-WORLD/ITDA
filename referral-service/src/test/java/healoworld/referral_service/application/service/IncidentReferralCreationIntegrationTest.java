@@ -7,6 +7,7 @@ import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.repository.EquipmentIncidentLockRepository;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
@@ -44,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * - 테스트가 만든 작업·장애·예약·의뢰 행만 끝날 때 ID로 지운다 (TestDatabaseGuard가 테스트 DB임을 보장).
  */
 @DataJpaTest
-@Import({EquipmentIncidentService.class, QuerydslConfig.class})
+@Import({EquipmentIncidentService.class, EquipmentIncidentLockRepository.class, QuerydslConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
