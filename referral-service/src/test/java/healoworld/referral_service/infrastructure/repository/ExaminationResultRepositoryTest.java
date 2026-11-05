@@ -3,6 +3,7 @@ package healoworld.referral_service.infrastructure.repository;
 import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.ExaminationResult;
 import healoworld.referral_service.global.config.QuerydslConfig;
+import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(QuerydslConfig.class)
-class ExaminationResultRepositoryTest {
+class ExaminationResultRepositoryTest extends PostgresContainerSupport {
 
     @Autowired
     private ExaminationRepository examinationRepository;

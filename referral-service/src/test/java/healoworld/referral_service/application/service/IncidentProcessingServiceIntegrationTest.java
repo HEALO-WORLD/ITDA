@@ -7,6 +7,7 @@ import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.*;
+import healoworld.referral_service.support.PostgresContainerSupport;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,7 +55,7 @@ import static org.mockito.Mockito.reset;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class IncidentProcessingServiceIntegrationTest {
+class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport {
 
     private static final LocalDateTime EXAM_START = LocalDateTime.of(2026, 11, 2, 14, 0);
 

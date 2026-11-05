@@ -5,6 +5,7 @@ import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.global.config.QuerydslConfig;
+import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -27,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Import(QuerydslConfig.class)
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class IncidentReservationRepositoryTest {
+class IncidentReservationRepositoryTest extends PostgresContainerSupport {
 
     // 장애 영향 구간: 14:00 ~ 17:00
     private static final LocalDateTime INCIDENT_START = LocalDateTime.of(2026, 11, 2, 14, 0);

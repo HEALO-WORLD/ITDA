@@ -3,6 +3,7 @@ package healoworld.referral_service.infrastructure.repository;
 import healoworld.referral_service.domain.entity.EquipmentIncident;
 import healoworld.referral_service.domain.enums.EquipmentIncidentStatus;
 import healoworld.referral_service.global.config.QuerydslConfig;
+import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import(QuerydslConfig.class)
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class EquipmentIncidentRepositoryTest {
+class EquipmentIncidentRepositoryTest extends PostgresContainerSupport {
 
     private static final LocalDateTime BASE = LocalDateTime.of(2026, 11, 2, 9, 0);
 

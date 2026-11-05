@@ -16,6 +16,7 @@ import healoworld.referral_service.presentation.dto.request.IncidentReferralSear
 import healoworld.referral_service.presentation.dto.response.EquipmentIncidentDetailResponse;
 import healoworld.referral_service.presentation.dto.response.EquipmentIncidentResponse;
 import healoworld.referral_service.presentation.dto.response.IncidentReferralResponse;
+import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import({EquipmentIncidentQueryService.class, QuerydslConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class EquipmentIncidentQueryServiceIntegrationTest {
+class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupport {
 
     private static final LocalDateTime BASE = LocalDateTime.of(2026, 11, 2, 9, 0);
 
