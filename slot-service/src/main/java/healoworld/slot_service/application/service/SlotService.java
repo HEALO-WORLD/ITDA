@@ -90,8 +90,6 @@ public class SlotService {
             throw new BaseException(ErrorCode.SLOT_DURATION_MISMATCH);
         }
 
-        validateTimeRange(startsAt, endsAt);
-
         return slotCreateWriter.createSlot(
                 request.getEquipmentId(),
                 request.getExamTypeId(),
