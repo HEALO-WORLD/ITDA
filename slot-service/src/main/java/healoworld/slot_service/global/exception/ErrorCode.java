@@ -28,6 +28,9 @@ public enum ErrorCode {
     SLOT_NOT_FOUND(HttpStatus.NOT_FOUND, "슬롯을 찾을 수 없습니다."),
     SLOT_NOT_RELEASABLE(HttpStatus.CONFLICT, "요청한 예약으로 확보·예약된 슬롯이 아닙니다."),
     ADMIN_ONLY(HttpStatus.FORBIDDEN, "관리자만 접근 권한이 있습니다."),
+    FORBIDDEN(HttpStatus.FORBIDDEN, "요청을 처리할 권한이 없습니다."),
+    SLOT_OUTSIDE_OPERATING_HOURS(HttpStatus.BAD_REQUEST, "슬롯은 장비 운영시간 안에 있어야 합니다."),
+    SLOT_DURATION_MISMATCH(HttpStatus.BAD_REQUEST, "슬롯 길이는 장비별 검사 소요시간 이상이어야 합니다."),
 
     // equipment
     REFERENCE_NOT_AVAILABLE(HttpStatus.CONFLICT,"장비 또는 운영시간을 사용할 수 없습니다."),

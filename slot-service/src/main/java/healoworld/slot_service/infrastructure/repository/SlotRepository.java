@@ -21,6 +21,7 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
         select count(s) > 0
         from Slot s
         where s.equipmentId = :equipmentId
+        and s.deletedAt is null
         and s.date = :date
         and s.startTime < :endTime
         and s.endTime > :startTime

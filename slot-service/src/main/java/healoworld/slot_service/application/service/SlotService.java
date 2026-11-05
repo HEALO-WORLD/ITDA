@@ -6,6 +6,8 @@ import healoworld.slot_service.domain.enums.SlotView;
 import healoworld.slot_service.global.dto.SliceResponse;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
+import healoworld.slot_service.infrastructure.client.EquipmentSlotContextClient;
+import healoworld.slot_service.infrastructure.client.dto.EquipmentSlotContextResponse;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import healoworld.slot_service.presentation.dto.request.SlotCreateRequest;
 import healoworld.slot_service.presentation.dto.request.SlotSearchRequest;
@@ -30,9 +32,24 @@ public class SlotService {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
     private final SlotRepository slotRepository;
+    private final EquipmentSlotContextClient equipmentSlotContextClient;
+    private final SlotCreateWriter slotCreateWriter;
+    private final Clock clock;
 
-    @Transactional
-    public SlotCreateResponse createSlot(SlotCreateRequest request) {
+    public SlotCreateResponse createSlot(
+            SlotCreateRequest request,
+            UUID userId,
+            UUID userInstitutionId,
+            String userRole
+    ) {
+        if (userId == null || userInstitutionId == null || userRole == null) {
+            throw new BaseException(ErrorCode.INVALID_INPUT);
+        }
+
+        if (!"EXAMINER".equals(userRole) && !"ADMIN".equals(userRole)) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
+
         validateRequiredFields(request);
 
         ZonedDateTime startsAt = request.getStartsAt()
@@ -43,32 +60,45 @@ public class SlotService {
 
         validateTimeRange(startsAt, endsAt);
 
-        LocalDate date = startsAt.toLocalDate();
+        EquipmentSlotContextResponse context = equipmentSlotContextClient.getSlotContext(
+                request.getEquipmentId(),
+                request.getExamTypeId(),
+                startsAt.toLocalDate()
+        );
+
+        if ("EXAMINER".equals(userRole)
+                && !userInstitutionId.equals(context.institutionId())) {
+            throw new BaseException(ErrorCode.FORBIDDEN);
+        }
+
         LocalTime startTime = startsAt.toLocalTime();
         LocalTime endTime = endsAt.toLocalTime();
 
-        boolean overlapping = slotRepository.existsOverlappingSlot(
-                request.getEquipmentId(),
-                date,
-                startTime,
-                endTime
-        );
-
-        if (overlapping) {
-            throw new BaseException(ErrorCode.SLOT_TIME_OVERLAP);
+        if (startTime.isBefore(context.operatingStartTime())
+                || endTime.isAfter(context.operatingEndTime())) {
+            throw new BaseException(ErrorCode.SLOT_OUTSIDE_OPERATING_HOURS);
         }
 
-        Slot slot = Slot.create(
+        Duration slotDuration = Duration.between(
+                startsAt.toInstant(),
+                endsAt.toInstant()
+        );
+
+        Duration examDuration = Duration.ofMinutes(context.durationMinutes());
+
+        if (slotDuration.compareTo(examDuration) < 0) {
+            throw new BaseException(ErrorCode.SLOT_DURATION_MISMATCH);
+        }
+
+        validateTimeRange(startsAt, endsAt);
+
+        return slotCreateWriter.createSlot(
                 request.getEquipmentId(),
                 request.getExamTypeId(),
-                date,
+                startsAt.toLocalDate(),
                 startTime,
                 endTime
         );
-
-        Slot savedSlot = slotRepository.save(slot);
-
-        return SlotCreateResponse.from(savedSlot);
     }
 
     @Transactional(readOnly = true)
@@ -148,7 +178,8 @@ public class SlotService {
     }
 
     private void validateTimeRange(ZonedDateTime startsAt, ZonedDateTime endsAt) {
-        if (!startsAt.toInstant().isAfter(OffsetDateTime.now().toInstant())) {
+
+        if (!startsAt.toInstant().isAfter(clock.instant())) {
             throw new BaseException(ErrorCode.SLOT_START_NOT_FUTURE);
         }
 

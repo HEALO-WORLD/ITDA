@@ -21,8 +21,18 @@ public class SlotController {
     private final SlotService slotService;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<SlotCreateResponse>> createSlot(@Valid @RequestBody SlotCreateRequest request) {
-        SlotCreateResponse response = slotService.createSlot(request);
+    public ResponseEntity<ApiResponse<SlotCreateResponse>> createSlot(
+            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader("X-Institution-Id") UUID userInstitutionId,
+            @RequestHeader("X-Role") String userRole,
+            @Valid @RequestBody SlotCreateRequest request
+    ) {
+        SlotCreateResponse response = slotService.createSlot(
+                request,
+                userId,
+                userInstitutionId,
+                userRole
+        );
 
         URI location = URI.create("/api/v1/slots/" + response.getId());
 
@@ -30,7 +40,9 @@ public class SlotController {
     }
 
     @GetMapping("/{slotId}")
-    public ResponseEntity<ApiResponse<SlotDetailResponse>> getSlot(@PathVariable("slotId") UUID slotId) {
+    public ResponseEntity<ApiResponse<SlotDetailResponse>> getSlot(
+            @PathVariable("slotId") UUID slotId
+    ) {
         SlotDetailResponse response = slotService.getSlot(slotId);
 
         return ResponseEntity.ok(ApiResponse.ok("슬롯 조회에 성공했습니다.", response));
