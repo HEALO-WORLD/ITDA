@@ -35,6 +35,8 @@ public enum ErrorCode {
     // equipment
     INSTITUTION_NOT_AVAILABLE(HttpStatus.CONFLICT, "활성 검사기관에만 장비를 등록할 수 있습니다."),
     DUPLICATE_EQUIPMENT_EXAM_TYPE(HttpStatus.CONFLICT, "이미 등록된 장비·검사 유형 연결입니다."),
+    EQUIPMENT_NOT_AVAILABLE(HttpStatus.CONFLICT, "현재 검사에 사용할 수 없는 장비입니다."),
+    OPERATING_HOURS_NOT_AVAILABLE(HttpStatus.CONFLICT, "해당 날짜에 설정된 장비 운영시간이 없습니다."),
 
     // common
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "유효성 검사에 실패했습니다."),
