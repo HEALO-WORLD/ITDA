@@ -15,6 +15,10 @@ public interface ExamTypeRepository extends JpaRepository<ExamType, UUID> {
 
     Optional<ExamType> findByIdAndDeletedAtIsNull(UUID id);
 
+    boolean existsByNameAndModalityAndDeletedAtIsNull(String name, Modality modality);
+
+    boolean existsByNameAndModalityAndDeletedAtIsNullAndIdNot(String name, Modality modality, UUID id);
+
     @Query("""
         select e
         from ExamType e

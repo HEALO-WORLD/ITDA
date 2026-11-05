@@ -12,6 +12,8 @@ import healoworld.institution_service.presentation.dto.request.ExamTypeUpdateReq
 import healoworld.institution_service.presentation.dto.response.ExamTypeCreateResponse;
 import healoworld.institution_service.presentation.dto.response.ExamTypeResponse;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -23,6 +25,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class ExamTypeService {
+
+    private static final String UNIQUE_EXAM_TYPE_INDEX = "uq_exam_type_active_name_modality";
 
     private final ExamTypeRepository examTypeRepository;
 
@@ -47,7 +51,17 @@ public class ExamTypeService {
                 request.getModality()
         );
 
-        ExamType savedExamType = examTypeRepository.save(examType);
+        if (examTypeRepository.existsByNameAndModalityAndDeletedAtIsNull(
+                examType.getName(), examType.getModality())) {
+            throw new BaseException(ErrorCode.DUPLICATE_EXAM_TYPE);
+        }
+
+        ExamType savedExamType;
+        try {
+            savedExamType = examTypeRepository.saveAndFlush(examType);
+        } catch (DataIntegrityViolationException exception) {
+            throw translateConstraint(exception);
+        }
 
         return ExamTypeCreateResponse.from(savedExamType);
     }
@@ -100,12 +114,34 @@ public class ExamTypeService {
         validateUpdateRequest(request);
 
         ExamType examType = examTypeRepository.findByIdAndDeletedAtIsNull(examTypeId).orElseThrow(() ->
-                        new BaseException(ErrorCode.RESOURCE_NOT_FOUND)
-                );
+                new BaseException(ErrorCode.RESOURCE_NOT_FOUND)
+        );
 
-        examType.update(request.getName());
+        String normalizedName = request.getName().trim();
+        if (examTypeRepository.existsByNameAndModalityAndDeletedAtIsNullAndIdNot(
+                normalizedName, examType.getModality(), examTypeId)) {
+            throw new BaseException(ErrorCode.DUPLICATE_EXAM_TYPE);
+        }
+
+        examType.update(normalizedName);
+        try {
+            examTypeRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw translateConstraint(exception);
+        }
 
         return ExamTypeResponse.from(examType);
+    }
+
+    private RuntimeException translateConstraint(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation
+                    && "23505".equals(violation.getSQLState())
+                    && UNIQUE_EXAM_TYPE_INDEX.equals(violation.getConstraintName())) {
+                return new BaseException(ErrorCode.DUPLICATE_EXAM_TYPE);
+            }
+        }
+        return exception;
     }
 
     private void validateRequest(ExamTypeCreateRequest request) {
