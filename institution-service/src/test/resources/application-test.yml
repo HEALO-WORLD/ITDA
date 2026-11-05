@@ -1,0 +1,24 @@
+# 테스트 전용 설정 (@ActiveProfiles("test")일 때 main의 application.yml 위에 덮어써진다)
+spring:
+  datasource:
+    # 실제 접속은 PostgresContainerSupport의 컨테이너가 덮어쓴다
+    # 상속을 빠뜨린 테스트가 개발 DB(institution_db)에 붙지 않도록 테스트 DB 주소를 남겨 둔다
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/institution_test_db
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+  sql:
+    init:
+      mode: never          # 테스트에서는 시드를 넣지 않는다 (.env의 SEED_ENABLED와 무관하게)
+  kafka:
+    listener:
+      auto-startup: false
+
+eureka:
+  client:
+    enabled: false
+
+# 테스트 전용 값 (운영 키 아님). .env가 없는 CI에서도 JwtProvider가 만들어지도록
+jwt:
+  secret: dGVzdC1zZWNyZXQta2V5LWZvci1pdGRhLXRlc3RzLW9ubHk=
