@@ -6,6 +6,7 @@ import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
+import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,11 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,16 +31,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * EquipmentIncidentService 통합 테스트 (테스트 전용 PostgreSQL)
- *
+ * <p>
  * - register()는 호출한 쪽 트랜잭션에 참여하지 않고(NOT_SUPPORTED) 저장을 실제로 커밋한다.
- *   그래서 테스트 트랜잭션도 끄고, 테스트가 만든 장애 행만 끝날 때 ID로 지운다(TestDatabaseGuard가 테스트 DB임을 보장).
+ * 그래서 테스트 트랜잭션도 끄고, 테스트가 만든 장애 행만 끝날 때 ID로 지운다(TestDatabaseGuard가 테스트 DB임을 보장).
  */
 @DataJpaTest
 @Import({EquipmentIncidentService.class, QuerydslConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class EquipmentIncidentServiceIntegrationTest {
+class EquipmentIncidentServiceIntegrationTest extends PostgresContainerSupport {
 
     private static final LocalDateTime OCCURRED_AT = LocalDateTime.of(2026, 11, 2, 9, 0);
 

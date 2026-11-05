@@ -4,6 +4,7 @@ import healoworld.referral_service.domain.entity.EquipmentIncident;
 import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.global.config.QuerydslConfig;
+import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -37,7 +38,7 @@ import static org.assertj.core.api.Assertions.*;
 @Import(QuerydslConfig.class)
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class IncidentReferralRepositoryTest {
+class IncidentReferralRepositoryTest extends PostgresContainerSupport {
 
     private static final PageRequest PAGE = PageRequest.of(0, 20);
 

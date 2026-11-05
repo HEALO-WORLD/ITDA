@@ -16,6 +16,7 @@ import healoworld.referral_service.presentation.dto.response.ExaminationResponse
 import healoworld.referral_service.presentation.dto.response.ExaminationResultCreateResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationStatusChangeResponse;
 
+import healoworld.referral_service.support.PostgresContainerSupport;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         ExaminationResultService.class,
         QuerydslConfig.class
 })
-class ExaminationServiceIntegrationTest {
+class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
 
     @Autowired
     private ExaminationService examinationService;

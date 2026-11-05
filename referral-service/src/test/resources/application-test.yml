@@ -19,3 +19,7 @@ itda:
   incident-processing:
     scheduler:
       enabled: false
+
+kafka:
+  listener:
+    auto-startup: false

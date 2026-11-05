@@ -16,7 +16,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
 @Import({QuerydslConfig.class, JpaAuditingConfig.class})
-public abstract class RepositoryTestSupport {
+public abstract class RepositoryTestSupport extends PostgresContainerSupport {
 
     // TestDatabaseGuard가 실제 연결된 DB 이름을 검증하므로 컨테이너의 DB 이름도 테스트 DB 이름과 맞춘다
     @ServiceConnection

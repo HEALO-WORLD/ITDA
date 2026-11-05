@@ -1,6 +1,5 @@
 package healoworld.referral_service.application.service;
 
-import healoworld.referral_service.domain.entity.EquipmentIncident;
 import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
@@ -12,6 +11,7 @@ import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRe
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
+import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 장애 등록 → 영향 예약 조회 → PENDING 작업 생성 통합 테스트 (테스트 전용 PostgreSQL)
- *
+ * <p>
  * - register()·createPendingReferrals()는 호출한 쪽 트랜잭션에 참여하지 않고 실제로 커밋하므로 테스트 트랜잭션도 끈다.
  * - 테스트가 만든 작업·장애·예약·의뢰 행만 끝날 때 ID로 지운다 (TestDatabaseGuard가 테스트 DB임을 보장).
  */
@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class IncidentReferralCreationIntegrationTest {
+class IncidentReferralCreationIntegrationTest extends PostgresContainerSupport {
 
     // 장애 영향 구간: 14:00 ~ 17:00
     private static final LocalDateTime INCIDENT_START = LocalDateTime.of(2026, 11, 2, 14, 0);
