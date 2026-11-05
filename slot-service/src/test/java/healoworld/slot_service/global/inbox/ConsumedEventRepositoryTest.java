@@ -1,5 +1,7 @@
 package healoworld.slot_service.global.inbox;
 
+import healoworld.slot_service.support.PostgresContainerSupport;
+
 import healoworld.slot_service.support.FixedClockConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -17,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(FixedClockConfig.class)
-class ConsumedEventRepositoryTest {
+class ConsumedEventRepositoryTest extends PostgresContainerSupport {
 
     private static final String CONSUMER = "slot-service";
 

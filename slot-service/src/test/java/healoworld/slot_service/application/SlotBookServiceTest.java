@@ -1,5 +1,7 @@
 package healoworld.slot_service.application;
 
+import healoworld.slot_service.support.PostgresContainerSupport;
+
 import healoworld.slot_service.application.dto.BookOutcome;
 import healoworld.slot_service.application.service.SlotBookService;
 import healoworld.slot_service.domain.entity.Slot;
@@ -31,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(FixedClockConfig.class)
-class SlotBookServiceTest {
+class SlotBookServiceTest extends PostgresContainerSupport {
 
     private static final LocalDateTime NOW = FixedClockConfig.NOW;
 

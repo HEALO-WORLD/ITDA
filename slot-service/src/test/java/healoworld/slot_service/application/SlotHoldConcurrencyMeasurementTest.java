@@ -1,5 +1,7 @@
 package healoworld.slot_service.application;
 
+import healoworld.slot_service.support.PostgresContainerSupport;
+
 import healoworld.slot_service.application.service.SlotHoldService;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
@@ -19,7 +21,7 @@ import java.util.List;
 @SpringBootTest
 @ActiveProfiles("test")
 @EnabledIfEnvironmentVariable(named = "MEASURE", matches = "true")   // 환경변수 MEASURE가 true일 때만 실행
-class SlotHoldConcurrencyMeasurementTest {
+class SlotHoldConcurrencyMeasurementTest extends PostgresContainerSupport {
 
     private static final int WARM_UP = 1;   // 기록하지 않고 버리는 연습 회차 수
     private static final int ROUNDS = 10;   // 실제로 기록하는 회차 수

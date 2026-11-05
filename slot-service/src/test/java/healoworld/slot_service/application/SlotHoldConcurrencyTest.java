@@ -1,5 +1,7 @@
 package healoworld.slot_service.application;
 
+import healoworld.slot_service.support.PostgresContainerSupport;
+
 import healoworld.slot_service.application.service.SlotHoldService;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
@@ -16,7 +18,7 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 @SpringBootTest
 @ActiveProfiles("test")
-class SlotHoldConcurrencyTest {
+class SlotHoldConcurrencyTest extends PostgresContainerSupport {
 
     @Autowired
     SlotHoldService slotHoldService;
