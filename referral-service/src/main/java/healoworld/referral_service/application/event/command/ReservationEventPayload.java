@@ -12,10 +12,10 @@ public record ReservationEventPayload(
         UUID referralId,
         UUID slotId,
         UUID eventId,
-        String eventType,
+        SlotCommandType eventType,
         LocalDateTime occurredAt
 ) {
-    public static ReservationEventPayload from(Reservation r, UUID eventId, String eventType) {
+    public static ReservationEventPayload from(Reservation r, UUID eventId, SlotCommandType eventType) {
         return new ReservationEventPayload(
                 r.getId(), r.getReferral().getId(), r.getSlotId(),
                 eventId, eventType, LocalDateTime.now());

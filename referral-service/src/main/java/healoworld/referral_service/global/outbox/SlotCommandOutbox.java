@@ -1,6 +1,7 @@
 package healoworld.referral_service.global.outbox;
 
 import healoworld.referral_service.application.event.command.ReservationEventPayload;
+import healoworld.referral_service.application.event.command.SlotCommandType;
 import healoworld.referral_service.domain.entity.Reservation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,18 +20,18 @@ public class SlotCommandOutbox {
     private static final String AGGREGATE_TYPE = "RESERVATION";
     private static final String COMMAND_TOPIC = "slot-commands";
 
-    public UUID recordOutbox(Reservation reservation, String eventType) {
+    public UUID recordOutbox(Reservation reservation, SlotCommandType eventType) {
         UUID eventId = UUID.randomUUID();
         recordOutbox(reservation, eventId, eventType);
 
         return eventId;
     }
 
-    public void recordOutbox(Reservation reservation, UUID eventId, String eventType) {
+    public void recordOutbox(Reservation reservation, UUID eventId, SlotCommandType eventType) {
         String payloadJson = jsonMapper.writeValueAsString(ReservationEventPayload.from(reservation, eventId, eventType));
 
         OutboxEvent outboxEvent = OutboxEvent.create(eventId, AGGREGATE_TYPE, reservation.getId(),
-                COMMAND_TOPIC, reservation.getSlotId().toString(), eventType, payloadJson);
+                COMMAND_TOPIC, reservation.getSlotId().toString(), eventType.value(), payloadJson);
         outboxEventRepository.save(outboxEvent);
         log.info("Outbox 기록. eventId={}, eventType={}, reservationId={}", outboxEvent.getId(), outboxEvent.getEventType(), outboxEvent.getAggregateId());
     }

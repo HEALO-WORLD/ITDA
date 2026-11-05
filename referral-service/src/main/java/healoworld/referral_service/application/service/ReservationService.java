@@ -1,5 +1,6 @@
 package healoworld.referral_service.application.service;
 
+import healoworld.referral_service.application.event.command.SlotCommandType;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
@@ -45,8 +46,7 @@ public class ReservationService {
         Reservation createdReservation = Reservation.create(referral, attemptNo, createReservationRequest.getSlotId(), createReservationRequest.getExamInstitutionId(), createReservationRequest.getEquipmentId(), createReservationRequest.getExamDate(), createReservationRequest.getStartTime(), createReservationRequest.getEndTime());
         reservationRepository.save(createdReservation);
 
-        String eventType = "HoldRequested";
-        slotCommandOutbox.recordOutbox(createdReservation, outboxEventId, eventType);
+        slotCommandOutbox.recordOutbox(createdReservation, outboxEventId, SlotCommandType.HOLD_REQUESTED);
 
         return createdReservation;
     }
@@ -116,9 +116,7 @@ public class ReservationService {
         if (referralRepository.cancelIfCancelable(referral.getId(), userId, now) == 0) {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
         }
-
-        String eventType = "ReleaseSlot";
-        UUID eventId = slotCommandOutbox.recordOutbox(reservation, eventType);
+        UUID eventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_SLOT);
 
         ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, ReferralStatus.CANCELED, Reason.CANCELED_BY_REQUESTER, eventId, userId);
         referralHistoryRepository.save(history);

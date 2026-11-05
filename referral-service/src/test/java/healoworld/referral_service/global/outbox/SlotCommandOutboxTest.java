@@ -1,5 +1,6 @@
 package healoworld.referral_service.global.outbox;
 
+import healoworld.referral_service.application.event.command.SlotCommandType;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
@@ -35,11 +36,11 @@ class SlotCommandOutboxTest {
     private SlotCommandOutbox slotCommandOutbox;
 
     @Test
-    @DisplayName("새 eventId로 slot-commands에 기록하고, key는 slotId, payload에 eventId·eventType을 담는다")
+    @DisplayName("새 eventId로 slot-commands에 기록하고, key는 slotId, eventType은 enum이 아니라 계약 문자열(BookSlot)로 담는다")
     void recordWithNewEventId() {
         Reservation reservation = reservationIn(ReservationStatus.HELD, referralIn(ReferralStatus.PENDING, UUID.randomUUID()));
 
-        UUID eventId = slotCommandOutbox.recordOutbox(reservation, "BookSlot");
+        UUID eventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.BOOK_SLOT);
 
         OutboxEvent outbox = savedOutbox();
         assertThat(outbox.getId()).isEqualTo(eventId);
@@ -66,7 +67,7 @@ class SlotCommandOutboxTest {
         Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referralIn(ReferralStatus.PENDING, UUID.randomUUID()));
         UUID eventId = UUID.randomUUID();
 
-        slotCommandOutbox.recordOutbox(reservation, eventId, "HoldRequested");
+        slotCommandOutbox.recordOutbox(reservation, eventId, SlotCommandType.HOLD_REQUESTED);
 
         OutboxEvent outbox = savedOutbox();
         assertThat(outbox.getId()).isEqualTo(eventId);
