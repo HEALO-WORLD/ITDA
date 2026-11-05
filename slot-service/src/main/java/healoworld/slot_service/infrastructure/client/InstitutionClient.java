@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.time.LocalDate;
+import java.util.Set;
 import java.util.UUID;
 
 @FeignClient(name = "institution-service")
@@ -20,5 +21,14 @@ public interface InstitutionClient {
             @RequestParam("examTypeId") UUID examTypeId,
             @RequestParam("date")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    );
+
+    @GetMapping("/api/v1/internal/equipments/visible")
+    ApiResponse<Set<UUID>> getVisibleEquipmentIds(
+            @RequestParam("callerInstitutionId") UUID callerInstitutionId,
+            @RequestParam("role") String role,
+            @RequestParam(name = "institutionId", required = false)
+            UUID institutionId,
+            @RequestParam("onlyOperational") boolean onlyOperational
     );
 }

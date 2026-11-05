@@ -13,10 +13,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 public interface SlotRepository extends JpaRepository<Slot, UUID> {
+
+    Optional<Slot> findByIdAndDeletedAtIsNull(UUID id);
+
     @Query("""
         select count(s) > 0
         from Slot s
@@ -36,13 +40,19 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
     @Query("""
         select s
         from Slot s
-        where (
+        where s.deletedAt is null
+        and (
             s.date > :fromDate
             or (s.date = :fromDate and s.startTime >= :fromTime)
         )
         and (
             s.date < :toDate
             or (s.date = :toDate and s.startTime < :toTime)
+        )
+        and (
+            :onlyFuture = false
+            or s.date > :today
+            or (s.date = :today and s.startTime > :nowTime)
         )
         and s.equipmentId = coalesce(:equipmentId, s.equipmentId)
         and s.examTypeId = coalesce(:examTypeId, s.examTypeId)
@@ -59,6 +69,9 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
             @Param("examTypeId") UUID examTypeId,
             @Param("status") SlotStatus status,
             @Param("visibleEquipmentIds") Set<UUID> visibleEquipmentIds,
+            @Param("onlyFuture") boolean onlyFuture,
+            @Param("today") LocalDate today,
+            @Param("nowTime") LocalTime nowTime,
             Pageable pageable
     );
 

@@ -106,9 +106,8 @@ public class SlotService {
 
     @Transactional(readOnly = true)
     public SlotDetailResponse getSlot(UUID slotId) {
-        Slot slot = slotRepository.findById(slotId).orElseThrow(() ->
-                        new BaseException(ErrorCode.RESOURCE_NOT_FOUND)
-                );
+        Slot slot = slotRepository.findByIdAndDeletedAtIsNull(slotId)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
 
         return SlotDetailResponse.from(slot);
     }
@@ -130,17 +129,9 @@ public class SlotService {
         ZonedDateTime to = request.getTo()
                 .atZoneSameInstant(BUSINESS_ZONE);
 
-        SlotStatus status = request.getStatus();
-
-        if (request.getView() == SlotView.SEARCH) {
-            status = SlotStatus.AVAILABLE;
-
-            ZonedDateTime now = ZonedDateTime.now(BUSINESS_ZONE);
-
-            if (!from.isAfter(now)) {
-                from = now.plusNanos(1);
-            }
-        }
+        boolean onlyFuture = request.getView() == SlotView.SEARCH;
+        ZonedDateTime now = clock.instant().atZone(BUSINESS_ZONE);
+        SlotStatus status = onlyFuture ? SlotStatus.AVAILABLE : request.getStatus();
 
         if (visibleEquipmentIds.isEmpty() || !from.isBefore(to)) {
             return new SliceResponse<>(
@@ -162,6 +153,9 @@ public class SlotService {
                 request.getExamTypeId(),
                 status,
                 visibleEquipmentIds,
+                onlyFuture,
+                now.toLocalDate(),
+                now.toLocalTime(),
                 pageable
         );
 
@@ -275,7 +269,7 @@ public class SlotService {
         }
     }
 
-    private void validateSearchRequest(SlotSearchRequest request) {
+    public void validateSearchRequest(SlotSearchRequest request) {
         if (request == null
                 || request.getFrom() == null
                 || request.getTo() == null
