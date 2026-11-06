@@ -5,6 +5,7 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.infrastructure.repository.AffectedReservation;
+import healoworld.referral_service.infrastructure.repository.EquipmentIncidentLockRepository;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
@@ -51,6 +52,11 @@ class EquipmentIncidentServiceTest {
 
     @Mock
     private IncidentReferralRepository incidentReferralRepository;
+
+    // 장비 잠금(advisory lock)은 실제 DB가 필요하므로 단위 테스트에서는 아무것도 하지 않는다
+    // (잠금 순서·동시성은 SlotBookedIncidentLinkIntegrationTest에서 검증)
+    @Mock
+    private EquipmentIncidentLockRepository equipmentIncidentLockRepository;
 
     // TransactionTemplate이 사용할 트랜잭션 매니저. Mock이라 실제 트랜잭션 없이 콜백만 실행된다
     @Mock

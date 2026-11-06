@@ -33,6 +33,12 @@ public enum ErrorCode {
     SLOT_DURATION_MISMATCH(HttpStatus.BAD_REQUEST, "슬롯 길이는 장비별 검사 소요시간 이상이어야 합니다."),
     SLOT_GENERATION_EMPTY(HttpStatus.BAD_REQUEST, "생성 가능한 미래 슬롯이 없습니다."),
 
+    // equipment downtime
+    DOWNTIME_INVALID_TIME_RANGE(HttpStatus.BAD_REQUEST, "중단 종료 일시는 시작 일시 이후여야 합니다."),
+    DOWNTIME_END_NOT_FUTURE(HttpStatus.BAD_REQUEST, "중단 종료 일시는 현재 이후여야 합니다."),
+    DOWNTIME_OVERLAP(HttpStatus.CONFLICT, "같은 장비에 기간이 겹치는 중단이 이미 있습니다."),
+    SLOT_IN_DOWNTIME(HttpStatus.CONFLICT, "장비 중단 기간과 겹치는 슬롯은 등록할 수 없습니다."),
+
     // equipment
     REFERENCE_NOT_AVAILABLE(HttpStatus.CONFLICT,"장비 또는 운영시간을 사용할 수 없습니다."),
     REFERENCE_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE,"기준정보 서비스를 일시적으로 사용할 수 없습니다."),

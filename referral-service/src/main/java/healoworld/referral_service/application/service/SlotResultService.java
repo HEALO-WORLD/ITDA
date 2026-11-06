@@ -39,6 +39,7 @@ public class SlotResultService {
     private final ConsumedEventRepository consumedEventRepository;
     private final SlotCommandOutbox slotCommandOutbox;
     private final ExaminationService examinationService;
+    private final EquipmentIncidentService equipmentIncidentService;
 
     public static final String CONSUMER = "referral-service";
 
@@ -141,6 +142,11 @@ public class SlotResultService {
                 reservation.getId(),
                 reservation.getExamInstitutionId()
         );
+
+        // 장비 장애 이벤트가 이 확정보다 먼저 처리됐다면 영향 예약 조회에서 빠졌으므로, 여기서 후속 처리 작업을 만든다
+        // 예약 차단·의뢰 재조정은 장애 후속 처리 스케줄러가 기존 흐름대로 처리한다 (겹치는 장애가 없으면 변경 없음)
+        equipmentIncidentService.linkConfirmedReservation(reservation.getId(), referral.getId(),
+                reservation.getEquipmentId(), reservation.getStartTime(), reservation.getEndTime());
     }
 
     // 예약 HELD → FAILED(CONFIRM_FAILED), 의뢰 FAILED 또는 NEEDS_RESCHEDULE, ReleaseHold 발행
