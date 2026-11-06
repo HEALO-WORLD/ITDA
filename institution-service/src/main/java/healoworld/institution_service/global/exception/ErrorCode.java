@@ -33,6 +33,7 @@ public enum ErrorCode {
     PARTNERSHIP_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "이미 요청 중이거나 체결된 협약이 있습니다."),
 
     // equipment
+    DUPLICATE_EQUIPMENT_NAME(HttpStatus.CONFLICT, "해당 기관에 같은 이름의 장비가 이미 등록되어 있습니다."),
     INSTITUTION_NOT_AVAILABLE(HttpStatus.CONFLICT, "활성 검사기관에만 장비를 등록할 수 있습니다."),
     DUPLICATE_EQUIPMENT_EXAM_TYPE(HttpStatus.CONFLICT, "이미 등록된 장비·검사 유형 연결입니다."),
     EQUIPMENT_NOT_AVAILABLE(HttpStatus.CONFLICT, "현재 검사에 사용할 수 없는 장비입니다."),

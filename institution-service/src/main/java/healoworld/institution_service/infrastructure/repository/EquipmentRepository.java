@@ -21,6 +21,12 @@ public interface EquipmentRepository extends JpaRepository<Equipment, UUID> {
 
     Optional<Equipment> findByIdAndDeletedAtIsNull(UUID id);
 
+    boolean existsByInstitutionIdAndNameAndDeletedAtIsNull(UUID institutionId, String name);
+
+    boolean existsByInstitutionIdAndNameAndDeletedAtIsNullAndIdNot(
+            UUID institutionId, String name, UUID id
+    );
+
     @Query("""
         select e
         from Equipment e
