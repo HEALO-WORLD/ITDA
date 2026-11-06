@@ -43,9 +43,7 @@ public class Equipment extends BaseEntity {
     ) {
         this.institutionId = Objects.requireNonNull(institutionId, "소속기관 ID는 필수입니다.");
 
-        validateName(name);
-
-        this.name = name;
+        this.name = normalizeName(name);
         this.modality = Objects.requireNonNull(modality, "장비 종류는 필수입니다.");
         this.status = EquipmentStatus.OPERATIONAL;
     }
@@ -59,13 +57,14 @@ public class Equipment extends BaseEntity {
     }
 
     public void changeName(String name) {
-        validateName(name);
-        this.name = name;
+        this.name = normalizeName(name);
     }
 
-    private void validateName(String name) {
-        if (name == null || name.isBlank() || name.length() > 50) {
+    private static String normalizeName(String name) {
+        String normalizedName = name == null ? null : name.trim();
+        if (normalizedName == null || normalizedName.isBlank() || normalizedName.length() > 50) {
             throw new IllegalArgumentException("장비명은 공백이 아닌 최대 50자여야 합니다.");
         }
+        return normalizedName;
     }
 }
