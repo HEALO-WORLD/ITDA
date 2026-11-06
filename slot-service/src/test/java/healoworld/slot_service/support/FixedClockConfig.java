@@ -16,7 +16,7 @@ public class FixedClockConfig {
     @Bean
     @Primary
     public Clock fixedClock() {
-        ZoneId zone = ZoneId.systemDefault();
+        ZoneId zone = ZoneId.of("Asia/Seoul");
         return Clock.fixed(NOW.atZone(zone).toInstant(), zone);
     }
 }
