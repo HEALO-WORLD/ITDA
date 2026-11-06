@@ -1,9 +1,11 @@
 package healoworld.referral_service.infrastructure.repository;
 
 import healoworld.referral_service.domain.entity.Examination;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +18,12 @@ import java.util.UUID;
 public interface ExaminationRepository extends JpaRepository<Examination, UUID> {
 
     Optional<Examination> findByReferralId(UUID referralId);
+
+    // SELECT ... FOR UPDATE: 장비 장애 후속 처리가 검사 상태를 확인하는 동안 검사 시작·완료 UPDATE가 끼어들지 못하게 한다
+    // 장애 처리의 잠금 순서는 의뢰 → 예약 → 검사다
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Examination e where e.referralId = :referralId")
+    Optional<Examination> findByReferralIdForUpdate(@Param("referralId") UUID referralId);
 
     // 검사기관별 검사 목록 조회
     Page<Examination> findByExamInstitutionId(
