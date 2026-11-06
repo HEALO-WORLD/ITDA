@@ -5,6 +5,7 @@ import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.AffectedReservation;
+import healoworld.referral_service.infrastructure.repository.EquipmentIncidentLockRepository;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
@@ -35,6 +36,7 @@ public class EquipmentIncidentService {
     private final EquipmentIncidentRepository equipmentIncidentRepository;
     private final IncidentReservationRepository incidentReservationRepository;
     private final IncidentReferralRepository incidentReferralRepository;
+    private final EquipmentIncidentLockRepository equipmentIncidentLockRepository;
 
     // 항상 새 트랜잭션을 열어 실행한다. UNIQUE 위반으로 한 트랜잭션이 실패해도 다음 조회는 별도 트랜잭션에서 실행하기 위해 쓴다
     private final TransactionTemplate newTransaction;
@@ -42,10 +44,12 @@ public class EquipmentIncidentService {
     public EquipmentIncidentService(EquipmentIncidentRepository equipmentIncidentRepository,
                                     IncidentReservationRepository incidentReservationRepository,
                                     IncidentReferralRepository incidentReferralRepository,
+                                    EquipmentIncidentLockRepository equipmentIncidentLockRepository,
                                     PlatformTransactionManager transactionManager) {
         this.equipmentIncidentRepository = equipmentIncidentRepository;
         this.incidentReservationRepository = incidentReservationRepository;
         this.incidentReferralRepository = incidentReferralRepository;
+        this.equipmentIncidentLockRepository = equipmentIncidentLockRepository;
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -101,11 +105,16 @@ public class EquipmentIncidentService {
     //  - UNIQUE 위반이 아닌 오류는 그대로 던진다. 그 전에 커밋된 작업은 정상 PENDING 작업으로 남고,
     //    다시 실행하면 나머지만 만들어지므로 실패를 성공으로 숨기지 않으면서도 재실행으로 복구된다
     // TODO: Kafka Consumer가 정해지면 register() → createPendingReferrals() 순서로 호출한다
+    // 동시성: 조회 트랜잭션에서 장비 잠금을 먼저 잡는다. SlotBooked 처리(linkConfirmedReservation)도 같은 잠금을 잡으므로
+    //  - 이 조회가 먼저 잠그면: 아직 커밋 전인 확정은 보이지 않지만, SlotBooked 쪽이 잠금을 기다렸다가 이 장애를 보고 작업을 만든다
+    //  - SlotBooked가 먼저 잠그면: 이 조회는 그 커밋을 기다렸다가 CONFIRMED가 된 예약을 찾는다
+    //  장애는 register()에서 이미 커밋된 상태로 이 메서드에 들어오므로, 어느 순서든 한쪽은 반드시 상대를 본다
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public int createPendingReferrals(UUID incidentId) {
         List<AffectedReservation> affected = newTransaction.execute(status -> {
             EquipmentIncident incident = equipmentIncidentRepository.findById(incidentId)
                     .orElseThrow(() -> new BaseException(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND));
+            equipmentIncidentLockRepository.lock(incident.getEquipmentId());
             return incidentReservationRepository.findAffected(incident.getEquipmentId(), incident.getStartAt(),
                     incident.getEndAt());
         });
@@ -115,6 +124,32 @@ public class EquipmentIncidentService {
             if (createPendingReferral(incidentId, reservation)) {
                 created++;
             }
+        }
+        return created;
+    }
+
+    // SlotBooked로 예약이 막 확정됐을 때, 이미 등록된 장애와 겹치면 그 장애의 후속 처리 작업(PENDING)을 만든다
+    // 장애 이벤트가 먼저 처리되어 createPendingReferrals()가 이 예약을 HELD 상태로 보고 건너뛴 경우를 보완한다
+    // 실제 예약 차단·의뢰 재조정·이력·알림은 기존과 같이 IncidentProcessingService(스케줄러)가 처리한다
+    //
+    // 트랜잭션: 예약 확정 트랜잭션에 참여한다(MANDATORY). 작업 생성이 실패하면 확정도 롤백되어 SlotBooked가 다시 처리된다
+    // 잠금 순서: 호출한 쪽이 의뢰 → 예약 순으로 이미 잠근 뒤 장비 잠금을 잡는다.
+    //           장비 잠금만 잡는 createPendingReferrals()의 조회는 행 잠금을 기다리지 않으므로 교착이 생기지 않는다
+    // 겹치는 장애가 없으면 조회 1번으로 끝나며 확정 결과에는 영향이 없다
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int linkConfirmedReservation(UUID reservationId, UUID referralId, UUID equipmentId,
+                                        LocalDateTime startTime, LocalDateTime endTime) {
+        equipmentIncidentLockRepository.lock(equipmentId);
+
+        int created = 0;
+        for (UUID incidentId : equipmentIncidentRepository.findOverlappingIds(equipmentId, startTime, endTime)) {
+            // 같은 장애가 다시 처리된 경우 등 이미 만든 작업은 건너뛴다 (최종 중복 방지는 UNIQUE(incident_id, reservation_id))
+            if (incidentReferralRepository.existsByIncident_IdAndReservationId(incidentId, reservationId)) {
+                continue;
+            }
+            incidentReferralRepository.save(IncidentReferral.pending(
+                    equipmentIncidentRepository.getReferenceById(incidentId), referralId, reservationId));
+            created++;
         }
         return created;
     }

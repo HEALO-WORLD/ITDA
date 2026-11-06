@@ -43,6 +43,7 @@ public class SlotAdminController {
 
                     - ADMIN 역할만 호출할 수 있습니다.
                     - 슬롯이 요청한 예약으로 HELD 또는 BOOKED면 AVAILABLE로 반환합니다.
+                    - 장비 중단 구간에 걸린 HELD·BOOKED 슬롯이면 AVAILABLE 대신 UNAVAILABLE로 바꾸고 예약 연결을 해제합니다.
                     - 장애로 UNAVAILABLE이면 상태는 유지하고 예약 연결만 해제합니다.
                     - Referral의 예약·의뢰 상태는 바꾸지 않으며 이벤트도 발행하지 않습니다.
                       Referral에서 이미 실패·취소된 예약인지 먼저 확인하세요.
@@ -68,7 +69,8 @@ public class SlotAdminController {
 
         ReleaseOutcome outcome = slotReleaseService.forceRelease(slotId, request.getReservationId(), userId);
 
-        SlotStatus status = outcome == ReleaseOutcome.DETACHED ? SlotStatus.UNAVAILABLE : SlotStatus.AVAILABLE;
+        SlotStatus status = outcome == ReleaseOutcome.DETACHED || outcome == ReleaseOutcome.RELEASED_UNAVAILABLE
+                ? SlotStatus.UNAVAILABLE : SlotStatus.AVAILABLE;
         SlotReleaseResponse response = new SlotReleaseResponse(slotId, request.getReservationId(), outcome, status);
         return ResponseEntity.ok(ApiResponse.ok("슬롯 강제 해제가 완료되었습니다.", response));
     }

@@ -36,8 +36,15 @@ public class SlotHoldExpiryService {
     public boolean expire(UUID slotId, UUID reservationId, LocalDateTime heldUntil) {
         LocalDateTime now = LocalDateTime.now(clock);
 
+        // 장비 중단 구간에 걸린 HOLD는 AVAILABLE이 아닌 UNAVAILABLE로 만료시킨다
+        SlotStatus toStatus = SlotStatus.AVAILABLE;
         int updated = slotRepository.expireHoldIfDue(
                 slotId, reservationId, now, SlotStatus.HELD, SlotStatus.AVAILABLE);
+        if (updated == 0) {
+            toStatus = SlotStatus.UNAVAILABLE;
+            updated = slotRepository.expireBlockedHoldIfDue(
+                    slotId, reservationId, now, SlotStatus.HELD, SlotStatus.UNAVAILABLE);
+        }
         if (updated == 0) {
             log.debug("HOLD 만료 대상 아님(이미 확정·해제됨), 건너뜀. slotId={}, reservationId={}",
                     slotId, reservationId);
@@ -46,7 +53,7 @@ public class SlotHoldExpiryService {
 
         // 스케줄러와 BookSlot(만료 후 도착) 양쪽에서 호출되지만, 만료는 시간이 지나 생긴 결과라 시스템 변경으로 남긴다
         slotStatusHistoryRecorder.recordBySystem(slotId, reservationId,
-                SlotStatus.HELD, SlotStatus.AVAILABLE, SlotStatusChangeReason.HOLD_EXPIRED, now);
+                SlotStatus.HELD, toStatus, SlotStatusChangeReason.HOLD_EXPIRED, now);
 
         // 결과 이벤트는 slot-results에 key = slotId로 발행한다
         HoldExpiredEvent event = HoldExpiredEvent.of(slotId, reservationId, heldUntil, now);

@@ -53,6 +53,13 @@ public class SlotBookService {
         if (slot.isBookedBy(reservationId)) {
             return BookOutcome.ALREADY_BOOKED;
         }
+        if (slot.isHeldBy(reservationId) && slot.getHeldUntil().isAfter(now)) {
+            // 만료 전인데 확정되지 않았다면 장비 중단 구간에 걸린 HOLD다 (bookIfHeld의 equipment_downtime_id 조건)
+            // SlotBookFailed를 받은 Referral이 ReleaseHold로 보상하면 슬롯은 UNAVAILABLE로 반환된다
+            log.warn("BookSlot 장비 중단으로 확정 거부. slotId={}, reservationId={}, downtimeId={}",
+                    slotId, reservationId, slot.getEquipmentDowntimeId());
+            return BookOutcome.FAILED;
+        }
         if (slot.isHeldBy(reservationId)) {
             // 만료 시각이 지났지만 스케줄러가 아직 해제하지 않은 경우. 확정하지 않고 이 자리에서 만료 처리한다
             // expire()는 이 트랜잭션에 합류하므로 슬롯 해제, HoldExpired Outbox 기록이 함께 커밋된다
