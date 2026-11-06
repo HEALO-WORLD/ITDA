@@ -1,14 +1,17 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.IncidentReferral;
+import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ReferralStatus;
+import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.infrastructure.repository.IncidentAffectedReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
+import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.NestedExceptionUtils;
@@ -60,12 +63,14 @@ public class IncidentProcessingService {
     private final Duration lockDuration;
     private final Duration retryDelay;
     private final NotificationService notificationService;
+    private final ReferralHistoryRepository referralHistoryRepository;
 
     public IncidentProcessingService(
             IncidentReferralRepository incidentReferralRepository,
             IncidentAffectedReferralRepository incidentAffectedReferralRepository,
             IncidentReservationRepository incidentReservationRepository,
             NotificationService notificationService,
+            ReferralHistoryRepository referralHistoryRepository,
             PlatformTransactionManager transactionManager,
             @Value("${itda.incident-processing.lock-duration:PT5M}") Duration lockDuration,
             @Value("${itda.incident-processing.retry-delay:PT1M}") Duration retryDelay
@@ -74,6 +79,7 @@ public class IncidentProcessingService {
         this.incidentAffectedReferralRepository = incidentAffectedReferralRepository;
         this.incidentReservationRepository = incidentReservationRepository;
         this.notificationService = notificationService;
+        this.referralHistoryRepository = referralHistoryRepository;
 
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(
@@ -147,8 +153,21 @@ public class IncidentProcessingService {
                 reservationId
         );
 
-        // 실제 예약이 차단되고 의뢰가 재조정 필요 상태가 됐을 때만 알림을 저장한다
+        // 실제 예약이 차단되고 의뢰가 재조정 필요 상태가 됐을 때
         if (RESCHEDULE_REQUIRED.equals(resultCode)) {
+
+            ReferralHistory history = ReferralHistory.create(
+                    referral,
+                    reservation,
+                    ReferralStatus.CONFIRMED,
+                    ReferralStatus.NEEDS_RESCHEDULE,
+                    Reason.RESERVATION_BLOCKED,
+                    task.getIncident().getSourceEventId(),
+                    null
+            );
+
+            referralHistoryRepository.save(history);
+
             notificationService.createRescheduleRequired(task, referral);
         }
 
