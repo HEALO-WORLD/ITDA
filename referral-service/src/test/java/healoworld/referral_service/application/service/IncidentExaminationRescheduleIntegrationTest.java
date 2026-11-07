@@ -70,6 +70,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doAnswer;
@@ -237,6 +238,30 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
         assertThat(histories()).hasSize(historyCount);
         // 같은 작업을 다시 처리하려 해도 이미 끝난 작업이라 선점되지 않는다 (멱등)
         assertThat(incidentProcessingService.process(task.getId())).isEqualTo(Outcome.NOT_CLAIMED);
+    }
+
+    // ---------- 4·5·6. 재예약 409, 새 예약·Outbox 미생성 ----------
+
+    @ParameterizedTest
+    @EnumSource(value = ExaminationStatus.class, names = {"IN_PROGRESS", "COMPLETED"})
+    @DisplayName("재조정 필요 의뢰라도 검사가 시작·완료됐으면 재예약은 409이고 새 예약·Outbox·이력이 생기지 않는다")
+    void rescheduleRejectedWhenExaminationStarted(ExaminationStatus examinationStatus) {
+        // 실제 사고 데이터와 같은 모양: 차단된 뒤 검사 상태가 진행·완료인 의뢰 (이번 수정 전 처리 결과)
+        blockByIncident();
+        moveExaminationTo(examinationStatus);
+        long outboxCount = outboxEventRepository.count();
+        int historyCount = histories().size();
+
+        assertThatThrownBy(this::reschedule)
+                .isInstanceOf(BaseException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE);
+
+        assertThat(reservations()).hasSize(1);
+        assertThat(outboxEventRepository.count()).isEqualTo(outboxCount);
+        assertThat(histories()).hasSize(historyCount);
+        assertThat(referralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(referralRepository.findById(referralId).orElseThrow().getCurrentReservationId())
+                .isEqualTo(firstReservationId);
     }
 
     // ---------- 7. 검사 시작(ExaminationService.changeStatus) vs 장애 처리(IncidentProcessingService.process) ----------

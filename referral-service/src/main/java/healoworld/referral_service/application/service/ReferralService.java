@@ -4,6 +4,7 @@ import feign.FeignException;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
@@ -11,6 +12,7 @@ import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
+import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -41,6 +43,7 @@ public class ReferralService {
     private final ReservationService reservationService;
     private final ReservationRepository reservationRepository;
     private final InstitutionClient institutionClient;
+    private final ExaminationRepository examinationRepository;
 
     public ReferralResponse createReferral(UUID userId, UUID institutionId, CreateReferralRequest createReferralRequest) {
         Optional<Referral> referral = referralRepository.findByIdempotencyKey(createReferralRequest.getIdempotencyKey());
@@ -125,6 +128,14 @@ public class ReferralService {
         }
 
         referral.validateReschedulable();
+
+        // 검사가 이미 시작·완료됐다면 새 예약에 검사를 다시 연결할 수 없으므로, 새 예약·Outbox를 만들기 전에 거절한다
+        // (검사가 없거나 SCHEDULED이면 기존처럼 재예약을 받는다)
+        examinationRepository.findByReferralId(referralId)
+                .filter(examination -> examination.getStatus() != ExaminationStatus.SCHEDULED)
+                .ifPresent(examination -> {
+                    throw new BaseException(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE);
+                });
 
         if (!isActivePartnership(referral.getReferringInstitutionId(), request.getExamInstitutionId())
         ) {
