@@ -4,6 +4,7 @@ import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.PagedResponse;
@@ -11,11 +12,13 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ExaminationResultRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.response.ExaminationListResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationStatusChangeResponse;
 
+import healoworld.referral_service.support.DomainFixtures;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -58,8 +61,46 @@ class ExaminationServiceTest {
     @Mock
     private ExaminationResultRepository examinationResultRepository;
 
+    @Mock
+    private IncidentReservationRepository incidentReservationRepository;
+
     @InjectMocks
     private ExaminationService examinationService;
+
+    @Test
+    @DisplayName("검사 시작은 의뢰 → 예약 → 검사 순서로 잠근 뒤 검증하고 UPDATE한다 (장비 장애 처리와 같은 잠금 순서)")
+    void startLocksReferralReservationExaminationInOrder() {
+        Referral referral = DomainFixtures.referralIn(ReferralStatus.CONFIRMED, UUID.randomUUID());
+        Reservation reservation = DomainFixtures.reservationIn(ReservationStatus.CONFIRMED, referral);
+        ReflectionTestUtils.setField(referral, "currentReservationId", reservation.getId());
+        UUID id = UUID.randomUUID();
+        UUID institutionId = reservation.getExamInstitutionId();   // 검사기관은 예약의 검사기관과 같아야 시작할 수 있다
+        Examination scheduled = examination(id, referral.getId(), reservation.getId(), ExaminationStatus.SCHEDULED, institutionId);
+        Examination started = examination(id, referral.getId(), reservation.getId(), ExaminationStatus.IN_PROGRESS, institutionId);
+
+        given(examinationRepository.findReferralIdById(id)).willReturn(Optional.of(referral.getId()));
+        given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+        given(incidentReservationRepository.findByIdForUpdate(reservation.getId())).willReturn(Optional.of(reservation));
+        given(examinationRepository.findByReferralIdForUpdate(referral.getId())).willReturn(Optional.of(scheduled));
+        given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
+        given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+        given(examinationRepository.startIfScheduled(eq(id), eq(reservation.getId()), any())).willReturn(1);
+        given(examinationRepository.findById(id)).willReturn(Optional.of(started));
+
+        ExaminationStatusChangeResponse response = examinationService.changeStatus(
+                id, institutionId, RoleType.EXAMINER, ExaminationStatus.IN_PROGRESS);
+
+        assertThat(response.currentStatus()).isEqualTo(ExaminationStatus.IN_PROGRESS);
+        var inOrder = inOrder(referralRepository, incidentReservationRepository, examinationRepository);
+        inOrder.verify(referralRepository).findByIdForUpdate(referral.getId());
+        inOrder.verify(incidentReservationRepository).findByIdForUpdate(reservation.getId());
+        inOrder.verify(examinationRepository).findByReferralIdForUpdate(referral.getId());
+        inOrder.verify(examinationRepository).startIfScheduled(eq(id), eq(reservation.getId()), any());
+        // 잠금 전에 검사 엔티티를 읽지 않는다 (영속성 컨텍스트에 이전 상태가 남지 않도록).
+        // findById는 UPDATE 이후 최신 상태를 응답하기 위한 1번뿐이다
+        inOrder.verify(examinationRepository).findById(id);
+        verify(examinationRepository, times(1)).findById(id);
+    }
 
     // ==============================
     // 테스트 데이터 생성

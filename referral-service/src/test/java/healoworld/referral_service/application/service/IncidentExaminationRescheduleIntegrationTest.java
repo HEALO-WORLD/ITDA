@@ -13,6 +13,8 @@ import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.config.QuerydslConfig;
+import healoworld.referral_service.global.exception.BaseException;
+import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.global.inbox.ConsumedEventId;
 import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.OutboxEventRepository;
@@ -33,6 +35,7 @@ import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -41,9 +44,13 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.mockito.Mockito;
+import org.mockito.stubbing.Answer;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,10 +61,18 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doAnswer;
 
 /**
  * 검사 상태별 장비 장애 처리와 재예약을 실제 PostgreSQL(Testcontainers)에서 검증한다.
@@ -99,7 +114,10 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
     @Autowired private IncidentProcessingService incidentProcessingService;
     @Autowired private ReferralRepository referralRepository;
     @Autowired private ReservationRepository reservationRepository;
-    @Autowired private ExaminationRepository examinationRepository;
+    // 동시성 테스트에서 검사 시작·장애 처리를 원하는 지점에서 멈추기 위해 스파이로 둔다 (기본은 실제 Repository를 그대로 호출)
+    @MockitoSpyBean private ExaminationRepository examinationRepository;
+    @Autowired private ExaminationService examinationService;
+    @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private EquipmentIncidentRepository equipmentIncidentRepository;
     @Autowired private IncidentReferralRepository incidentReferralRepository;
     @Autowired private ReferralHistoryRepository referralHistoryRepository;
@@ -221,19 +239,271 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
         assertThat(incidentProcessingService.process(task.getId())).isEqualTo(Outcome.NOT_CLAIMED);
     }
 
+    // ---------- 7. 검사 시작(ExaminationService.changeStatus) vs 장애 처리(IncidentProcessingService.process) ----------
+    // 두 작업은 각자 독립된 트랜잭션으로 다른 스레드에서 실행한다.
+    // 실행 순서는 CountDownLatch와 pg_locks(다른 세션이 잠금을 기다리는지)로만 정하고, 시간 지연에 기대지 않는다.
+
+    @Test
+    @DisplayName("[결정적] A. 검사 시작이 먼저 커밋되면 장애 처리는 검사 잠금을 기다린 뒤 SKIPPED_IN_PROGRESS로 끝난다")
+    void examinationStartWinsThenIncidentSkips() throws Exception {
+        UUID taskId = pendingIncidentTask();
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch commitStart = new CountDownLatch(1);
+        // 검사 시작: startIfScheduled UPDATE가 끝난 뒤(검사 행 잠금 보유) 커밋 직전에서 멈춘다
+        doAnswer(invocation -> {
+            Object updated = realRepository().answer(invocation);
+            started.countDown();
+            await(commitStart);
+            return updated;
+        }).when(examinationRepository).startIfScheduled(any(), any(), any());
+
+        Future<Attempt> start = executor.submit(() -> attempt(this::startExamination));
+        await(started);
+        Future<Attempt> incident = executor.submit(() -> attempt(() -> incidentProcessingService.process(taskId)));
+        waitUntilSomeSessionWaitsForLock();   // 장애 처리가 검사 행 잠금(findByReferralIdForUpdate)을 기다린다
+        commitStart.countDown();
+
+        Attempt startResult = get(start);
+        Attempt incidentResult = get(incident);
+        String state = state(taskId, startResult, incidentResult);
+        assertThat(startResult.error()).as(state).isNull();
+        assertThat(incidentResult.value()).as(state).isEqualTo(Outcome.SUCCEEDED);
+        assertThat(resultCode(taskId)).as(state).isEqualTo(IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        assertThat(examinationStatus()).as(state).isEqualTo(ExaminationStatus.IN_PROGRESS);
+        assertThat(reservationStatus(firstReservationId)).as(state).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(referralStatus()).as(state).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(notificationCount()).as(state).isZero();
+        assertThat(blockedHistoryCount()).as(state).isZero();
+    }
+
+    @Test
+    @DisplayName("[결정적] B. 장애 처리가 먼저 커밋되면 이후 검사 시작은 EXAMINATION_START_NOT_ALLOWED로 거부되고 검사는 SCHEDULED")
+    void incidentWinsThenExaminationStartRejected() throws Exception {
+        UUID taskId = pendingIncidentTask();
+
+        Attempt incidentResult = get(executor.submit(() -> attempt(() -> incidentProcessingService.process(taskId))));
+        Attempt startResult = get(executor.submit(() -> attempt(this::startExamination)));
+
+        String state = state(taskId, startResult, incidentResult);
+        assertThat(incidentResult.value()).as(state).isEqualTo(Outcome.SUCCEEDED);
+        assertThat(resultCode(taskId)).as(state).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
+        assertThat(startResult.error()).as(state).isInstanceOf(BaseException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.EXAMINATION_START_NOT_ALLOWED);
+        assertThat(examinationStatus()).as(state).isEqualTo(ExaminationStatus.SCHEDULED);
+        assertThat(reservationStatus(firstReservationId)).as(state).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(referralStatus()).as(state).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(blockedHistoryCount()).as(state).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("[결정적 경쟁 C1] 검사 시작이 예약 검증을 마치고 UPDATE하기 전이라도 장애 처리는 끼어들지 못하고 잠금을 기다린다 (BLOCKED 예약에 IN_PROGRESS 검사 없음)")
+    void incidentCommitsBetweenStartValidationAndUpdate() throws Exception {
+        UUID taskId = pendingIncidentTask();
+        CountDownLatch validated = new CountDownLatch(1);
+        CountDownLatch proceed = new CountDownLatch(1);
+        // 검사 시작: 의뢰·예약·검사를 잠그고 validateCanStart()(의뢰 CONFIRMED·예약 CONFIRMED 확인)를 통과한 뒤,
+        // startIfScheduled UPDATE 직전에서 멈춘다 (수정 전에는 이 시점에 잠금이 없어 장애 처리가 끝까지 커밋할 수 있었다)
+        doAnswer(invocation -> {
+            validated.countDown();
+            await(proceed);
+            return realRepository().answer(invocation);
+        }).when(examinationRepository).startIfScheduled(any(), any(), any());
+
+        Future<Attempt> start = executor.submit(() -> attempt(this::startExamination));
+        await(validated);
+        // 그 사이 장애 처리를 시작한다. 검사 시작이 잡은 의뢰 잠금 때문에 차단하지 못하고 기다려야 한다
+        Future<Attempt> incident = executor.submit(() -> attempt(() -> incidentProcessingService.process(taskId)));
+        waitUntilSomeSessionWaitsForLock();
+        assertThat(incident.isDone()).as("장애 처리는 검사 시작의 잠금을 기다려야 한다").isFalse();
+        proceed.countDown();
+        Attempt startResult = get(start);
+        Attempt incidentResult = get(incident);
+
+        assertNoStartedExaminationOnBlockedReservation(taskId, startResult, incidentResult);
+        // 검증을 먼저 끝낸 검사 시작이 이기고, 장애 처리는 검사 진행 중으로 보고 제외한다
+        String state = state(taskId, startResult, incidentResult);
+        assertThat(examinationStatus()).as(state).isEqualTo(ExaminationStatus.IN_PROGRESS);
+        assertThat(resultCode(taskId)).as(state).isEqualTo(IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        assertThat(notificationCount()).as(state).isZero();
+        assertThat(blockedHistoryCount()).as(state).isZero();
+    }
+
+    @Test
+    @DisplayName("[결정적 경쟁 C2] 장애 처리가 검사 행을 잠근 동안 검증을 통과한 검사 시작이 잠금을 기다렸다가 UPDATE해도, BLOCKED 예약의 검사가 IN_PROGRESS가 되면 안 된다")
+    void examinationStartWaitsOnIncidentLockThenUpdates() throws Exception {
+        UUID taskId = pendingIncidentTask();
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch commitIncident = new CountDownLatch(1);
+        // 장애 처리: findByReferralIdForUpdate로 검사 행을 잠근(SCHEDULED 확인) 직후 멈춘다
+        doAnswer(invocation -> {
+            Object examination = realRepository().answer(invocation);
+            locked.countDown();
+            await(commitIncident);
+            return examination;
+        }).when(examinationRepository).findByReferralIdForUpdate(any());
+
+        Future<Attempt> incident = executor.submit(() -> attempt(() -> incidentProcessingService.process(taskId)));
+        await(locked);
+        // 검사 시작: 차단 전이 커밋되지 않아 예약 CONFIRMED로 검증을 통과하고, startIfScheduled가 검사 행 잠금을 기다린다
+        Future<Attempt> start = executor.submit(() -> attempt(this::startExamination));
+        waitUntilSomeSessionWaitsForLock();
+        commitIncident.countDown();
+
+        Attempt incidentResult = get(incident);
+        Attempt startResult = get(start);
+
+        assertNoStartedExaminationOnBlockedReservation(taskId, startResult, incidentResult);
+        // 검사 행을 먼저 잠근 장애 처리가 이기고, 검사 시작은 차단된 예약을 보고 거부된다
+        String state = state(taskId, startResult, incidentResult);
+        assertThat(resultCode(taskId)).as(state).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
+        assertThat(startResult.error()).as(state).isInstanceOf(BaseException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.EXAMINATION_START_NOT_ALLOWED);
+        assertThat(examinationStatus()).as(state).isEqualTo(ExaminationStatus.SCHEDULED);
+    }
+
+    @RepeatedTest(20)
+    @DisplayName("[비결정적] D. 검사 시작과 장애 처리를 동시에 시작해도 BLOCKED 예약에 IN_PROGRESS 검사가 남지 않아야 한다")
+    void simultaneousStart() throws Exception {
+        UUID taskId = pendingIncidentTask();
+        CountDownLatch go = new CountDownLatch(1);
+
+        Future<Attempt> start = executor.submit(() -> {
+            await(go);
+            return attempt(this::startExamination);
+        });
+        Future<Attempt> incident = executor.submit(() -> {
+            await(go);
+            return attempt(() -> incidentProcessingService.process(taskId));
+        });
+        go.countDown();
+
+        assertNoStartedExaminationOnBlockedReservation(taskId, get(start), get(incident));
+    }
+
+    // 불변 조건: 예약이 BLOCKED(의뢰 NEEDS_RESCHEDULE)라면 검사는 시작되지 않아야 하고, 검사가 시작됐다면 예약은 차단되지 않아야 한다
+    private void assertNoStartedExaminationOnBlockedReservation(UUID taskId, Attempt startResult, Attempt incidentResult) {
+        String state = state(taskId, startResult, incidentResult);
+        boolean blocked = reservationStatus(firstReservationId) == ReservationStatus.BLOCKED;
+        boolean started = examinationStatus() != ExaminationStatus.SCHEDULED;
+        assertThat(blocked && started)
+                .as("BLOCKED 예약에 시작된 검사가 남음. %s", state)
+                .isFalse();
+        // 어느 한쪽만 이겨야 한다: 검사 시작 성공 ↔ SKIPPED_IN_PROGRESS, 차단 성공 ↔ 검사 시작 거부
+        if (started) {
+            assertThat(resultCode(taskId)).as(state).isEqualTo(IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        } else {
+            assertThat(startResult.error()).as(state).isInstanceOf(BaseException.class);
+        }
+        // 차단 이력·재조정 알림은 차단된 경우에만, 정확히 1건
+        long expected = blocked ? 1 : 0;
+        assertThat(blockedHistoryCount()).as(state).isEqualTo(expected);
+        assertThat(notificationCount()).as(state).isEqualTo(expected);
+    }
+
     // ---------- 도우미 ----------
 
-    // 예약(14~15시)을 덮는 장애를 등록하고 후속 작업 1건을 처리한다
-    private IncidentReferral blockByIncident() {
+    private final ExecutorService executor = Executors.newFixedThreadPool(2);
+
+    @AfterEach
+    void stopExecutor() {
+        executor.shutdownNow();
+    }
+
+    // 실행 결과 또는 예외 (다른 스레드의 결과를 비교·출력하기 위해 담는다)
+    private record Attempt(Object value, Throwable error) {
+        @Override
+        public String toString() {
+            return error == null ? String.valueOf(value)
+                    : error.getClass().getSimpleName() + (error instanceof BaseException b ? "(" + b.getErrorCode() + ")" : "");
+        }
+    }
+
+    private static Attempt attempt(Supplier<?> action) {
+        try {
+            return new Attempt(action.get(), null);
+        } catch (RuntimeException e) {
+            return new Attempt(null, e);
+        }
+    }
+
+    // 검사기관 담당자의 검사 시작 요청 (ExaminationService.changeStatus, 자체 트랜잭션)
+    private Object startExamination() {
+        Examination examination = examinationRepository.findByReferralId(referralId).orElseThrow();
+        return examinationService.changeStatus(examination.getId(), examination.getExamInstitutionId(),
+                RoleType.EXAMINER, ExaminationStatus.IN_PROGRESS);
+    }
+
+    // 스파이의 기본 동작(실제 Repository 호출). 멈춘 뒤 실제 쿼리를 이어서 실행할 때 쓴다
+    @SuppressWarnings("unchecked")
+    private Answer<Object> realRepository() {
+        return (Answer<Object>) Mockito.mockingDetails(examinationRepository).getMockCreationSettings().getDefaultAnswer();
+    }
+
+    // 다른 세션이 행 잠금을 얻지 못하고 기다리는 상태(pg_locks.granted = false)가 될 때까지 조건을 확인한다
+    private void waitUntilSomeSessionWaitsForLock() {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Integer waiting = jdbcTemplate.queryForObject("select count(*) from pg_locks where not granted", Integer.class);
+            if (waiting != null && waiting > 0) {
+                return;
+            }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));
+        }
+        throw new AssertionError("다른 세션이 잠금 대기에 들어가지 않았다");
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("신호를 받지 못했다");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static Attempt get(Future<Attempt> future) throws Exception {
+        return future.get(15, TimeUnit.SECONDS);
+    }
+
+    // 실패 시 출력할 DB 최종 상태와 각 스레드의 결과
+    private String state(UUID taskId, Attempt startResult, Attempt incidentResult) {
+        IncidentReferral task = incidentReferralRepository.findById(taskId).orElseThrow();
+        return "[DB 최종 상태] 예약=" + reservationStatus(firstReservationId) + ", 의뢰=" + referralStatus()
+                + ", 검사=" + examinationStatus() + ", 장애작업=" + task.getProcessingStatus() + "/" + task.getResultCode()
+                + ", 재조정알림=" + notificationCount() + ", 차단이력=" + blockedHistoryCount()
+                + " [실행 결과] 검사시작=" + startResult + ", 장애처리=" + incidentResult;
+    }
+
+    private ExaminationStatus examinationStatus() {
+        return examinationRepository.findByReferralId(referralId).orElseThrow().getStatus();
+    }
+
+    private long blockedHistoryCount() {
+        return histories().stream().filter(h -> h.getReason() == Reason.RESERVATION_BLOCKED).count();
+    }
+
+    private String resultCode(UUID taskId) {
+        return incidentReferralRepository.findById(taskId).orElseThrow().getResultCode();
+    }
+
+    // 예약(14~15시)을 덮는 장애를 등록하고 후속 작업(PENDING) 1건을 만든다
+    private UUID pendingIncidentTask() {
         UUID incidentId = equipmentIncidentService.register(UUID.randomUUID(), equipmentId, UUID.randomUUID(),
                 "가상 장애 사유", LocalDateTime.now(), startsAt.minusHours(1), startsAt.plusHours(2));
         incidentIds.add(incidentId);
         assertThat(equipmentIncidentService.createPendingReferrals(incidentId)).isEqualTo(1);
-        IncidentReferral task = incidentReferralRepository.findAll().stream()
+        return incidentReferralRepository.findAll().stream()
                 .filter(t -> t.getIncident().getId().equals(incidentId))
-                .findFirst().orElseThrow();
-        assertThat(incidentProcessingService.process(task.getId())).isEqualTo(Outcome.SUCCEEDED);
-        return task;
+                .findFirst().orElseThrow().getId();
+    }
+
+    // 예약(14~15시)을 덮는 장애를 등록하고 후속 작업 1건을 처리한다
+    private IncidentReferral blockByIncident() {
+        UUID taskId = pendingIncidentTask();
+        assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.SUCCEEDED);
+        return incidentReferralRepository.findById(taskId).orElseThrow();
     }
 
     // 검사기관의 검사 시작·완료와 같은 조건부 UPDATE로 검사 상태를 바꾼다

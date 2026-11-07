@@ -19,8 +19,13 @@ public interface ExaminationRepository extends JpaRepository<Examination, UUID> 
 
     Optional<Examination> findByReferralId(UUID referralId);
 
-    // SELECT ... FOR UPDATE: 장비 장애 후속 처리가 검사 상태를 확인하는 동안 검사 시작·완료 UPDATE가 끼어들지 못하게 한다
-    // 장애 처리의 잠금 순서는 의뢰 → 예약 → 검사다
+    // 검사 ID로 의뢰 ID만 조회한다 (엔티티를 영속성 컨텍스트에 올리지 않는 스칼라 조회)
+    // 검사 시작은 이 의뢰 ID로 의뢰 → 예약 → 검사 순서로 잠근 뒤 검사를 처음 읽어야 잠금 이후의 최신 상태를 본다
+    @Query("select e.referralId from Examination e where e.id = :id")
+    Optional<UUID> findReferralIdById(@Param("id") UUID id);
+
+    // SELECT ... FOR UPDATE: 장비 장애 후속 처리와 검사 시작이 검사 상태를 확인하는 동안 다른 검사 상태 UPDATE가 끼어들지 못하게 한다
+    // 두 작업의 잠금 순서는 모두 의뢰 → 예약 → 검사다
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from Examination e where e.referralId = :referralId")
     Optional<Examination> findByReferralIdForUpdate(@Param("referralId") UUID referralId);
