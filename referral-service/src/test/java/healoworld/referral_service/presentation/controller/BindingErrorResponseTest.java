@@ -49,6 +49,9 @@ class BindingErrorResponseTest {
     private ExaminationService examinationService;
 
     @MockitoBean
+    private ExaminationQueryService examinationQueryService;
+
+    @MockitoBean
     private ExaminationResultService examinationResultService;
 
     // 메인 클래스의 @EnableJpaAuditing이 웹 슬라이스 테스트에서도 JPA 메타모델을 찾기 때문에 대체한다

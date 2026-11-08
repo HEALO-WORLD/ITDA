@@ -1,6 +1,6 @@
 package healoworld.referral_service.presentation.controller;
 
-import healoworld.referral_service.application.service.ExaminationService;
+import healoworld.referral_service.application.service.ExaminationQueryService;
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,7 +24,7 @@ import java.util.UUID;
 @RequestMapping("/api/v1/internal/examinations")
 public class ExaminationInternalController {
 
-    private final ExaminationService examinationService;
+    private final ExaminationQueryService examinationQueryService;
 
     @Operation(summary = "[내부 전용] 의뢰별 검사 조회",
             description = """
@@ -37,6 +37,6 @@ public class ExaminationInternalController {
     @GetMapping("/by-referral/{referralId}")
     public ResponseEntity<ApiResponse<ExaminationResponse>> getByReferralId(
             @Parameter(description = "의뢰 ID") @PathVariable UUID referralId) {
-        return ResponseEntity.ok(ApiResponse.ok("의뢰별 검사 조회 성공", examinationService.getByReferralId(referralId)));
+        return ResponseEntity.ok(ApiResponse.ok("의뢰별 검사 조회 성공", examinationQueryService.getByReferralId(referralId)));
     }
 }
