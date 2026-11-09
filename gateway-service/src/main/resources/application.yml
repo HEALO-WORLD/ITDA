@@ -49,6 +49,8 @@ eureka:
     registry-fetch-interval-seconds: 5
 
 management:
+  server:
+    port: ${MANAGEMENT_PORT:18080}
   tracing:
     sampling:
       probability: 1.0   # 개발 단계: 모든 요청 샘플링 (운영 시 낮춤)
