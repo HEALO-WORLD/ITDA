@@ -13,6 +13,7 @@ x-app-env: &app-env
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
   KAFKA_BOOTSTRAP_SERVERS: kafka:29092
   EUREKA_URL: http://eureka-server:8761/eureka/
+  REDIS_HOST: redis
 
 # 업무 서비스 공통 기동 조건: DB 준비, 토픽 생성 완료, Eureka 기동
 x-app-depends: &app-depends
@@ -28,6 +29,13 @@ services:
   postgres:
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -60,7 +68,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?.env에 JWT_SECRET을 설정하세요}
       SEED_ENABLED: ${SEED_ENABLED:-never}
       DEV_TOKEN_ENABLED: ${DEV_TOKEN_ENABLED:-false}
-    depends_on: *app-depends
+    depends_on:
+      <<: *app-depends
+      redis:
+        condition: service_healthy
     healthcheck:
       test: [ "CMD", "curl", "-fs", "http://localhost:8081/actuator/health" ]
       interval: 10s
