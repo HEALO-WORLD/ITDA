@@ -11,6 +11,7 @@ import healoworld.referral_service.presentation.dto.request.EquipmentIncidentSea
 import healoworld.referral_service.presentation.dto.request.IncidentReferralSearchCondition;
 import healoworld.referral_service.presentation.dto.response.EquipmentIncidentDetailResponse;
 import healoworld.referral_service.presentation.dto.response.EquipmentIncidentResponse;
+import healoworld.referral_service.presentation.dto.response.EquipmentIncidentSummaryResponse;
 import healoworld.referral_service.presentation.dto.response.IncidentReferralResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -194,5 +196,66 @@ class EquipmentIncidentControllerTest {
         mockMvc.perform(withAuth(get(BASE + "/{incidentId}", incidentId), "EXAMINER"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("EQUIPMENT_INCIDENT_NOT_FOUND"));
+    }
+
+    // ===== 현황 집계 =====
+
+    @Test
+    @DisplayName("현황: /summary는 장애 상세(/{incidentId})로 가지 않고, 헤더를 Service로 넘겨 세 값을 200으로 돌려준다")
+    void summary() throws Exception {
+        given(equipmentIncidentQueryService.getSummary(RoleType.EXAMINER, institutionId, null))
+                .willReturn(new EquipmentIncidentSummaryResponse(institutionId, OCCURRED_AT, 1, 7, 2));
+
+        mockMvc.perform(withAuth(get(BASE + "/summary"), "EXAMINER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.institutionId").value(institutionId.toString()))
+                .andExpect(jsonPath("$.data.asOf").value("2026-11-02T14:00:00"))
+                .andExpect(jsonPath("$.data.activeDowntimeEquipmentCount").value(1))
+                .andExpect(jsonPath("$.data.affectedReferralCount").value(7))
+                .andExpect(jsonPath("$.data.needsRescheduleReferralCount").value(2));
+        then(equipmentIncidentQueryService).should(never()).getIncident(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("현황: ADMIN의 institutionId 쿼리 파라미터가 Service로 전달된다")
+    void summaryAdminInstitutionParam() throws Exception {
+        UUID targetInstitutionId = UUID.randomUUID();
+        given(equipmentIncidentQueryService.getSummary(RoleType.ADMIN, institutionId, targetInstitutionId))
+                .willReturn(new EquipmentIncidentSummaryResponse(targetInstitutionId, OCCURRED_AT, 0, 0, 0));
+
+        mockMvc.perform(withAuth(get(BASE + "/summary"), "ADMIN")
+                        .param("institutionId", targetInstitutionId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.institutionId").value(targetInstitutionId.toString()))
+                .andExpect(jsonPath("$.data.needsRescheduleReferralCount").value(0));
+    }
+
+    @Test
+    @DisplayName("현황: ADMIN이 institutionId 없이 요청하면 400 VALIDATION_FAILED")
+    void summaryAdminWithoutInstitution() throws Exception {
+        given(equipmentIncidentQueryService.getSummary(RoleType.ADMIN, institutionId, null))
+                .willThrow(new BaseException(ErrorCode.VALIDATION_FAILED));
+
+        mockMvc.perform(withAuth(get(BASE + "/summary"), "ADMIN"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("현황: REQUESTER는 403, 헤더 누락은 400 MISSING_HEADER, institutionId 형식 오류는 400 INVALID_INPUT")
+    void summaryErrors() throws Exception {
+        given(equipmentIncidentQueryService.getSummary(eq(RoleType.REQUESTER), eq(institutionId), any()))
+                .willThrow(new BaseException(ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED));
+
+        mockMvc.perform(withAuth(get(BASE + "/summary"), "REQUESTER"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("EQUIPMENT_INCIDENT_ACCESS_DENIED"));
+        mockMvc.perform(get(BASE + "/summary").header("X-Role", "EXAMINER"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MISSING_HEADER"));
+        mockMvc.perform(withAuth(get(BASE + "/summary"), "ADMIN").param("institutionId", "not-a-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
     }
 }

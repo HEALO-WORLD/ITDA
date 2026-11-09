@@ -9,9 +9,11 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
+import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.presentation.dto.request.EquipmentIncidentSearchCondition;
 import healoworld.referral_service.presentation.dto.request.IncidentReferralSearchCondition;
 import healoworld.referral_service.presentation.dto.response.EquipmentIncidentDetailResponse;
+import healoworld.referral_service.presentation.dto.response.EquipmentIncidentSummaryResponse;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,6 +50,9 @@ class EquipmentIncidentQueryServiceTest {
 
     @Mock
     private IncidentReferralRepository incidentReferralRepository;
+
+    @Mock
+    private ReferralRepository referralRepository;
 
     @InjectMocks
     private EquipmentIncidentQueryService service;
@@ -254,5 +259,58 @@ class EquipmentIncidentQueryServiceTest {
         assertErrorCode(() -> service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId, incident.getId(),
                 new IncidentReferralSearchCondition(null, 0, 10)), ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
         then(incidentReferralRepository).should(never()).findByIncident_Id(any(), any());
+    }
+
+    // ===== 현황 집계 =====
+
+    private void givenCounts(UUID institutionId, LocalDateTime now, long active, long affected, long needsReschedule) {
+        given(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId, now)).willReturn(active);
+        given(incidentReferralRepository.countAffectedReferrals(institutionId)).willReturn(affected);
+        given(referralRepository.countNeedsRescheduleByLatestBlockedInstitution(institutionId)).willReturn(needsReschedule);
+    }
+
+    private void thenNoCountQueries() {
+        then(equipmentIncidentRepository).should(never()).countEquipmentsInDowntime(any(), any());
+        then(incidentReferralRepository).should(never()).countAffectedReferrals(any());
+        then(referralRepository).should(never()).countNeedsRescheduleByLatestBlockedInstitution(any());
+    }
+
+    @Test
+    @DisplayName("현황: EXAMINER는 요청의 institutionId를 무시하고 자기 기관·같은 기준 시각으로 세 값을 집계한다")
+    void examinerSummaryUsesOwnInstitution() {
+        givenCounts(myInstitutionId, OCCURRED_AT, 1, 5, 2);
+
+        EquipmentIncidentSummaryResponse summary = service.getSummary(RoleType.EXAMINER, myInstitutionId,
+                otherInstitutionId, OCCURRED_AT);
+
+        assertThat(summary).isEqualTo(new EquipmentIncidentSummaryResponse(myInstitutionId, OCCURRED_AT, 1, 5, 2));
+        then(equipmentIncidentRepository).should(never()).countEquipmentsInDowntime(eq(otherInstitutionId), any());
+    }
+
+    @Test
+    @DisplayName("현황: ADMIN은 지정한 institutionId로 세 값을 집계한다")
+    void adminSummaryUsesRequestedInstitution() {
+        givenCounts(otherInstitutionId, OCCURRED_AT, 0, 3, 1);
+
+        EquipmentIncidentSummaryResponse summary = service.getSummary(RoleType.ADMIN, myInstitutionId,
+                otherInstitutionId, OCCURRED_AT);
+
+        assertThat(summary).isEqualTo(new EquipmentIncidentSummaryResponse(otherInstitutionId, OCCURRED_AT, 0, 3, 1));
+    }
+
+    @Test
+    @DisplayName("현황: ADMIN이 institutionId 없이 요청하면 400 VALIDATION_FAILED이고 집계하지 않는다")
+    void adminSummaryRequiresInstitutionId() {
+        assertErrorCode(() -> service.getSummary(RoleType.ADMIN, myInstitutionId, null, OCCURRED_AT),
+                ErrorCode.VALIDATION_FAILED);
+        thenNoCountQueries();
+    }
+
+    @Test
+    @DisplayName("현황: REQUESTER는 403이고 집계하지 않는다")
+    void requesterCannotReadSummary() {
+        assertErrorCode(() -> service.getSummary(RoleType.REQUESTER, myInstitutionId, myInstitutionId, OCCURRED_AT),
+                ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED);
+        thenNoCountQueries();
     }
 }
