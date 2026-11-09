@@ -92,6 +92,7 @@ import static org.mockito.Mockito.doAnswer;
         NotificationService.class,
         ExaminationService.class,
         ReservationService.class,
+        ReferralHistoryService.class,
         SlotCommandOutbox.class,
         QuerydslConfig.class,
         IncidentExaminationRescheduleIntegrationTest.JsonConfig.class
