@@ -2,7 +2,6 @@ package healoworld.referral_service.application.service;
 
 import feign.FeignException;
 import healoworld.referral_service.domain.entity.Referral;
-import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.Reason;
@@ -13,7 +12,6 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
-import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
@@ -39,7 +37,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReferralService {
     private final ReferralRepository referralRepository;
-    private final ReferralHistoryRepository referralHistoryRepository;
+    private final ReferralHistoryService referralHistoryService;
     private final ReservationService reservationService;
     private final ReservationRepository reservationRepository;
     private final InstitutionClient institutionClient;
@@ -81,9 +79,7 @@ public class ReferralService {
         Reservation reservation = reservationService.createReservation(outboxEventId, createdReferral, createReferralRequest.getReservation());
         createdReferral.assignReservation(reservation.getId());
 
-        // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(createdReferral, reservation, null, createdReferral.getReferralStatus(), Reason.REFERRAL_CREATED, outboxEventId, userId);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(createdReferral, reservation, null, createdReferral.getReferralStatus(), Reason.REFERRAL_CREATED, outboxEventId, userId);
 
         return ReferralResponse.from(createdReferral);
     }
@@ -149,8 +145,8 @@ public class ReferralService {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
         }
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, ReferralStatus.NEEDS_RESCHEDULE, ReferralStatus.PENDING, Reason.RESCHEDULED, outboxEventId, userId);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, ReferralStatus.NEEDS_RESCHEDULE, ReferralStatus.PENDING, Reason.RESCHEDULED, outboxEventId, userId);
+
         return ReservationResponse.from(reservation);
     }
 

@@ -78,6 +78,7 @@ import static org.mockito.BDDMockito.given;
         NotificationService.class,
         ExaminationService.class,
         ReservationService.class,
+        ReferralHistoryService.class,
         SlotCommandOutbox.class,
         QuerydslConfig.class,
         ReservationAttemptNoReuseIntegrationTest.JsonConfig.class

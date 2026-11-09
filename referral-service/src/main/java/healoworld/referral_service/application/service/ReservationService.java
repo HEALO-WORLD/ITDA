@@ -36,11 +36,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReservationService {
     private final ReservationRepository reservationRepository;
-    private final ReferralHistoryRepository referralHistoryRepository;
     private final SlotCommandOutbox slotCommandOutbox;
     private final ReferralRepository referralRepository;
     private final IncidentReservationRepository incidentReservationRepository;   // 취소 시 예약 행 잠금 (의뢰 → 예약 → 검사 순서)
     private final ExaminationRepository examinationRepository;                   // 취소 시 검사 상태 확인
+    private final ReferralHistoryService referralHistoryService;
 
     public Reservation createReservation(UUID outboxEventId, Referral referral, CreateReservationRequest createReservationRequest) {
         // 삭제된 예약의 번호도 다시 쓰지 않도록 소프트 삭제된 예약까지 포함한 마지막 번호 + 1 (예약이 없으면 1)
@@ -122,9 +122,7 @@ public class ReservationService {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
         }
         UUID eventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_SLOT);
-
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, ReferralStatus.CANCELED, Reason.CANCELED_BY_REQUESTER, eventId, userId);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, ReferralStatus.CANCELED, Reason.CANCELED_BY_REQUESTER, eventId, userId);
     }
 
     // 취소할 예약의 검사가 아직 시작 전(SCHEDULED)인지 확인한다. 의뢰·예약 다음에 검사를 잠근 뒤 읽는다

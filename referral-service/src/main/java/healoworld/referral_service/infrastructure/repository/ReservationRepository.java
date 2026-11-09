@@ -3,6 +3,7 @@ package healoworld.referral_service.infrastructure.repository;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.ReservationStatus;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -10,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -131,4 +133,62 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
                      @Param("userId") UUID userId,
                      @Param("now") LocalDateTime now,
                      @Param("allowed") Collection<ReservationStatus> allowed);
+
+    @Query("""
+                 select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus)
+                 from Reservation r
+                  where r.reservationStatus in (
+                              healoworld.referral_service.domain.enums.ReservationStatus.REQUESTED,
+                              healoworld.referral_service.domain.enums.ReservationStatus.HELD)
+                   and r.updatedAt < :updatedBefore
+                   and r.id > :lastId
+                   and r.deletedAt is null
+                   and not exists (select 1 from OutboxEvent o
+                                      where o.aggregateId = r.id
+                                        and o.publishedAt is null)
+                   order by r.id
+            """)
+    List<ReconciliationTarget> findStaleInProgress(
+            @Param("updatedBefore") LocalDateTime updatedBefore,
+            @Param("lastId") UUID lastId,
+            Pageable pageable);
+
+    @Query("""
+                 select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus)
+                 from Reservation r
+                 where r.reservationStatus = healoworld.referral_service.domain.enums.ReservationStatus.CONFIRMED
+                   and r.startTime > :now
+                   and r.id > :lastId
+                   and r.deletedAt is null
+                   and not exists (select 1 from OutboxEvent o
+                                      where o.aggregateId = r.id
+                                        and o.publishedAt is null)
+                   order by r.id
+            """)
+    List<ReconciliationTarget> findUpcomingConfirmed(
+            @Param("now") LocalDateTime now,
+            @Param("lastId") UUID lastId,
+            Pageable pageable);
+
+    @Query("""
+                 select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus)
+                 from Reservation r
+                 where r.reservationStatus in (
+                              healoworld.referral_service.domain.enums.ReservationStatus.FAILED,
+                              healoworld.referral_service.domain.enums.ReservationStatus.BLOCKED,
+                              healoworld.referral_service.domain.enums.ReservationStatus.CANCELED)
+                   and r.endedAt > :endedAfter
+                   and r.id > :lastId
+                   and r.startTime > :now
+                   and r.deletedAt is null
+                   and not exists (select 1 from OutboxEvent o
+                                      where o.aggregateId = r.id
+                                        and o.publishedAt is null)
+                   order by r.id
+            """)
+    List<ReconciliationTarget> findRecentlyEnded(
+            @Param("now") LocalDateTime now,
+            @Param("endedAfter") LocalDateTime endedAfter,
+            @Param("lastId") UUID lastId,
+            Pageable pageable);
 }
