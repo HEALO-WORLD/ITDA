@@ -128,7 +128,9 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
     @Query("""
                  select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus)
                  from Reservation r
-                 where r.reservationStatus in :statuses
+                  where r.reservationStatus in (
+                              healoworld.referral_service.domain.enums.ReservationStatus.REQUESTED,
+                              healoworld.referral_service.domain.enums.ReservationStatus.HELD)
                    and r.updatedAt < :updatedBefore
                    and r.id > :lastId
                    and r.deletedAt is null
@@ -138,7 +140,6 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
                    order by r.id
             """)
     List<ReconciliationTarget> findStaleInProgress(
-            @Param("statuses") Collection<ReservationStatus> statuses,
             @Param("updatedBefore") LocalDateTime updatedBefore,
             @Param("lastId") UUID lastId,
             Pageable pageable);
@@ -163,9 +164,13 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
     @Query("""
                  select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus)
                  from Reservation r
-                 where r.reservationStatus in :statuses
+                 where r.reservationStatus in (
+                              healoworld.referral_service.domain.enums.ReservationStatus.FAILED,
+                              healoworld.referral_service.domain.enums.ReservationStatus.BLOCKED,
+                              healoworld.referral_service.domain.enums.ReservationStatus.CANCELED)
                    and r.endedAt > :endedAfter
                    and r.id > :lastId
+                   and r.startTime > :now
                    and r.deletedAt is null
                    and not exists (select 1 from OutboxEvent o
                                       where o.aggregateId = r.id
@@ -173,7 +178,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
                    order by r.id
             """)
     List<ReconciliationTarget> findRecentlyEnded(
-            @Param("statuses") Collection<ReservationStatus> statuses,
+            @Param("now") LocalDateTime now,
             @Param("endedAfter") LocalDateTime endedAfter,
             @Param("lastId") UUID lastId,
             Pageable pageable);
