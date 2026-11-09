@@ -68,6 +68,9 @@ jobs:
       fail-fast: false   # 한 서비스가 실패해도 나머지 결과를 끝까지 본다
       matrix:
         service: ${{ fromJSON(needs.changes.outputs.services) }}
+    # 운영(컨테이너 TZ)과 같은 한국 시간으로 테스트한다. 설정이 없으면 러너 기본값인 UTC로 돈다
+    env:
+      TZ: Asia/Seoul
     defaults:
       run:
         working-directory: ${{ matrix.service }}
