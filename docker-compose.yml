@@ -1,7 +1,16 @@
+# 컨테이너 로그 크기 제한: 기본(json-file)은 제한 없이 쌓여 디스크를 채운다
+# 컨테이너당 10MB × 3개까지만 보관하고 오래된 것부터 지운다
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:18
     container_name: itda-postgres
+    logging: *default-logging
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
@@ -15,6 +24,7 @@ services:
   redis:
     image: redis:8.10.3
     container_name: itda-redis
+    logging: *default-logging
     command: redis-server --appendonly yes --maxmemory-policy noeviction
     ports:
       - "127.0.0.1:6379:6379"
@@ -24,6 +34,7 @@ services:
   kafka:
     image: apache/kafka:4.4.0
     container_name: itda-kafka
+    logging: *default-logging
     ports:
       - "127.0.0.1:9092:9092"
     environment:
@@ -49,6 +60,7 @@ services:
   kafka-ui:
     image: kafbat/kafka-ui:v1.5.0
     container_name: itda-kafka-ui
+    logging: *default-logging
     ports:
       - "127.0.0.1:8989:8080"
     environment:
@@ -60,6 +72,7 @@ services:
   kafka-init:
     image: apache/kafka:4.4.0
     container_name: itda-kafka-init
+    logging: *default-logging
     depends_on:
       - kafka
     entrypoint: [ "/bin/bash", "-c" ]
@@ -80,6 +93,7 @@ services:
   prometheus:
     image: prom/prometheus:v3.15.1
     container_name: itda-prometheus
+    logging: *default-logging
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
@@ -90,6 +104,7 @@ services:
   grafana:
     image: grafana/grafana:13.2.4
     container_name: itda-grafana
+    logging: *default-logging
     ports:
       - "127.0.0.1:3000:3000"
     environment:
