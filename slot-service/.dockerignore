@@ -4,5 +4,11 @@ build
 out
 .idea
 *.iml
-.env
+.env*
 *.log
+
+# Git, Docker 관련 파일도 필요 없다
+.git
+.gitignore
+Dockerfile
+docker-compose*.yml
