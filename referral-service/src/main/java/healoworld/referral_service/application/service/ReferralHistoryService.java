@@ -1,6 +1,10 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.Referral;
+import healoworld.referral_service.domain.entity.ReferralHistory;
+import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.Reason;
+import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -34,4 +38,18 @@ public class ReferralHistoryService {
                 .stream()
                 .map(ReferralHistoryResponse::from).toList();
     }
+
+   public void recordHistory(Referral referral, Reservation reservation,ReferralStatus fromStatus, ReferralStatus toStatus, Reason reason, UUID eventId, UUID changedBy) {
+       ReferralHistory history = ReferralHistory.create(
+               referral,
+               reservation,
+               fromStatus,
+               toStatus,
+               reason,
+               eventId,
+               changedBy
+       );
+
+       referralHistoryRepository.save(history);
+   }
 }

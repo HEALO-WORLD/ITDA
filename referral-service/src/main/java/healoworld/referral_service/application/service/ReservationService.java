@@ -34,9 +34,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReservationService {
     private final ReservationRepository reservationRepository;
-    private final ReferralHistoryRepository referralHistoryRepository;
     private final SlotCommandOutbox slotCommandOutbox;
     private final ReferralRepository referralRepository;
+    private final ReferralHistoryService referralHistoryService;
 
     public Reservation createReservation(UUID outboxEventId, Referral referral, CreateReservationRequest createReservationRequest) {
         int attemptNo = reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId())
@@ -117,8 +117,6 @@ public class ReservationService {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
         }
         UUID eventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_SLOT);
-
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, ReferralStatus.CANCELED, Reason.CANCELED_BY_REQUESTER, eventId, userId);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, ReferralStatus.CANCELED, Reason.CANCELED_BY_REQUESTER, eventId, userId);
     }
 }
