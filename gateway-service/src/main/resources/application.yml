@@ -1,0 +1,172 @@
+server:
+  port: 8080
+
+spring:
+  reactor:
+    context-propagation: auto   # WebFlux에서 traceId를 MDC로 전파
+  application:
+    name: gateway-service
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
+  cloud:
+    loadbalancer:
+      cache:
+        ttl: 5s
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: block-internal
+              uri: no://op
+              predicates:
+                - Path=/internal/**,/api/v1/internal/**,/api/v1/*/internal/**
+              filters:
+                - SetStatus=404
+
+            - id: institution-service
+              uri: lb://institution-service
+              predicates:
+                - Path=/api/v1/auth/**,/api/v1/users/**,/api/v1/institutions/**,/api/v1/partnerships/**,/api/v1/equipments/**,/api/v1/exam-types/**
+
+            - id: slot-service
+              uri: lb://slot-service
+              predicates:
+                - Path=/api/v1/slots/**,/api/v1/equipment-downtimes/**
+
+            - id: referral-service
+              uri: lb://referral-service
+              predicates:
+                - Path=/api/v1/referrals/**,/api/v1/equipment-incidents/**,/api/v1/notifications/**,/api/v1/examinations/**
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    registry-fetch-interval-seconds: 5
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:18080}
+  tracing:
+    sampling:
+      probability: 1.0   # 개발 단계: 모든 요청 샘플링 (운영 시 낮춤)
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true   # p95/p99 계산용 bucket 메트릭 노출
+
+jwt:
+  secret: ${JWT_SECRET}
+  # public-paths는 삭제 → 아래 gateway.policy.public-rules로 이동
+
+gateway:
+  policy:
+    public-rules:
+      - "POST /api/v1/auth/signup"
+      - "POST /api/v1/auth/login"
+      - "GET /api/v1/institutions/public"
+
+    groups:
+      # ── 관리자만 ──
+      - roles: [ ADMIN ]
+        rules:
+          - "GET /api/v1/users"
+          - "PATCH /api/v1/users/*/approve"
+          - "GET,POST /api/v1/institutions"
+          - "PATCH,DELETE /api/v1/institutions/*"
+          - "POST /api/v1/slots/*/release"
+          - "GET /api/v1/slots/*/status-histories"
+          # 예약 삭제(DELETE /api/v1/referrals/reservations/*)는 제공하지 않으므로 규칙을 두지 않는다 (fail-closed로 모든 역할 거부)
+          - "POST /api/v1/exam-types"
+          - "PATCH /api/v1/exam-types/*"
+
+      # ── 검사기관 사용자만 ──
+      - roles: [ EXAMINER ]
+        rules:
+          - "PATCH /api/v1/partnerships/*/approve"
+          - "PATCH /api/v1/partnerships/*/reject"
+          - "POST /api/v1/institutions/*/equipments"
+          - "PATCH /api/v1/equipments/*"
+          - "POST /api/v1/equipments/*/exam-types"
+          - "PATCH /api/v1/equipments/*/exam-types/*"
+          - "PUT /api/v1/equipments/*/operating-hours"
+          - "GET /api/v1/equipments/*/status-histories"
+          - "POST /api/v1/examinations/*/results"
+          - "PATCH /api/v1/examinations/*/status"
+          - "PATCH /api/v1/referrals/*/complete"
+          - "GET /api/v1/examinations/*/results"
+          - "GET /api/v1/examinations"
+
+      # ── 의뢰기관 사용자만 ──
+      - roles: [ REQUESTER ]
+        rules:
+          - "POST /api/v1/partnerships"
+          - "PATCH /api/v1/referrals/reservations/*/cancel"
+          - "GET /api/v1/referrals/*/results"
+
+      # ── 기관 사용자 (의뢰 + 검사) ──
+      - roles: [ REQUESTER, EXAMINER ]
+        rules:
+          - "GET /api/v1/partnerships/me"
+          - "GET /api/v1/institutions/*/equipments"
+          - "GET /api/v1/equipments/*"
+          - "GET /api/v1/equipments/*/operating-hours"
+          - "GET /api/v1/equipments/*/exam-types"
+          - "GET /api/v1/notifications"
+          - "GET /api/v1/notifications/unread-count"
+          - "PATCH /api/v1/notifications/*/read"
+
+      # ── 검사기관 사용자 + 관리자 ──
+      - roles: [ EXAMINER, ADMIN ]
+        rules:
+          - "POST /api/v1/slots"
+          - "POST /api/v1/slots/generate"
+          - "PATCH,DELETE /api/v1/slots/*"
+          - "POST /api/v1/equipment-downtimes"
+          - "PATCH,DELETE /api/v1/equipment-downtimes/*"
+          - "GET /api/v1/equipment-incidents"
+          - "GET /api/v1/equipment-incidents/summary"   # 장비 장애 현황 집계
+          - "GET /api/v1/equipment-incidents/{incidentId}"
+          - "GET /api/v1/equipment-incidents/{incidentId}/referrals"
+
+      # ── 의뢰기관 사용자 + 관리자 ──
+      - roles: [ REQUESTER, ADMIN ]
+        rules:
+          - "POST /api/v1/referrals"
+          - "POST /api/v1/referrals/*/reschedule"
+          - "GET /api/v1/referrals"
+          - "GET /api/v1/referrals/*/histories"
+          - "DELETE /api/v1/referrals/*"
+
+      # ── 로그인 사용자 전체 ──
+      - roles: [ REQUESTER, EXAMINER, ADMIN ]
+        rules:
+          - "GET /api/v1/exam-types"
+          - "GET /api/v1/users/me"
+          - "GET /api/v1/institutions/*"
+          - "PATCH /api/v1/partnerships/*/terminate"
+          - "GET /api/v1/slots"
+          - "GET /api/v1/slots/*"
+          - "GET /api/v1/equipment-downtimes"
+          - "GET /api/v1/equipment-downtimes/*"
+          - "GET /api/v1/referrals/*"
+          - "GET /api/v1/referrals/reservations"
+          - "GET /api/v1/referrals/reservations/*"
+
+# 공통 로그 설정 (모든 서비스 동일, 서비스별 상세 레벨은 아래에 추가)
+logging:
+  include-application-name: true   # 로그에 [서비스명] 출력
+  level:
+    root: INFO
+    healoworld: INFO
+    org.apache.kafka: WARN         # Kafka 클라이언트 접속·설정 로그 소음 감소

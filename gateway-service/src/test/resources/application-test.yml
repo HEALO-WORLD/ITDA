@@ -1,0 +1,10 @@
+# 테스트 전용 설정 (@ActiveProfiles("test")일 때 main의 application.yml 위에 덮어써진다)
+
+# 테스트에서는 Eureka 서버에 등록·조회하지 않는다
+eureka:
+  client:
+    enabled: false
+
+# 테스트 전용 값 (운영 키 아님). .env가 없는 CI에서도 GatewayJwtProvider가 만들어지도록
+jwt:
+  secret: dGVzdC1zZWNyZXQta2V5LWZvci1pdGRhLXRlc3RzLW9ubHk=

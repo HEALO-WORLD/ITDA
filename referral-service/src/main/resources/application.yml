@@ -1,0 +1,86 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: referral-service
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${POSTGRES_PORT:5432}/referral_db
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: ${JPA_SHOW_SQL:false}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 5000           # 토픽 메타데이터 대기 한도 (기본 60초)
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000   # linger.ms + request.timeout.ms 이상이어야 함
+    consumer:
+      group-id: referral-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
+      observation-enabled: true   # 소비 시 Kafka 헤더의 traceId를 이어받음
+    template:
+      observation-enabled: true   # 발행 시 traceId를 Kafka 헤더에 실음
+
+itda:
+  incident-processing:
+    scheduler:
+      enabled: ${INCIDENT_PROCESSING_SCHEDULER_ENABLED:false}
+      fixed-delay-ms: 5000
+      initial-delay-ms: 5000
+      batch-size: 50
+
+outbox:
+  publish:
+    fixed-delay-ms: 1000
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0   # 개발 단계: 모든 요청 샘플링 (운영 시 낮춤)
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true   # p95/p99 계산용 bucket 메트릭 노출
+
+# 공통 로그 설정 (모든 서비스 동일, 서비스별 상세 레벨은 아래에 추가)
+logging:
+  include-application-name: true   # 로그에 [서비스명] 출력
+  pattern:
+    # [traceId-spanId] 뒤에 Kafka 소비 중이면 [eventType eventId] 추가 (이벤트가 없으면 생략)
+    correlation: '%correlationId%replace([%X{eventType} %X{eventId}] ){"^\[ \] $", ""}'
+  level:
+    root: INFO
+    healoworld: INFO
+    org.apache.kafka: WARN         # Kafka 클라이언트 접속·설정 로그 소음 감소
