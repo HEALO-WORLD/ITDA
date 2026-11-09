@@ -3,19 +3,25 @@ package healoworld.referral_service.application.service;
 import healoworld.referral_service.domain.entity.EquipmentIncident;
 import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.domain.enums.EquipmentIncidentStatus;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
+import healoworld.referral_service.infrastructure.repository.ExaminationProgress;
+import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
+import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.presentation.dto.request.EquipmentIncidentSearchCondition;
 import healoworld.referral_service.presentation.dto.request.IncidentReferralSearchCondition;
 import healoworld.referral_service.presentation.dto.response.EquipmentIncidentDetailResponse;
+import healoworld.referral_service.presentation.dto.response.EquipmentIncidentSummaryResponse;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -25,9 +31,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -36,6 +46,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 // 역할별 조회 범위(권한)와 응답 집계를 Mock으로 검증한다
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +59,12 @@ class EquipmentIncidentQueryServiceTest {
 
     @Mock
     private IncidentReferralRepository incidentReferralRepository;
+
+    @Mock
+    private ReferralRepository referralRepository;
+
+    @Mock
+    private ExaminationRepository examinationRepository;
 
     @InjectMocks
     private EquipmentIncidentQueryService service;
@@ -254,5 +271,212 @@ class EquipmentIncidentQueryServiceTest {
         assertErrorCode(() -> service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId, incident.getId(),
                 new IncidentReferralSearchCondition(null, 0, 10)), ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
         then(incidentReferralRepository).should(never()).findByIncident_Id(any(), any());
+        then(examinationRepository).should(never()).findProgressByReferralIds(any());
+    }
+
+    // ===== 영향 의뢰: 수동 확인 필요 여부 =====
+
+    // 처리 상태·결과 코드를 지정한 작업 (의뢰·예약 ID는 새로 만든다)
+    private IncidentReferral taskOf(EquipmentIncident incident, IncidentProcessingStatus status, String resultCode) {
+        IncidentReferral task = IncidentReferral.pending(incident, UUID.randomUUID(), UUID.randomUUID());
+        ReflectionTestUtils.setField(task, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(task, "processingStatus", status);
+        ReflectionTestUtils.setField(task, "resultCode", resultCode);
+        return task;
+    }
+
+    private IncidentReferral skippedInProgress(EquipmentIncident incident) {
+        return taskOf(incident, IncidentProcessingStatus.SUCCEEDED, IncidentProcessingService.SKIPPED_IN_PROGRESS);
+    }
+
+    // 작업의 의뢰에 연결된 검사 (reservationId·status 지정)
+    private ExaminationProgress examinationOf(IncidentReferral task, UUID reservationId, ExaminationStatus status) {
+        return new ExaminationProgress(task.getReferralId(), reservationId, status);
+    }
+
+    // 장애 페이지의 작업 목록과 검사 일괄 조회 결과를 지정하고, 작업 ID별 manualReviewRequired를 돌려준다
+    private Map<UUID, Boolean> manualReviewOf(EquipmentIncident incident, List<IncidentReferral> tasks,
+                                                       List<ExaminationProgress> examinations) {
+        given(incidentReferralRepository.findByIncident_Id(eq(incident.getId()), any()))
+                .willReturn(new PageImpl<>(tasks));
+        if (examinations != null) {
+            given(examinationRepository.findProgressByReferralIds(any())).willReturn(examinations);
+        }
+        return service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId, incident.getId(),
+                        new IncidentReferralSearchCondition(null, 0, 10)).contents().stream()
+                .collect(Collectors.toMap(item -> item.id(), item -> item.manualReviewRequired()));
+    }
+
+    @Test
+    @DisplayName("수동 확인: SUCCEEDED·SKIPPED_IN_PROGRESS이고 같은 예약의 검사가 IN_PROGRESS면 true")
+    void manualReviewWhenExaminationInProgress() {
+        EquipmentIncident incident = incidentOf(myInstitutionId);
+        IncidentReferral task = skippedInProgress(incident);
+
+        var result = manualReviewOf(incident, List.of(task),
+                List.of(examinationOf(task, task.getReservationId(), ExaminationStatus.IN_PROGRESS)));
+
+        assertThat(result).containsEntry(task.getId(), true);
+    }
+
+    @Test
+    @DisplayName("수동 확인: 검사가 다른 예약에 연결돼 있으면 IN_PROGRESS여도 false")
+    void noManualReviewWhenReservationDiffers() {
+        EquipmentIncident incident = incidentOf(myInstitutionId);
+        IncidentReferral task = skippedInProgress(incident);
+
+        var result = manualReviewOf(incident, List.of(task),
+                List.of(examinationOf(task, UUID.randomUUID(), ExaminationStatus.IN_PROGRESS)));
+
+        assertThat(result).containsEntry(task.getId(), false);
+    }
+
+    @Test
+    @DisplayName("수동 확인: 검사가 COMPLETED·SCHEDULED이면 false (IN_PROGRESS → COMPLETED 이후 재조회 포함)")
+    void noManualReviewWhenExaminationNotInProgress() {
+        EquipmentIncident incident = incidentOf(myInstitutionId);
+        IncidentReferral completed = skippedInProgress(incident);
+        IncidentReferral scheduled = skippedInProgress(incident);
+
+        var result = manualReviewOf(incident, List.of(completed, scheduled), List.of(
+                examinationOf(completed, completed.getReservationId(), ExaminationStatus.COMPLETED),
+                examinationOf(scheduled, scheduled.getReservationId(), ExaminationStatus.SCHEDULED)));
+
+        assertThat(result).containsEntry(completed.getId(), false).containsEntry(scheduled.getId(), false);
+    }
+
+    @Test
+    @DisplayName("수동 확인: 검사 데이터가 없으면 false")
+    void noManualReviewWithoutExamination() {
+        EquipmentIncident incident = incidentOf(myInstitutionId);
+        IncidentReferral task = skippedInProgress(incident);
+
+        var result = manualReviewOf(incident, List.of(task), List.of());
+
+        assertThat(result).containsEntry(task.getId(), false);
+    }
+
+    @Test
+    @DisplayName("수동 확인: 다른 결과 코드(SKIPPED_COMPLETED·RESCHEDULE_REQUIRED·ALREADY_BLOCKED)와 SUCCEEDED가 아닌 작업은 "
+            + "false이고 후보가 없으면 검사를 조회하지 않는다")
+    void noManualReviewForOtherTasks() {
+        EquipmentIncident incident = incidentOf(myInstitutionId);
+        List<IncidentReferral> tasks = List.of(
+                taskOf(incident, IncidentProcessingStatus.SUCCEEDED, IncidentProcessingService.SKIPPED_COMPLETED),
+                taskOf(incident, IncidentProcessingStatus.SUCCEEDED, IncidentProcessingService.RESCHEDULE_REQUIRED),
+                taskOf(incident, IncidentProcessingStatus.SUCCEEDED, IncidentProcessingService.ALREADY_BLOCKED),
+                taskOf(incident, IncidentProcessingStatus.PENDING, null),
+                taskOf(incident, IncidentProcessingStatus.PROCESSING, null),
+                taskOf(incident, IncidentProcessingStatus.FAILED, null),
+                // 비정상 데이터라도 SUCCEEDED가 아니면 결과 코드와 관계없이 후보가 아니다
+                taskOf(incident, IncidentProcessingStatus.FAILED, IncidentProcessingService.SKIPPED_IN_PROGRESS));
+
+        var result = manualReviewOf(incident, tasks, null);
+
+        assertThat(result).hasSize(tasks.size()).doesNotContainValue(true);
+        then(examinationRepository).should(never()).findProgressByReferralIds(any());
+    }
+
+    @Test
+    @DisplayName("수동 확인: 페이지에 후보가 여러 건이어도 검사는 후보 의뢰 ID로 한 번만 조회한다 (N+1 없음)")
+    @SuppressWarnings("unchecked")
+    void examinationsAreLoadedOnceForCandidates() {
+        EquipmentIncident incident = incidentOf(myInstitutionId);
+        IncidentReferral first = skippedInProgress(incident);
+        IncidentReferral second = skippedInProgress(incident);
+        IncidentReferral third = skippedInProgress(incident);
+        IncidentReferral notCandidate = taskOf(incident, IncidentProcessingStatus.SUCCEEDED,
+                IncidentProcessingService.RESCHEDULE_REQUIRED);
+
+        var result = manualReviewOf(incident, List.of(first, notCandidate, second, third), List.of(
+                examinationOf(first, first.getReservationId(), ExaminationStatus.IN_PROGRESS),
+                examinationOf(second, second.getReservationId(), ExaminationStatus.COMPLETED),
+                examinationOf(third, third.getReservationId(), ExaminationStatus.IN_PROGRESS)));
+
+        assertThat(result).containsEntry(first.getId(), true).containsEntry(second.getId(), false)
+                .containsEntry(third.getId(), true).containsEntry(notCandidate.getId(), false);
+        ArgumentCaptor<Collection<UUID>> referralIds = ArgumentCaptor.forClass(Collection.class);
+        then(examinationRepository).should(times(1)).findProgressByReferralIds(referralIds.capture());
+        assertThat(Set.copyOf(referralIds.getValue()))
+                .containsExactlyInAnyOrder(first.getReferralId(), second.getReferralId(), third.getReferralId());
+    }
+
+    @Test
+    @DisplayName("수동 확인: ADMIN도 같은 기준으로 받는다")
+    void adminReceivesManualReview() {
+        EquipmentIncident incident = incidentOf(myInstitutionId);
+        IncidentReferral task = skippedInProgress(incident);
+        given(incidentReferralRepository.findByIncident_Id(eq(incident.getId()), any()))
+                .willReturn(new PageImpl<>(List.of(task)));
+        given(examinationRepository.findProgressByReferralIds(any())).willReturn(
+                List.of(examinationOf(task, task.getReservationId(), ExaminationStatus.IN_PROGRESS)));
+
+        var item = service.getIncidentReferrals(RoleType.ADMIN, otherInstitutionId, incident.getId(),
+                new IncidentReferralSearchCondition(null, 0, 10)).contents().getFirst();
+
+        assertThat(item.manualReviewRequired()).isTrue();
+    }
+
+    @Test
+    @DisplayName("수동 확인: REQUESTER는 기존처럼 403이고 작업·검사를 조회하지 않는다")
+    void requesterCannotReadReferrals() {
+        // 역할 확인에서 먼저 거절되므로 장애도 조회하지 않는다
+        assertErrorCode(() -> service.getIncidentReferrals(RoleType.REQUESTER, myInstitutionId, UUID.randomUUID(),
+                new IncidentReferralSearchCondition(null, 0, 10)), ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED);
+        then(incidentReferralRepository).should(never()).findByIncident_Id(any(), any());
+        then(examinationRepository).should(never()).findProgressByReferralIds(any());
+    }
+
+    // ===== 현황 집계 =====
+
+    private void givenCounts(UUID institutionId, LocalDateTime now, long active, long affected, long needsReschedule) {
+        given(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId, now)).willReturn(active);
+        given(incidentReferralRepository.countAffectedReferrals(institutionId)).willReturn(affected);
+        given(referralRepository.countNeedsRescheduleByLatestBlockedInstitution(institutionId)).willReturn(needsReschedule);
+    }
+
+    private void thenNoCountQueries() {
+        then(equipmentIncidentRepository).should(never()).countEquipmentsInDowntime(any(), any());
+        then(incidentReferralRepository).should(never()).countAffectedReferrals(any());
+        then(referralRepository).should(never()).countNeedsRescheduleByLatestBlockedInstitution(any());
+    }
+
+    @Test
+    @DisplayName("현황: EXAMINER는 요청의 institutionId를 무시하고 자기 기관·같은 기준 시각으로 세 값을 집계한다")
+    void examinerSummaryUsesOwnInstitution() {
+        givenCounts(myInstitutionId, OCCURRED_AT, 1, 5, 2);
+
+        EquipmentIncidentSummaryResponse summary = service.getSummary(RoleType.EXAMINER, myInstitutionId,
+                otherInstitutionId, OCCURRED_AT);
+
+        assertThat(summary).isEqualTo(new EquipmentIncidentSummaryResponse(myInstitutionId, OCCURRED_AT, 1, 5, 2));
+        then(equipmentIncidentRepository).should(never()).countEquipmentsInDowntime(eq(otherInstitutionId), any());
+    }
+
+    @Test
+    @DisplayName("현황: ADMIN은 지정한 institutionId로 세 값을 집계한다")
+    void adminSummaryUsesRequestedInstitution() {
+        givenCounts(otherInstitutionId, OCCURRED_AT, 0, 3, 1);
+
+        EquipmentIncidentSummaryResponse summary = service.getSummary(RoleType.ADMIN, myInstitutionId,
+                otherInstitutionId, OCCURRED_AT);
+
+        assertThat(summary).isEqualTo(new EquipmentIncidentSummaryResponse(otherInstitutionId, OCCURRED_AT, 0, 3, 1));
+    }
+
+    @Test
+    @DisplayName("현황: ADMIN이 institutionId 없이 요청하면 400 VALIDATION_FAILED이고 집계하지 않는다")
+    void adminSummaryRequiresInstitutionId() {
+        assertErrorCode(() -> service.getSummary(RoleType.ADMIN, myInstitutionId, null, OCCURRED_AT),
+                ErrorCode.VALIDATION_FAILED);
+        thenNoCountQueries();
+    }
+
+    @Test
+    @DisplayName("현황: REQUESTER는 403이고 집계하지 않는다")
+    void requesterCannotReadSummary() {
+        assertErrorCode(() -> service.getSummary(RoleType.REQUESTER, myInstitutionId, myInstitutionId, OCCURRED_AT),
+                ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED);
+        thenNoCountQueries();
     }
 }

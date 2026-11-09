@@ -6,7 +6,6 @@ import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
@@ -25,7 +24,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -39,9 +37,8 @@ public class ReservationService {
     private final ReferralHistoryService referralHistoryService;
 
     public Reservation createReservation(UUID outboxEventId, Referral referral, CreateReservationRequest createReservationRequest) {
-        int attemptNo = reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId())
-                .map(reservation -> reservation.getAttemptNo() + 1)
-                .orElse(1);
+        // 삭제된 예약의 번호도 다시 쓰지 않도록 소프트 삭제된 예약까지 포함한 마지막 번호 + 1 (예약이 없으면 1)
+        int attemptNo = reservationRepository.findMaxAttemptNoIncludingDeleted(referral.getId()) + 1;
 
         Reservation createdReservation = Reservation.create(referral, attemptNo, createReservationRequest.getSlotId(), createReservationRequest.getExamInstitutionId(), createReservationRequest.getEquipmentId(), createReservationRequest.getExamDate(), createReservationRequest.getStartTime(), createReservationRequest.getEndTime());
         reservationRepository.save(createdReservation);
@@ -72,18 +69,8 @@ public class ReservationService {
         return PagedResponse.from(page);
     }
 
-    public void deleteReservation(UUID userId, UUID reservationId, RoleType role) {
-        Reservation reservation = reservationRepository.findByIdWithReferral(reservationId)
-                .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
-
-        if (!(userId.equals(reservation.getReferral().getReferrerId()) || role == RoleType.ADMIN)) {
-            throw new BaseException(ErrorCode.RESERVATION_NOT_FOUND);
-        }
-
-        if (reservationRepository.softDeleteIf(reservationId, userId, LocalDateTime.now(), List.of(ReservationStatus.FAILED, ReservationStatus.CANCELED, ReservationStatus.BLOCKED)) == 0){
-            throw new BaseException(ErrorCode.INVALID_RESERVATION_STATUS);
-        }
-    }
+    // 예약 삭제는 제공하지 않는다 (MVP 정책: 예약 이력 보존, Kafka 비동기 결과 처리와의 정합성)
+    // 예약을 끝내려면 취소(cancelReservation)를 사용한다. 이미 소프트 삭제된 과거 데이터는 그대로 둔다
 
     // 예약 취소
     public void cancelReservation(UUID userId, UUID institutionId, RoleType role, UUID reservationId) {

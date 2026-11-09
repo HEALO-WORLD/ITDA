@@ -55,6 +55,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
         ExaminationService.class,
+        ExaminationQueryService.class,
         ExaminationResultService.class,
         QuerydslConfig.class
 })
@@ -62,6 +63,9 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
 
     @Autowired
     private ExaminationService examinationService;
+
+    @Autowired
+    private ExaminationQueryService examinationQueryService;
 
     @Autowired
     private ExaminationResultService examinationResultService;
@@ -529,7 +533,7 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
         );
 
         ExaminationResponse response =
-                examinationService.getByReferralId(
+                examinationQueryService.getByReferralId(
                         examination.getReferralId()
                 );
 
@@ -554,7 +558,7 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
     void getByReferralIdNotFound() {
 
         assertErrorCode(
-                () -> examinationService.getByReferralId(
+                () -> examinationQueryService.getByReferralId(
                         UUID.randomUUID()
                 ),
                 ErrorCode.EXAMINATION_NOT_FOUND

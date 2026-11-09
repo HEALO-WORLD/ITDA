@@ -1,0 +1,31 @@
+# 앱 compose(docker-compose.app.yml)로 서비스를 컨테이너로 띄울 때 사용하는 수집 설정
+# 같은 compose 네트워크 안이라 서비스 이름으로 직접 수집한다 (로컬 전체 실행, EC2 배포 공통)
+# 인프라만 띄우고 앱은 IDE로 실행할 때는 prometheus.yml(host.docker.internal)을 사용한다
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['gateway-service:18080']
+
+  - job_name: eureka-server
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['eureka-server:8761']
+
+  - job_name: institution-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['institution-service:8081']
+
+  - job_name: slot-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['slot-service:8082']
+
+  - job_name: referral-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['referral-service:8083']

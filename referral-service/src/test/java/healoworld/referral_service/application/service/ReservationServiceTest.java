@@ -34,7 +34,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static healoworld.referral_service.support.DomainFixtures.referralIn;
-import static healoworld.referral_service.support.DomainFixtures.reservation;
 import static healoworld.referral_service.support.DomainFixtures.reservationIn;
 import static healoworld.referral_service.support.DomainFixtures.reservationRequest;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -88,7 +87,7 @@ class ReservationServiceTest {
         void firstAttempt() {
             CreateReservationRequest request = reservationRequest();
             UUID eventId = UUID.randomUUID();
-            given(reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId())).willReturn(Optional.empty());
+            given(reservationRepository.findMaxAttemptNoIncludingDeleted(referral.getId())).willReturn(0);
 
             Reservation created = reservationService.createReservation(eventId, referral, request);
 
@@ -104,8 +103,7 @@ class ReservationServiceTest {
         @Test
         @DisplayName("이전 예약이 있으면 마지막 attemptNo + 1")
         void nextAttempt() {
-            given(reservationRepository.findTopByReferralIdOrderByAttemptNoDesc(referral.getId()))
-                    .willReturn(Optional.of(reservation(referral, 2)));
+            given(reservationRepository.findMaxAttemptNoIncludingDeleted(referral.getId())).willReturn(2);
 
             Reservation created = reservationService.createReservation(UUID.randomUUID(), referral, reservationRequest());
 
@@ -170,49 +168,6 @@ class ReservationServiceTest {
 
             assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservationId, RoleType.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
-        }
-    }
-
-    @Nested
-    @DisplayName("deleteReservation")
-    class DeleteReservation {
-        @Test
-        @DisplayName("본인의 종료된 예약은 soft delete된다")
-        void success() {
-            Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
-            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
-            updates.register(reservation);
-
-            reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.REQUESTER);
-
-            assertThat(reservation.getDeletedAt()).isNotNull();
-            assertThat(reservation.getDeletedBy()).isEqualTo(USER_ID);
-            // 조건부 UPDATE 뒤 detached 엔티티를 다시 save(merge)하면 안 된다
-            verify(reservationRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("다른 사람의 예약은 삭제할 수 없다")
-        void otherUser() {
-            Reservation reservation = reservationIn(ReservationStatus.FAILED, referral);
-            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
-            updates.register(reservation);
-
-            assertErrorCode(() -> reservationService.deleteReservation(OTHER_USER_ID, reservation.getId(), RoleType.REQUESTER),
-                    ErrorCode.RESERVATION_NOT_FOUND);
-            assertThat(reservation.getDeletedAt()).isNull();
-        }
-
-        @Test
-        @DisplayName("진행 중인 예약은 삭제할 수 없다")
-        void invalidStatus() {
-            Reservation reservation = reservationIn(ReservationStatus.CONFIRMED, referral);
-            given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
-            updates.register(reservation);
-
-            assertErrorCode(() -> reservationService.deleteReservation(USER_ID, reservation.getId(), RoleType.REQUESTER),
-                    ErrorCode.INVALID_RESERVATION_STATUS);
-            assertThat(reservation.getDeletedAt()).isNull();
         }
     }
 

@@ -12,6 +12,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,6 +31,16 @@ public interface ExaminationRepository extends JpaRepository<Examination, UUID> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from Examination e where e.referralId = :referralId")
     Optional<Examination> findByReferralIdForUpdate(@Param("referralId") UUID referralId);
+
+    // 여러 의뢰의 검사 연결 예약·상태를 한 번에 조회한다 (장애 영향 의뢰 목록의 수동 확인 표시용, 읽기 전용·잠금 없음)
+    // 의뢰당 검사는 1건(referral_id UNIQUE)이므로 의뢰 ID마다 최대 1행이다. 검사가 없는 의뢰는 결과에 없다
+    @Query("""
+            select new healoworld.referral_service.infrastructure.repository.ExaminationProgress(
+                       e.referralId, e.reservationId, e.status)
+              from Examination e
+             where e.referralId in :referralIds
+            """)
+    List<ExaminationProgress> findProgressByReferralIds(@Param("referralIds") Collection<UUID> referralIds);
 
     // 검사기관별 검사 목록 조회
     Page<Examination> findByExamInstitutionId(

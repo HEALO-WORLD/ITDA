@@ -5,6 +5,14 @@
 # mem_limit: JVM은 이 한도의 75%를 최대 힙으로 잡는다(Dockerfile의 MaxRAMPercentage)
 #            한도가 없으면 Docker 전체 메모리 기준으로 힙을 잡아 서비스끼리 메모리를 다투게 된다
 
+# 컨테이너 로그 크기 제한: 기본(json-file)은 제한 없이 쌓여 디스크를 채운다
+# 컨테이너당 10MB × 3개까지만 보관하고 오래된 것부터 지운다
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-app-env: &app-env
   TZ: Asia/Seoul
   DB_HOST: postgres
@@ -32,10 +40,16 @@ services:
       timeout: 3s
       retries: 20
 
+  # 앱이 컨테이너로 뜨므로 서비스 이름으로 수집하는 설정으로 교체 (같은 컨테이너 경로라 기존 마운트를 덮어쓴다)
+  prometheus:
+    volumes:
+      - ./docker/prometheus/prometheus.app.yml:/etc/prometheus/prometheus.yml
+
   eureka-server:
     build: ./eureka-server
     image: itda/eureka-server:local
     container_name: itda-eureka-server
+    logging: *default-logging
     mem_limit: 450m
     ports:
       - "127.0.0.1:8761:8761"
@@ -52,6 +66,7 @@ services:
     build: ./institution-service
     image: itda/institution-service:local
     container_name: itda-institution-service
+    logging: *default-logging
     mem_limit: 700m
     ports:
       - "127.0.0.1:8081:8081"
@@ -72,6 +87,7 @@ services:
     build: ./slot-service
     image: itda/slot-service:local
     container_name: itda-slot-service
+    logging: *default-logging
     mem_limit: 700m
     ports:
       - "127.0.0.1:8082:8082"
@@ -89,6 +105,7 @@ services:
     build: ./referral-service
     image: itda/referral-service:local
     container_name: itda-referral-service
+    logging: *default-logging
     mem_limit: 700m
     ports:
       - "127.0.0.1:8083:8083"
@@ -107,9 +124,11 @@ services:
     build: ./gateway-service
     image: itda/gateway-service:local
     container_name: itda-gateway-service
+    logging: *default-logging
     mem_limit: 450m
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
+      - "127.0.0.1:18080:18080"   # 로컬 Prometheus(host.docker.internal) 수집용
     environment:
       TZ: Asia/Seoul
       EUREKA_URL: http://eureka-server:8761/eureka/
@@ -124,7 +143,7 @@ services:
       referral-service:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-fs", "http://localhost:8080/actuator/health" ]
+      test: [ "CMD", "curl", "-fs", "http://localhost:18080/actuator/health" ]
       interval: 10s
       timeout: 3s
       retries: 18

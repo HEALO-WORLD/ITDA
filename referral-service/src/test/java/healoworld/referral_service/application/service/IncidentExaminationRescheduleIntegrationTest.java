@@ -8,6 +8,7 @@ import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
@@ -30,6 +31,8 @@ import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepo
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
+import healoworld.referral_service.presentation.dto.request.IncidentReferralSearchCondition;
+import healoworld.referral_service.presentation.dto.response.IncidentReferralResponse;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
 import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.AfterEach;
@@ -94,6 +97,7 @@ import static org.mockito.Mockito.doAnswer;
         ReservationService.class,
         ReferralHistoryService.class,
         SlotCommandOutbox.class,
+        EquipmentIncidentQueryService.class,
         QuerydslConfig.class,
         IncidentExaminationRescheduleIntegrationTest.JsonConfig.class
 })
@@ -119,6 +123,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
     // 동시성 테스트에서 검사 시작·장애 처리를 원하는 지점에서 멈추기 위해 스파이로 둔다 (기본은 실제 Repository를 그대로 호출)
     @MockitoSpyBean private ExaminationRepository examinationRepository;
     @Autowired private ExaminationService examinationService;
+    @Autowired private EquipmentIncidentQueryService equipmentIncidentQueryService;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private EquipmentIncidentRepository equipmentIncidentRepository;
     @Autowired private IncidentReferralRepository incidentReferralRepository;
@@ -239,6 +244,111 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
         assertThat(histories()).hasSize(historyCount);
         // 같은 작업을 다시 처리하려 해도 이미 끝난 작업이라 선점되지 않는다 (멱등)
         assertThat(incidentProcessingService.process(task.getId())).isEqualTo(Outcome.NOT_CLAIMED);
+    }
+
+    // ---------- 영향 의뢰 조회: 검사 진행 중 장애의 수동 확인 표시 (manualReviewRequired) ----------
+    // 실제 장애 처리 결과(작업 SUCCEEDED + 결과 코드)와 조회 시점의 검사 상태로 계산되는지 확인한다
+
+    @Test
+    @DisplayName("수동 확인: SCHEDULED 검사는 기존처럼 차단·재조정되고 manualReviewRequired는 false")
+    void manualReviewFalseWhenScheduled() {
+        IncidentReferral task = blockByIncident();
+
+        IncidentReferralResponse item = affectedReferral(RoleType.ADMIN, UUID.randomUUID());
+
+        assertThat(item.id()).isEqualTo(task.getId());
+        assertThat(item.resultCode()).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
+        assertThat(reservationStatus(firstReservationId)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(referralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(item.manualReviewRequired()).isFalse();
+    }
+
+    @Test
+    @DisplayName("수동 확인: 검사 진행 중 장애는 상태를 바꾸지 않고 true, 검사가 COMPLETED가 되면 다시 조회할 때 false")
+    void manualReviewWhileInProgressThenCompleted() {
+        moveExaminationTo(ExaminationStatus.IN_PROGRESS);
+        IncidentReferral task = blockByIncident();
+        UUID incidentInstitutionId = incidentInstitutionId();
+
+        IncidentReferralResponse forExaminer = affectedReferral(RoleType.EXAMINER, incidentInstitutionId);
+        IncidentReferralResponse forAdmin = affectedReferral(RoleType.ADMIN, UUID.randomUUID());
+
+        // 자동 처리 작업은 끝났지만(SUCCEEDED) 담당자 확인이 필요하다
+        assertThat(forExaminer.processingStatus()).isEqualTo(IncidentProcessingStatus.SUCCEEDED);
+        assertThat(forExaminer.resultCode()).isEqualTo(IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        assertThat(forExaminer.manualReviewRequired()).isTrue();
+        assertThat(forAdmin.manualReviewRequired()).isTrue();
+        // 예약·의뢰·검사 상태는 그대로이고 재조정 알림도 없다
+        assertThat(reservationStatus(firstReservationId)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(referralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(examinationStatus()).isEqualTo(ExaminationStatus.IN_PROGRESS);
+        assertThat(notificationCount()).isZero();
+
+        // 검사기관이 검사를 완료하면 작업 데이터는 그대로지만 수동 확인 대상에서 빠진다
+        Examination examination = examinationRepository.findByReferralId(referralId).orElseThrow();
+        assertThat(examinationRepository.completeIfInProgress(examination.getId(), LocalDateTime.now())).isEqualTo(1);
+
+        IncidentReferralResponse afterCompleted = affectedReferral(RoleType.EXAMINER, incidentInstitutionId);
+        assertThat(afterCompleted.id()).isEqualTo(task.getId());
+        assertThat(afterCompleted.processingStatus()).isEqualTo(IncidentProcessingStatus.SUCCEEDED);
+        assertThat(afterCompleted.resultCode()).isEqualTo(IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        assertThat(afterCompleted.manualReviewRequired()).isFalse();
+    }
+
+    @Test
+    @DisplayName("수동 확인: 이미 COMPLETED인 검사는 SKIPPED_COMPLETED이고 false")
+    void manualReviewFalseWhenCompleted() {
+        moveExaminationTo(ExaminationStatus.COMPLETED);
+        blockByIncident();
+
+        IncidentReferralResponse item = affectedReferral(RoleType.EXAMINER, incidentInstitutionId());
+
+        assertThat(item.resultCode()).isEqualTo(IncidentProcessingService.SKIPPED_COMPLETED);
+        assertThat(item.manualReviewRequired()).isFalse();
+    }
+
+    @Test
+    @DisplayName("수동 확인: 같은 장애 이벤트가 다시 와도 작업은 1건이고 예약은 차단되지 않으며 true가 한 번만 표시된다")
+    void manualReviewWithDuplicateIncidentEvent() {
+        moveExaminationTo(ExaminationStatus.IN_PROGRESS);
+        UUID sourceEventId = UUID.randomUUID();
+        UUID ownerInstitutionId = UUID.randomUUID();
+        LocalDateTime occurredAt = LocalDateTime.now();
+        UUID incidentId = equipmentIncidentService.register(sourceEventId, equipmentId, ownerInstitutionId,
+                "가상 장애 사유", occurredAt, startsAt.minusHours(1), startsAt.plusHours(2));
+        incidentIds.add(incidentId);
+        assertThat(equipmentIncidentService.createPendingReferrals(incidentId)).isEqualTo(1);
+        // 같은 이벤트 재전달: 같은 장애 ID를 돌려받고 새 작업은 만들지 않는다
+        assertThat(equipmentIncidentService.register(sourceEventId, equipmentId, ownerInstitutionId,
+                "가상 장애 사유", occurredAt, startsAt.minusHours(1), startsAt.plusHours(2))).isEqualTo(incidentId);
+        assertThat(equipmentIncidentService.createPendingReferrals(incidentId)).isZero();
+        UUID taskId = incidentReferralRepository.findAll().stream()
+                .filter(t -> t.getIncident().getId().equals(incidentId)).findFirst().orElseThrow().getId();
+        assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.SUCCEEDED);
+
+        var page = equipmentIncidentQueryService.getIncidentReferrals(RoleType.EXAMINER, ownerInstitutionId,
+                incidentId, new IncidentReferralSearchCondition(null, 0, 10));
+
+        assertThat(page.contents()).singleElement().satisfies(item -> {
+            assertThat(item.resultCode()).isEqualTo(IncidentProcessingService.SKIPPED_IN_PROGRESS);
+            assertThat(item.manualReviewRequired()).isTrue();
+        });
+        assertThat(reservationStatus(firstReservationId)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(blockedHistoryCount()).isZero();
+    }
+
+    // 가장 최근 장애의 영향 의뢰 목록에서 이 의뢰의 항목 하나를 조회한다
+    private IncidentReferralResponse affectedReferral(RoleType role, UUID requesterInstitutionId) {
+        UUID incidentId = incidentIds.getLast();
+        return equipmentIncidentQueryService.getIncidentReferrals(role, requesterInstitutionId, incidentId,
+                        new IncidentReferralSearchCondition(null, 0, 10)).contents().stream()
+                .filter(item -> item.referralId().equals(referralId))
+                .findFirst().orElseThrow();
+    }
+
+    // 가장 최근 장애를 등록한 장비 소유 기관 (EXAMINER로 조회할 때 쓴다)
+    private UUID incidentInstitutionId() {
+        return equipmentIncidentRepository.findById(incidentIds.getLast()).orElseThrow().getInstitutionId();
     }
 
     // ---------- 4·5·6. 재예약 409, 새 예약·Outbox 미생성 ----------
