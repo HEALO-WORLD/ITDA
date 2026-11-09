@@ -206,4 +206,23 @@ public interface IncidentReferralRepository extends JpaRepository<IncidentReferr
             @Param("nextRetryAt") LocalDateTime nextRetryAt,
             @Param("now") LocalDateTime now
     );
+
+
+    // =========================================================
+    // 6. 장비 장애 현황 집계
+    // =========================================================
+
+    // 검사기관의 전체 장애 이력에서 영향 대상으로 탐지된 의뢰 수 (누적)
+    // - 기관 범위는 장애(incident)의 institutionId로 제한한다 (작업에는 기관 ID가 없음)
+    // - 같은 의뢰가 여러 장애·여러 예약으로 등록돼도 한 번만 센다 (count distinct)
+    // - 처리 상태(PENDING·PROCESSING·SUCCEEDED·FAILED)와 무관하게 모두 포함한다
+    //   실제 예약 차단 성공 건수가 아니라 영향 대상으로 탐지된 의뢰 수다
+    @Query("""
+            SELECT COUNT(DISTINCT ir.referralId)
+            FROM IncidentReferral ir
+            WHERE ir.incident.institutionId = :institutionId
+            """)
+    long countAffectedReferrals(
+            @Param("institutionId") UUID institutionId
+    );
 }

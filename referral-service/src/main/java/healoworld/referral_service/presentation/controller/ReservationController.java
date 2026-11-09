@@ -54,23 +54,8 @@ public class ReservationController {
         return ResponseEntity.ok(ApiResponse.ok("예약 목록 조회가 완료되었습니다.", response));
     }
 
-    @Operation(summary = "예약 삭제",
-            description = """
-                    CANCELED, BLOCKED, FAILED 상태의 예약만 soft delete 합니다.
-                    의뢰 작성자 본인 또는 관리자만 가능합니다.
-                    
-                    - 404 RESERVATION_NOT_FOUND: 예약이 없거나 권한 없음
-                    - 409 INVALID_RESERVATION_STATUS: 삭제할 수 없는 상태
-                    """)
-    @DeleteMapping("/{reservationId}")
-    public ResponseEntity<ApiResponse<Void>> deleteReservation(
-            @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
-            @Parameter(description = "예약 ID") @PathVariable("reservationId") UUID reservationId
-    ) {
-        reservationService.deleteReservation(userId, reservationId, role);
-        return ResponseEntity.ok(ApiResponse.ok("삭제가 완료되었습니다.", null));
-    }
+    // 예약 삭제 API(DELETE /{reservationId})는 제공하지 않는다 (예약 이력 보존). 요청하면 Spring이 405로 응답한다
+    // 예약을 끝내려면 아래 취소 API를 사용한다
 
     @PatchMapping("/{reservationId}/cancel")
     public ResponseEntity<ApiResponse<Void>> cancelReservation(

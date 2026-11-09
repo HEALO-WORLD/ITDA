@@ -114,4 +114,26 @@ public interface ReferralRepository extends JpaRepository<Referral, UUID>, Refer
                      @Param("userId") UUID userId,
                      @Param("now") LocalDateTime now,
                      @Param("allowed") Collection<ReferralStatus> allowed);
+
+    // 장비 장애 현황 집계: 검사기관의 현재 재조정 필요 의뢰 수
+    // - 대상: 지금 NEEDS_RESCHEDULE인 의뢰 (삭제된 의뢰 제외). 의뢰마다 한 행이므로 같은 의뢰는 한 번만 센다
+    // - 기관: 의뢰의 가장 최근 BLOCKED 예약에 남은 검사기관 스냅샷(exam_institution_id)
+    //   NEEDS_RESCHEDULE는 항상 예약 차단(BLOCKED)으로 시작하고, 재예약 실패는 차단을 새로 만들지 않으므로 가장 최근 차단이 현재 재조정의 원인이다
+    //   (장애 처리·SlotsBlocked 두 경로 모두 예약을 BLOCKED로 바꾸므로 IncidentReferral 대신 예약을 기준으로 한다)
+    // - 최근 순서: 예약 시도 번호(attempt_no)가 큰 것. 과거 결함으로 같은 번호가 두 번 쓰인 경우에는 나중에 만들어진 예약(created_at)
+    //   (번호 재사용은 앞 예약이 삭제된 뒤에만 생기므로 생성 시각 순서가 실제 순서다. 생성 시각까지 같으면 순서를 판단할 수 없다)
+    // - native SQL을 쓰는 이유: 소프트 삭제된 BLOCKED 예약도 차단 이력으로 봐야 하는데,
+    //   Reservation의 @SQLRestriction("deleted_at IS NULL")이 JPQL에는 자동으로 붙어 삭제된 예약이 빠진다. DISTINCT ON도 PostgreSQL 문법이다
+    @Query(value = """
+            select count(*)
+              from (select distinct on (r.referral_id) r.referral_id, r.exam_institution_id
+                      from p_reservations r
+                      join p_referrals rf on rf.id = r.referral_id
+                     where r.reservation_status = 'BLOCKED'
+                       and rf.referral_status = 'NEEDS_RESCHEDULE'
+                       and rf.deleted_at is null
+                     order by r.referral_id, r.attempt_no desc, r.created_at desc nulls last) latest
+             where latest.exam_institution_id = :institutionId
+            """, nativeQuery = true)
+    long countNeedsRescheduleByLatestBlockedInstitution(@Param("institutionId") UUID institutionId);
 }

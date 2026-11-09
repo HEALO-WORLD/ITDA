@@ -39,4 +39,19 @@ public interface EquipmentIncidentRepository extends JpaRepository<EquipmentInci
     List<UUID> findOverlappingIds(@Param("equipmentId") UUID equipmentId,
                                   @Param("startTime") LocalDateTime startTime,
                                   @Param("endTime") LocalDateTime endTime);
+
+    // 기준 시각(now)에 중단 구간 안에 있는 검사기관의 장비 수 (장비 장애 현황 집계용)
+    // 시작 시각은 포함하고 종료 시각은 포함하지 않는다 (startAt <= now < endAt)
+    // 같은 장비의 장애가 여러 건이어도 한 대로 센다 (count distinct)
+    // 실제 고장·복구 상태가 아니라 등록된 중단 구간 기준이며, Slot의 원본 중단 이력이 Kafka로 늦게 반영되면 잠시 차이가 날 수 있다
+    // now는 호출하는 쪽이 정한 기준 시각을 넘긴다 (여러 지표를 같은 시각으로 집계하고 테스트에서 고정하기 위함)
+    @Query("""
+            select count(distinct i.equipmentId)
+              from EquipmentIncident i
+             where i.institutionId = :institutionId
+               and i.startAt <= :now
+               and i.endAt > :now
+            """)
+    long countEquipmentsInDowntime(@Param("institutionId") UUID institutionId,
+                                   @Param("now") LocalDateTime now);
 }
