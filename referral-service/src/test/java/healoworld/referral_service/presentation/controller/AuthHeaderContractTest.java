@@ -12,6 +12,7 @@ import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.outbox.OutboxEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -91,9 +92,13 @@ class AuthHeaderContractTest {
     @MockitoBean
     private InstitutionClient institutionClient;
 
-    // ReferralService의 재예약 검사 상태 검증용
+    // ReferralService의 재예약 검사 상태 검증용 (ReservationService의 취소 검사 상태 확인에도 쓰인다)
     @MockitoBean
     private ExaminationRepository examinationRepository;
+
+    // ReservationService의 취소 시 예약 행 잠금용
+    @MockitoBean
+    private IncidentReservationRepository incidentReservationRepository;
 
     // 메인 클래스의 @EnableJpaAuditing이 웹 슬라이스 테스트에서도 JPA 메타모델을 찾기 때문에 대체한다
     @MockitoBean

@@ -2,6 +2,8 @@ package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.application.service.IncidentProcessingService.Outcome;
 import healoworld.referral_service.domain.entity.*;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
@@ -14,6 +16,7 @@ import healoworld.referral_service.infrastructure.repository.*;
 import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -21,6 +24,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -36,11 +40,14 @@ import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
- * 예약 취소와 장비 장애 처리의 동시성 통합 테스트.
+ * 예약 취소와 장비 장애 처리·검사 시작/완료의 동시성 통합 테스트.
  * <p>
- * - 실제 ReservationService / IncidentProcessingService 호출
+ * - 실제 ReservationService / IncidentProcessingService / ExaminationService 호출
+ * - 확정 예약은 실제 예약 확정(SlotBooked)처럼 같은 예약에 연결된 SCHEDULED 검사와 함께 만든다
+ *   (취소는 검사가 SCHEDULED일 때만 허용하고, 검사가 없으면 거부한다)
  * - PostgreSQL 테스트 DB 사용
  * - 각 스레드는 독립 트랜잭션으로 처리
  * - Kafka / Gateway를 거치는 E2E 테스트는 아님
@@ -102,6 +109,15 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private ExaminationRepository examinationRepository;
+
+    @Autowired
+    private ExaminationService examinationService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     private final List<UUID> referralIds = new ArrayList<>();
     private final List<UUID> reservationIds = new ArrayList<>();
     private final List<UUID> incidentIds = new ArrayList<>();
@@ -113,7 +129,9 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
             UUID userId,
             UUID requesterInstitutionId,
             UUID equipmentId,
-            LocalDateTime startsAt
+            LocalDateTime startsAt,
+            UUID examinationId,
+            UUID examInstitutionId
     ) {
     }
 
@@ -126,8 +144,17 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
      * <p>
      * 예약 취소는 검사 시작 2시간 전까지만 가능하므로
      * 검사 시작일을 현재보다 3일 뒤로 설정한다.
+     * 실제 예약 확정(SlotBooked)처럼 이 예약에 연결된 SCHEDULED 검사도 함께 만든다.
      */
     private Booking confirmedBooking() {
+        return booking(true);
+    }
+
+    /**
+     * confirmReferral이 false면 예약만 확정되고 의뢰는 PENDING인 상태(Saga 진행 중)로 만든다.
+     * 취소 도중 의뢰 변경이 실패하는 롤백 상황을 실제 DB로 재현하기 위해 쓴다.
+     */
+    private Booking booking(boolean confirmReferral) {
 
         LocalDateTime startsAt = LocalDateTime.now()
                 .plusDays(3)
@@ -139,6 +166,7 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
         UUID userId = UUID.randomUUID();
         UUID requesterInstitutionId = UUID.randomUUID();
         UUID equipmentId = UUID.randomUUID();
+        UUID examInstitutionId = UUID.randomUUID();
 
         Booking booking = tx().execute(status -> {
 
@@ -156,7 +184,7 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
                     referral,
                     1,
                     UUID.randomUUID(),
-                    UUID.randomUUID(),
+                    examInstitutionId,
                     equipmentId,
                     startsAt,
                     startsAt,
@@ -169,7 +197,13 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
             reservationRepository.save(reservation);
 
             referral.assignReservation(reservation.getId());
-            referral.confirm();
+            if (confirmReferral) {
+                referral.confirm();
+            }
+
+            Examination examination = examinationRepository.save(
+                    Examination.schedule(referral.getId(), reservation.getId(), examInstitutionId)
+            );
 
             return new Booking(
                     referral.getId(),
@@ -177,7 +211,9 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
                     userId,
                     requesterInstitutionId,
                     equipmentId,
-                    startsAt
+                    startsAt,
+                    examination.getId(),
+                    examInstitutionId
             );
         });
 
@@ -506,6 +542,290 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
         }
     }
 
+    // =========================================================
+    // 검사 상태에 따른 취소 제한 (SCHEDULED일 때만 취소)
+    // =========================================================
+
+    private void startExamination(Booking booking) {
+        examinationService.changeStatus(booking.examinationId(), booking.examInstitutionId(), RoleType.EXAMINER,
+                ExaminationStatus.IN_PROGRESS);
+    }
+
+    private void completeExamination(Booking booking) {
+        examinationService.changeStatus(booking.examinationId(), booking.examInstitutionId(), RoleType.EXAMINER,
+                ExaminationStatus.COMPLETED);
+    }
+
+    private ExaminationStatus examinationStatus(Booking booking) {
+        return examinationRepository.findById(booking.examinationId()).orElseThrow().getStatus();
+    }
+
+    private List<ReferralHistory> histories(Booking booking) {
+        return referralHistoryRepository.findAllByReferralIdOrderByOccurredAtAsc(booking.referralId());
+    }
+
+    private static void assertErrorCode(Throwable error, ErrorCode expected) {
+        assertThat(error).isInstanceOf(BaseException.class);
+        assertThat(((BaseException) error).getErrorCode()).isEqualTo(expected);
+    }
+
+    // 취소가 거부됐을 때: 예약·의뢰는 확정 그대로, ReleaseSlot·이력은 생기지 않는다
+    private void assertCancelHadNoEffect(Booking booking, int historyCountBefore) {
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(releaseSlotCount(booking)).isZero();
+        assertThat(histories(booking)).hasSize(historyCountBefore);
+    }
+
+    @Test
+    @DisplayName("A. SCHEDULED 검사의 예약은 취소되고 검사는 그대로이며 ReleaseSlot 1건·취소 이력이 남는다")
+    void cancelScheduledExamination() {
+        Booking booking = confirmedBooking();
+
+        cancel(booking);
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CANCELED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CANCELED);
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.SCHEDULED);
+        assertThat(releaseSlotCount(booking)).isEqualTo(1);
+        assertThat(histories(booking)).singleElement().satisfies(history -> {
+            assertThat(history.getFromStatus()).isEqualTo(ReferralStatus.CONFIRMED);
+            assertThat(history.getToStatus()).isEqualTo(ReferralStatus.CANCELED);
+            assertThat(history.getReason()).isEqualTo(Reason.CANCELED_BY_REQUESTER);
+        });
+    }
+
+    @Test
+    @DisplayName("B. 검사가 시작된(IN_PROGRESS) 뒤의 취소는 409 EXAMINATION_CANCEL_NOT_ALLOWED이고 아무것도 바뀌지 않는다")
+    void cancelRejectedWhenInProgress() {
+        Booking booking = confirmedBooking();
+        startExamination(booking);
+        int historyCount = histories(booking).size();
+
+        assertErrorCode(catchThrowable(() -> cancel(booking)), ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
+
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.IN_PROGRESS);
+        assertCancelHadNoEffect(booking, historyCount);
+    }
+
+    @Test
+    @DisplayName("C. 검사가 완료된(COMPLETED) 뒤의 취소는 409이고 아무것도 바뀌지 않는다")
+    void cancelRejectedWhenCompleted() {
+        Booking booking = confirmedBooking();
+        startExamination(booking);
+        completeExamination(booking);
+        int historyCount = histories(booking).size();
+
+        assertErrorCode(catchThrowable(() -> cancel(booking)), ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
+
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.COMPLETED);
+        assertCancelHadNoEffect(booking, historyCount);
+    }
+
+    @Test
+    @DisplayName("D. 예약을 CANCELED로 바꾼 뒤 의뢰 변경이 실패하면 예약 변경까지 롤백되고 ReleaseSlot·이력이 남지 않는다")
+    void cancelRollsBackWhenReferralUpdateFails() {
+        Booking booking = booking(false);   // 예약은 확정, 의뢰는 PENDING (의뢰 취소 조건부 UPDATE가 0건이 된다)
+
+        assertErrorCode(catchThrowable(() -> cancel(booking)), ErrorCode.INVALID_REFERRAL_STATUS);
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);   // 이미 바꾼 예약도 롤백됨
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.PENDING);
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.SCHEDULED);
+        assertThat(releaseSlotCount(booking)).isZero();
+        assertThat(histories(booking)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("검사가 없는 확정 예약은 상태를 확인할 수 없어 취소를 거부한다 (fail-closed)")
+    void cancelRejectedWithoutExamination() {
+        Booking booking = confirmedBooking();
+        tx().executeWithoutResult(status -> examinationRepository.deleteById(booking.examinationId()));
+
+        assertErrorCode(catchThrowable(() -> cancel(booking)), ErrorCode.INVALID_RESERVATION_STATUS);
+        assertCancelHadNoEffect(booking, 0);
+    }
+
+    @Test
+    @DisplayName("취소 우선: 취소된 예약의 검사는 시작할 수 없고 SCHEDULED로 남는다")
+    void startRejectedAfterCancel() {
+        Booking booking = confirmedBooking();
+        cancel(booking);
+
+        assertErrorCode(catchThrowable(() -> startExamination(booking)), ErrorCode.EXAMINATION_START_NOT_ALLOWED);
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.SCHEDULED);
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CANCELED);
+    }
+
+    // ---------- 잠금 순서를 고정한 결정적 경쟁 (한쪽이 커밋 전 잠금을 쥔 동안 다른 쪽이 기다리는지) ----------
+
+    @Test
+    @DisplayName("[결정적] 취소가 의뢰 잠금을 쥔 동안 검사 시작은 기다렸다가, 취소 커밋 후 시작이 거부된다")
+    void startWaitsForCancelThenRejected() throws Exception {
+        Booking booking = confirmedBooking();
+        CountDownLatch cancelDone = new CountDownLatch(1);
+        CountDownLatch releaseCancel = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            // 취소를 바깥 트랜잭션 안에서 실행하고 커밋을 늦춘다 (잠금을 쥔 채 대기)
+            Future<?> cancelTx = executor.submit(() -> tx().executeWithoutResult(status -> {
+                cancel(booking);
+                cancelDone.countDown();
+                await(releaseCancel);
+            }));
+            assertThat(cancelDone.await(10, TimeUnit.SECONDS)).isTrue();
+
+            Future<Throwable> start = executor.submit(() -> catchThrowable(() -> startExamination(booking)));
+            waitUntilSomeSessionWaitsForLock();
+            assertThat(start.isDone()).as("검사 시작은 취소의 잠금이 풀릴 때까지 기다려야 한다").isFalse();
+
+            releaseCancel.countDown();
+            cancelTx.get(30, TimeUnit.SECONDS);
+            assertErrorCode(start.get(30, TimeUnit.SECONDS), ErrorCode.EXAMINATION_START_NOT_ALLOWED);
+        } finally {
+            releaseCancel.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.SCHEDULED);
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CANCELED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CANCELED);
+        assertThat(releaseSlotCount(booking)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("[결정적] 검사 시작이 잠금을 쥔 동안 취소는 기다렸다가, 시작 커밋 후 409로 거부된다")
+    void cancelWaitsForStartThenRejected() throws Exception {
+        Booking booking = confirmedBooking();
+        CountDownLatch startDone = new CountDownLatch(1);
+        CountDownLatch releaseStart = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> startTx = executor.submit(() -> tx().executeWithoutResult(status -> {
+                startExamination(booking);
+                startDone.countDown();
+                await(releaseStart);
+            }));
+            assertThat(startDone.await(10, TimeUnit.SECONDS)).isTrue();
+
+            Future<Throwable> cancelResult = executor.submit(() -> catchThrowable(() -> cancel(booking)));
+            waitUntilSomeSessionWaitsForLock();
+            assertThat(cancelResult.isDone()).as("취소는 검사 시작의 잠금이 풀릴 때까지 기다려야 한다").isFalse();
+
+            releaseStart.countDown();
+            startTx.get(30, TimeUnit.SECONDS);
+            assertErrorCode(cancelResult.get(30, TimeUnit.SECONDS), ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
+        } finally {
+            releaseStart.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.IN_PROGRESS);
+        assertCancelHadNoEffect(booking, 0);
+    }
+
+    // ---------- 실제 동시 실행 (반복) ----------
+
+    @RepeatedTest(5)
+    @DisplayName("[동시] 검사 시작과 취소를 같은 순간에 시작해도 한쪽만 성공하고, 시작된 검사의 예약이 취소되지 않는다")
+    void concurrentStartAndCancel() throws Exception {
+        Booking booking = confirmedBooking();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(1);
+        Throwable cancelError;
+        Throwable startError;
+        try {
+            Future<Throwable> cancelFuture = executor.submit(() -> {
+                ready.await();
+                return catchThrowable(() -> cancel(booking));
+            });
+            Future<Throwable> startFuture = executor.submit(() -> {
+                ready.await();
+                return catchThrowable(() -> startExamination(booking));
+            });
+            ready.countDown();
+            cancelError = cancelFuture.get(30, TimeUnit.SECONDS);
+            startError = startFuture.get(30, TimeUnit.SECONDS);
+        } finally {
+            ready.countDown();
+            executor.shutdownNow();
+        }
+
+        String state = "cancelError=" + cancelError + ", startError=" + startError + ", reservation="
+                + reservationStatus(booking) + ", examination=" + examinationStatus(booking);
+        assertThat(cancelError == null ^ startError == null).as("정확히 한쪽만 성공해야 한다: " + state).isTrue();
+        if (cancelError == null) {
+            assertErrorCode(startError, ErrorCode.EXAMINATION_START_NOT_ALLOWED);
+            assertThat(examinationStatus(booking)).as(state).isEqualTo(ExaminationStatus.SCHEDULED);
+            assertThat(reservationStatus(booking)).as(state).isEqualTo(ReservationStatus.CANCELED);
+            assertThat(releaseSlotCount(booking)).as(state).isEqualTo(1);
+        } else {
+            assertErrorCode(cancelError, ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
+            assertThat(examinationStatus(booking)).as(state).isEqualTo(ExaminationStatus.IN_PROGRESS);
+            assertCancelHadNoEffect(booking, 0);
+        }
+    }
+
+    @RepeatedTest(3)
+    @DisplayName("[동시] 검사 완료와 취소를 같은 순간에 시작해도 취소는 항상 거부되고 검사는 완료된다")
+    void concurrentCompleteAndCancel() throws Exception {
+        Booking booking = confirmedBooking();
+        startExamination(booking);
+        int historyCount = histories(booking).size();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(1);
+        Throwable cancelError;
+        Throwable completeError;
+        try {
+            Future<Throwable> cancelFuture = executor.submit(() -> {
+                ready.await();
+                return catchThrowable(() -> cancel(booking));
+            });
+            Future<Throwable> completeFuture = executor.submit(() -> {
+                ready.await();
+                return catchThrowable(() -> completeExamination(booking));
+            });
+            ready.countDown();
+            cancelError = cancelFuture.get(30, TimeUnit.SECONDS);
+            completeError = completeFuture.get(30, TimeUnit.SECONDS);
+        } finally {
+            ready.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(completeError).isNull();
+        assertErrorCode(cancelError, ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.COMPLETED);
+        assertCancelHadNoEffect(booking, historyCount);
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(30, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("대기 시간 초과");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    // 다른 세션이 행 잠금을 기다리기 시작할 때까지 기다린다 (테스트 DB의 pg_stat_activity 확인)
+    private void waitUntilSomeSessionWaitsForLock() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Integer waiting = jdbcTemplate.queryForObject("""
+                    select count(*) from pg_stat_activity
+                     where datname = current_database() and wait_event_type = 'Lock'
+                    """, Integer.class);
+            if (waiting != null && waiting > 0) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("잠금을 기다리는 세션이 10초 안에 나타나지 않았다");
+    }
+
     /**
      * 테스트가 만든 데이터만 정리.
      */
@@ -541,6 +861,10 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
         incidentReferralRepository.deleteAllById(taskIds);
 
         equipmentIncidentRepository.deleteAllById(incidentIds);
+
+        for (UUID referralId : referralIds) {
+            examinationRepository.findByReferralId(referralId).ifPresent(examinationRepository::delete);
+        }
 
         reservationRepository.deleteAllById(reservationIds);
 
