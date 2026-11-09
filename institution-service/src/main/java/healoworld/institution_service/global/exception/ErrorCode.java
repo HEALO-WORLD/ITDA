@@ -25,7 +25,7 @@ public enum ErrorCode {
     DUPLICATE_CARE_INSTITUTION_CODE(HttpStatus.CONFLICT, "이미 등록된 요양기관기호입니다."),
     INSTITUTION_HAS_ACTIVE_PARTNERSHIP(HttpStatus.CONFLICT, "진행 중이거나 활성 상태인 협약이 있어 삭제할 수 없습니다."),
     INSTITUTION_HAS_USERS(HttpStatus.CONFLICT, "소속 사용자가 있어 삭제할 수 없습니다."),
-    
+
     // partnership
     PARTNERSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "협약을 찾을 수 없습니다."),
     INVALID_PARTNERSHIP_STATUS(HttpStatus.CONFLICT, "현재 협약 상태에서는 처리할 수 없는 요청입니다."),
@@ -33,10 +33,14 @@ public enum ErrorCode {
     PARTNERSHIP_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "이미 요청 중이거나 체결된 협약이 있습니다."),
 
     // equipment
+    DUPLICATE_EQUIPMENT_NAME(HttpStatus.CONFLICT, "해당 기관에 같은 이름의 장비가 이미 등록되어 있습니다."),
     INSTITUTION_NOT_AVAILABLE(HttpStatus.CONFLICT, "활성 검사기관에만 장비를 등록할 수 있습니다."),
     DUPLICATE_EQUIPMENT_EXAM_TYPE(HttpStatus.CONFLICT, "이미 등록된 장비·검사 유형 연결입니다."),
     EQUIPMENT_NOT_AVAILABLE(HttpStatus.CONFLICT, "현재 검사에 사용할 수 없는 장비입니다."),
     OPERATING_HOURS_NOT_AVAILABLE(HttpStatus.CONFLICT, "해당 날짜에 설정된 장비 운영시간이 없습니다."),
+
+    // exam type
+    DUPLICATE_EXAM_TYPE(HttpStatus.CONFLICT, "동일한 이름과 검사 방식의 검사 유형이 이미 등록되어 있습니다."),
 
     // common
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "유효성 검사에 실패했습니다."),

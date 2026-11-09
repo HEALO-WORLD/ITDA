@@ -1,6 +1,7 @@
 package healoworld.slot_service.infrastructure.client;
 
 import healoworld.slot_service.global.dto.ApiResponse;
+import healoworld.slot_service.infrastructure.client.dto.EquipmentOwnerResponse;
 import healoworld.slot_service.infrastructure.client.dto.EquipmentSlotContextResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -22,6 +23,9 @@ public interface InstitutionClient {
             @RequestParam("date")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
     );
+
+    @GetMapping("/api/v1/internal/equipments/{equipmentId}/owner")
+    ApiResponse<EquipmentOwnerResponse> getEquipmentOwner(@PathVariable("equipmentId") UUID equipmentId);
 
     @GetMapping("/api/v1/internal/equipments/visible")
     ApiResponse<Set<UUID>> getVisibleEquipmentIds(

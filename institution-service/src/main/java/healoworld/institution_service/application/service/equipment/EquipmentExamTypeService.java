@@ -17,6 +17,8 @@ import healoworld.institution_service.presentation.dto.request.EquipmentExamType
 import healoworld.institution_service.presentation.dto.request.EquipmentExamTypeUpdateRequest;
 import healoworld.institution_service.presentation.dto.response.EquipmentExamTypeResponse;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class EquipmentExamTypeService {
+
+    private static final String UNIQUE_EQUIPMENT_EXAM_TYPE_CONSTRAINT = "uk_equipment_exam_type";
 
     private final EquipmentRepository equipmentRepository;
     private final ExamTypeRepository examTypeRepository;
@@ -74,7 +78,12 @@ public class EquipmentExamTypeService {
                 equipment, examType, request.getDurationMinutes()
         );
 
-        EquipmentExamType saved = equipmentExamTypeRepository.save(equipmentExamType);
+        EquipmentExamType saved;
+        try {
+            saved = equipmentExamTypeRepository.saveAndFlush(equipmentExamType);
+        } catch (DataIntegrityViolationException exception) {
+            throw translateConstraint(exception);
+        }
 
         return EquipmentExamTypeResponse.from(saved, examType);
     }
@@ -138,6 +147,17 @@ public class EquipmentExamTypeService {
         );
 
         return PagedResponse.from(responses);
+    }
+
+    private RuntimeException translateConstraint(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation
+                    && "23505".equals(violation.getSQLState())
+                    && UNIQUE_EQUIPMENT_EXAM_TYPE_CONSTRAINT.equals(violation.getConstraintName())) {
+                return new BaseException(ErrorCode.DUPLICATE_EQUIPMENT_EXAM_TYPE);
+            }
+        }
+        return exception;
     }
 
     private Equipment findOwnedEquipmentForUpdate(UUID equipmentId, UUID userInstitutionId) {

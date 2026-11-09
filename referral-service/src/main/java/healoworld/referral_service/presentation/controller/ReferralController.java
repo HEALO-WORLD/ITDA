@@ -67,6 +67,7 @@ public class ReferralController {
                     - 403 PARTNERSHIP_NOT_ACTIVE: 새 검사기관과 활성 협력 관계가 아님
                     - 404 REFERRAL_NOT_FOUND: 의뢰가 없거나 권한 없음
                     - 409 INVALID_REFERRAL_STATUS: NEEDS_RESCHEDULE 상태가 아님
+                    - 409 EXAMINATION_RESERVATION_NOT_CHANGEABLE: 검사가 이미 시작(IN_PROGRESS)되었거나 완료(COMPLETED)됨
                     - 503 INSTITUTION_SERVICE_UNAVAILABLE: 협력 관계를 확인할 수 없음 (institution-service 장애)
                     """)
     @PostMapping("/{referralId}/reschedule")

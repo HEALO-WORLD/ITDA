@@ -88,6 +88,9 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
     private ExaminationRepository examinationRepository;
 
     @Autowired
+    private ReferralHistoryRepository referralHistoryRepository;
+
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     // 현재 트랜잭션에 묶이는 공유 EntityManager (실패 주입 시 flush 용도)
@@ -110,6 +113,9 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
                 .filter(notification -> referralIds.contains(notification.getReferralId()))
                 .toList());
         examinationRepository.deleteAllById(examinationIds);
+        // 장애 처리로 남는 의뢰 이력(CONFIRMED → NEEDS_RESCHEDULE)은 예약을 참조하므로 예약보다 먼저 삭제
+        referralIds.forEach(id -> referralHistoryRepository.deleteAll(
+                referralHistoryRepository.findAllByReferralIdOrderByOccurredAtAsc(id)));
         incidentReferralRepository.deleteAll(incidentReferralRepository.findAll().stream()
                 .filter(task -> incidentIds.contains(task.getIncident().getId()))
                 .toList());
@@ -175,6 +181,13 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
                 .toList();
     }
 
+    // 장애 차단으로 남은 의뢰 이력 (RESERVATION_BLOCKED)
+    private List<ReferralHistory> blockedHistoriesFor(UUID referralId) {
+        return referralHistoryRepository.findAllByReferralIdOrderByOccurredAtAsc(referralId).stream()
+                .filter(history -> history.getReason() == Reason.RESERVATION_BLOCKED)
+                .toList();
+    }
+
     private void assertUnchanged(Booking booking) {
         assertThat(referral(booking.referralId()).getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
         assertThat(reservation(booking.reservationId()).getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
@@ -219,6 +232,17 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
         assertThat(notification.getType()).isEqualTo("RESCHEDULE_REQUIRED");
         assertThat(notification.isRead()).isFalse();
         assertThat(notification.getCreatedAt()).isNotNull();
+
+        // 같은 트랜잭션에서 차단 이력이 1건 남는다 (시스템 자동 처리라 changedBy 없음)
+        List<ReferralHistory> histories = blockedHistoriesFor(booking.referralId());
+        assertThat(histories).hasSize(1);
+        ReferralHistory history = histories.getFirst();
+        assertThat(history.getReferral().getId()).isEqualTo(booking.referralId());
+        assertThat(history.getReservation().getId()).isEqualTo(booking.reservationId());
+        assertThat(history.getFromStatus()).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(history.getToStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(history.getEventId()).isEqualTo(expectedSourceEventId);
+        assertThat(history.getChangedBy()).isNull();
     }
 
     @Test
@@ -232,6 +256,7 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
         assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.NOT_CLAIMED);
         assertThat(task(taskId).getProcessedAt()).isEqualTo(processedAt);
         assertThat(notificationsFor(booking.referralId())).hasSize(1);
+        assertThat(blockedHistoriesFor(booking.referralId())).hasSize(1);
     }
 
     @Test
@@ -247,6 +272,7 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
         assertThat(reservation(booking.reservationId()).getReservationStatus()).isEqualTo(ReservationStatus.BLOCKED);
         assertThat(task(taskId).getResultCode()).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
         assertThat(notificationsFor(booking.referralId())).hasSize(1);
+        assertThat(blockedHistoriesFor(booking.referralId())).hasSize(1);
     }
 
     @Test
@@ -262,6 +288,7 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
                 IncidentProcessingService.RESCHEDULE_REQUIRED, IncidentProcessingService.ALREADY_BLOCKED);
         assertThat(referral(booking.referralId()).getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
         assertThat(notificationsFor(booking.referralId())).hasSize(1);
+        assertThat(blockedHistoriesFor(booking.referralId())).hasSize(1);   // ALREADY_BLOCKED 쪽은 이력을 남기지 않는다
     }
 
     @Test
@@ -276,6 +303,7 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
         assertThat(task(secondTask).getResultCode()).isEqualTo(IncidentProcessingService.ALREADY_BLOCKED);
         assertThat(reservation(booking.reservationId()).getEndedAt()).isEqualTo(endedAt);
         assertThat(notificationsFor(booking.referralId())).hasSize(1);
+        assertThat(blockedHistoriesFor(booking.referralId())).hasSize(1);
     }
 
     @Test
@@ -361,6 +389,7 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
         assertThat(failed.getLockedUntil()).isNull();
         assertThat(failed.getResultCode()).isNull();
         assertThat(notificationsFor(booking.referralId())).isEmpty();
+        assertThat(blockedHistoriesFor(booking.referralId())).isEmpty();   // flush된 이력 INSERT도 함께 롤백
     }
 
     @Test
@@ -403,6 +432,7 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
         }).when(incidentReferralRepository).markSucceeded(any(), any(), any(), any());
         assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.FAILED);
         assertThat(notificationsFor(booking.referralId())).isEmpty();
+        assertThat(blockedHistoriesFor(booking.referralId())).isEmpty();
         reset(incidentReferralRepository);
         LocalDateTime afterRetryTime = task(taskId).getNextRetryAt().plusSeconds(1);
 
@@ -411,6 +441,7 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
         assertThat(done.getResultCode()).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
         assertThat(done.getRetryCount()).isEqualTo(1);
         assertThat(notificationsFor(booking.referralId())).hasSize(1);
+        assertThat(blockedHistoriesFor(booking.referralId())).hasSize(1);   // 실패 시도분 없이 성공한 1건만
     }
 
     @Test
@@ -450,6 +481,7 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
             assertThat(afterA.getLockedUntil()).isEqualTo(leaseOfB);
             assertThat(afterA.getLastError()).isNull();
             assertThat(notificationsFor(booking.referralId())).isEmpty();
+            assertThat(blockedHistoriesFor(booking.referralId())).isEmpty();   // 잠금 상실로 이력도 롤백
         } finally {
             releaseLock.countDown();
             executor.shutdown();

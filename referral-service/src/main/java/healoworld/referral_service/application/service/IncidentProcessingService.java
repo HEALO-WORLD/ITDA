@@ -1,14 +1,12 @@
 package healoworld.referral_service.application.service;
 
-import healoworld.referral_service.domain.entity.IncidentReferral;
-import healoworld.referral_service.domain.entity.Referral;
-import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.entity.*;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
+import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.global.exception.BaseException;
-import healoworld.referral_service.infrastructure.repository.IncidentAffectedReferralRepository;
-import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
-import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
+import healoworld.referral_service.infrastructure.repository.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.NestedExceptionUtils;
@@ -27,6 +25,7 @@ import java.util.UUID;
 
 // 장비 장애 후속 처리 작업(IncidentReferral) 1건을 실행한다
 // 영향 예약을 BLOCKED로, 연결된 의뢰를 NEEDS_RESCHEDULE로 바꾸고 작업에 성공·실패를 기록한다
+// 검사가 이미 진행 중(IN_PROGRESS)이거나 완료(COMPLETED)된 의뢰는 자동 재조정하지 않는다
 @Slf4j
 @Service
 public class IncidentProcessingService {
@@ -36,6 +35,8 @@ public class IncidentProcessingService {
     static final String ALREADY_BLOCKED = "ALREADY_BLOCKED";           // 다른 장애·이전 시도가 이미 처리함 (변경 없음)
     static final String SKIPPED_NOT_CURRENT = "SKIPPED_NOT_CURRENT";   // 의뢰가 이미 다른 예약으로 재예약됨 (변경 없음)
     static final String SKIPPED_CANCELED = "SKIPPED_CANCELED";         // 의뢰 또는 예약이 이미 취소됨 (변경 없음)
+    static final String SKIPPED_IN_PROGRESS = "SKIPPED_IN_PROGRESS";   // 검사가 진행 중이라 자동 재조정하지 않음 (담당자 확인 필요, 변경 없음)
+    static final String SKIPPED_COMPLETED = "SKIPPED_COMPLETED";       // 검사가 이미 완료돼 재조정 대상이 아님 (변경 없음)
 
     // 실패 원인 구분 (last_error 앞에 붙여 운영자가 종류를 알 수 있게 한다)
     static final String RETRYABLE = "[RETRYABLE]";                     // 잠시 뒤 다시 하면 처리될 수 있는 상태
@@ -60,12 +61,16 @@ public class IncidentProcessingService {
     private final Duration lockDuration;
     private final Duration retryDelay;
     private final NotificationService notificationService;
+    private final ExaminationRepository examinationRepository;
+    private final ReferralHistoryRepository referralHistoryRepository;
 
     public IncidentProcessingService(
             IncidentReferralRepository incidentReferralRepository,
             IncidentAffectedReferralRepository incidentAffectedReferralRepository,
             IncidentReservationRepository incidentReservationRepository,
             NotificationService notificationService,
+            ExaminationRepository examinationRepository,
+            ReferralHistoryRepository referralHistoryRepository,
             PlatformTransactionManager transactionManager,
             @Value("${itda.incident-processing.lock-duration:PT5M}") Duration lockDuration,
             @Value("${itda.incident-processing.retry-delay:PT1M}") Duration retryDelay
@@ -74,6 +79,8 @@ public class IncidentProcessingService {
         this.incidentAffectedReferralRepository = incidentAffectedReferralRepository;
         this.incidentReservationRepository = incidentReservationRepository;
         this.notificationService = notificationService;
+        this.examinationRepository = examinationRepository;
+        this.referralHistoryRepository = referralHistoryRepository;
 
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(
@@ -86,7 +93,7 @@ public class IncidentProcessingService {
 
     // 트랜잭션: 호출한 쪽 트랜잭션에 참여하지 않는다(NOT_SUPPORTED). DB 작업은 모두 newTransaction 안에서만 한다
     //  T1 선점: claim()을 독립 트랜잭션으로 커밋해 다른 작업자가 즉시 PROCESSING을 보게 한다. 0이면 아무것도 하지 않는다
-    //  T2 처리: 의뢰 → 예약 순서로 FOR UPDATE 잠금 → 상태 변경·알림 저장 → markSucceeded()까지 한 트랜잭션
+    //  T2 처리: 의뢰 → 예약 (→ 차단 대상이면 검사) 순서로 FOR UPDATE 잠금 → 상태 변경·이력·알림 저장 → markSucceeded()까지 한 트랜잭션
     //          markSucceeded()가 0이면 잠금 상실로 T2를 롤백해 예약·의뢰·알림 변경을 모두 취소한다
     //  T3 실패 기록: T2가 롤백된 뒤 새 트랜잭션에서 markFailed(). 내 잠금이 아니면 0이 되어 다른 작업자의 기록을 덮어쓰지 않는다
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -147,8 +154,21 @@ public class IncidentProcessingService {
                 reservationId
         );
 
-        // 실제 예약이 차단되고 의뢰가 재조정 필요 상태가 됐을 때만 알림을 저장한다
+        // 실제 예약이 차단되고 의뢰가 재조정 필요 상태가 됐을 때
         if (RESCHEDULE_REQUIRED.equals(resultCode)) {
+
+            ReferralHistory history = ReferralHistory.create(
+                    referral,
+                    reservation,
+                    ReferralStatus.CONFIRMED,
+                    ReferralStatus.NEEDS_RESCHEDULE,
+                    Reason.RESERVATION_BLOCKED,
+                    task.getIncident().getSourceEventId(),
+                    null
+            );
+
+            referralHistoryRepository.save(history);
+
             notificationService.createRescheduleRequired(task, referral);
         }
 
@@ -190,6 +210,19 @@ public class IncidentProcessingService {
             return SKIPPED_CANCELED;
         }
         if (referralStatus == ReferralStatus.CONFIRMED && reservationStatus == ReservationStatus.CONFIRMED) {
+            // 검사가 이미 시작·완료됐다면 예약·의뢰·검사를 바꾸지 않는다 (검사가 없으면 기존처럼 차단한다)
+            // 검사 행을 잠근 뒤 읽으므로, 이 트랜잭션이 끝날 때까지 검사 시작·완료 UPDATE는 기다린다
+            ExaminationStatus examinationStatus = examinationRepository.findByReferralIdForUpdate(referralId)
+                    .map(Examination::getStatus)
+                    .orElse(null);
+            if (examinationStatus == ExaminationStatus.IN_PROGRESS) {
+                log.warn("검사 진행 중이라 장애 자동 재조정 제외, 담당자 확인 필요. referralId={}, reservationId={}",
+                        referralId, reservationId);
+                return SKIPPED_IN_PROGRESS;
+            }
+            if (examinationStatus == ExaminationStatus.COMPLETED) {
+                return SKIPPED_COMPLETED;
+            }
             reservation.block();
             referral.requestReschedule();
             return RESCHEDULE_REQUIRED;

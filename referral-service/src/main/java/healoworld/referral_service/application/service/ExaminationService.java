@@ -12,6 +12,7 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ExaminationResultRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.response.ExaminationListResponse;
@@ -44,6 +45,8 @@ public class ExaminationService {
     private final ReferralRepository referralRepository;
     private final ReservationRepository reservationRepository;
     private final ExaminationResultRepository examinationResultRepository;
+    // 예약 행 잠금(FOR UPDATE). 장비 장애 처리가 쓰는 잠금 조회를 검사 시작에서도 재사용해 잠금 순서를 맞춘다
+    private final IncidentReservationRepository incidentReservationRepository;
 
     public ExaminationResponse getByReferralId(UUID referralId) {
         return ExaminationResponse.from(findByReferralId(referralId));
@@ -214,7 +217,10 @@ public class ExaminationService {
             RoleType role,
             ExaminationStatus requestedStatus
     ) {
-        Examination examination = findById(examinationId);
+        // 검사 시작은 장비 장애 처리와 같은 순서(의뢰 → 예약 → 검사)로 잠근 뒤의 최신 상태로 판단한다
+        Examination examination = requestedStatus == ExaminationStatus.IN_PROGRESS
+                ? lockForStart(examinationId)
+                : findById(examinationId);
 
         // 1. EXAMINER 역할인지 확인
         if (role != RoleType.EXAMINER) {
@@ -319,6 +325,22 @@ public class ExaminationService {
 
     private Examination findById(UUID examinationId) {
         return examinationRepository.findById(examinationId)
+                .orElseThrow(() -> new BaseException(ErrorCode.EXAMINATION_NOT_FOUND));
+    }
+
+    // 검사 시작 전 잠금: 의뢰 → 현재 예약 → 검사 순서로 FOR UPDATE (장비 장애 처리 IncidentProcessingService와 같은 순서)
+    // - 장애 처리가 먼저 잠그면 커밋까지 기다렸다가 BLOCKED 예약·NEEDS_RESCHEDULE 의뢰를 보고 시작을 거부한다
+    // - 검사 시작이 먼저 잠그면 장애 처리가 기다렸다가 IN_PROGRESS 검사를 보고 재조정에서 제외한다
+    // 검사 엔티티는 잠금을 잡은 뒤 처음 읽는다. 먼저 읽어 두면 잠금 조회가 영속성 컨텍스트의 이전 상태를 그대로 돌려주기 때문이다
+    // 이후 validateCanStart()의 의뢰·예약 조회도 여기서 잠그며 읽은 최신 엔티티를 그대로 쓴다
+    private Examination lockForStart(UUID examinationId) {
+        UUID referralId = examinationRepository.findReferralIdById(examinationId)
+                .orElseThrow(() -> new BaseException(ErrorCode.EXAMINATION_NOT_FOUND));
+        // 의뢰·예약이 없으면 잠그지 않고 넘어가며, 시작 가능 여부는 validateCanStart()가 판단한다
+        referralRepository.findByIdForUpdate(referralId)
+                .map(Referral::getCurrentReservationId)
+                .ifPresent(incidentReservationRepository::findByIdForUpdate);
+        return examinationRepository.findByReferralIdForUpdate(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.EXAMINATION_NOT_FOUND));
     }
 

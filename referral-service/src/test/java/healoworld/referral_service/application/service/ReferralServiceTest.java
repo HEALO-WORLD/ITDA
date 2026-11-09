@@ -1,8 +1,10 @@
 package healoworld.referral_service.application.service;
 
+import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
@@ -10,6 +12,7 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.client.institution.PartnershipCheckResponse;
+import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -23,11 +26,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 import feign.FeignException;
 
 import java.util.Optional;
@@ -67,6 +73,10 @@ class ReferralServiceTest {
 
     @Mock
     private InstitutionClient institutionClient;
+
+    // 기본값 Optional.empty(): 검사가 없는 의뢰는 기존처럼 재예약을 받는다
+    @Mock
+    private ExaminationRepository examinationRepository;
 
     @InjectMocks
     private ReferralService referralService;
@@ -361,6 +371,46 @@ class ReferralServiceTest {
     @Nested
     @DisplayName("createRescheduledReservation")
     class CreateRescheduledReservation {
+
+        @ParameterizedTest
+        @EnumSource(value = ExaminationStatus.class, names = {"IN_PROGRESS", "COMPLETED"})
+        @DisplayName("검사가 시작·완료된 의뢰는 409이고 새 예약·Outbox·이력을 만들지 않는다")
+        void examinationAlreadyStarted(ExaminationStatus status) {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+            given(examinationRepository.findByReferralId(referral.getId())).willReturn(Optional.of(examination(referral, status)));
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, RoleType.REQUESTER, referral.getId(), reservationRequest()),
+                    ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE);
+            // 새 예약과 BookSlot·HoldRequested Outbox는 reservationService.createReservation()에서 만들어진다
+            verifyNoInteractions(reservationService, institutionClient, referralHistoryRepository);
+            assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        }
+
+        @Test
+        @DisplayName("SCHEDULED 검사가 있는 의뢰는 재예약을 받는다")
+        void scheduledExaminationAllowsReschedule() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            CreateReservationRequest request = reservationRequest();
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+            given(examinationRepository.findByReferralId(referral.getId()))
+                    .willReturn(Optional.of(examination(referral, ExaminationStatus.SCHEDULED)));
+            given(institutionClient.check(referral.getReferringInstitutionId(), request.getExamInstitutionId()))
+                    .willReturn(new PartnershipCheckResponse(true));
+            given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(reservation(referral, 2));
+            updates.register(referral);
+
+            referralService.createRescheduledReservation(USER_ID, RoleType.REQUESTER, referral.getId(), request);
+
+            assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
+        }
+
+        private Examination examination(Referral referral, ExaminationStatus status) {
+            Examination examination = Examination.schedule(referral.getId(), UUID.randomUUID(), UUID.randomUUID());
+            ReflectionTestUtils.setField(examination, "status", status);
+            return examination;
+        }
         @Test
         @DisplayName("본인의 재조정 필요 의뢰는 새 예약을 만들고 PENDING으로 돌아간다")
         void success() {

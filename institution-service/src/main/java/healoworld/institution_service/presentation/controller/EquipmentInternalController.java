@@ -1,9 +1,11 @@
 package healoworld.institution_service.presentation.controller;
 
+import healoworld.institution_service.application.service.equipment.EquipmentOwnerService;
 import healoworld.institution_service.application.service.equipment.EquipmentSlotContextService;
 import healoworld.institution_service.application.service.equipment.EquipmentVisibilityService;
 import healoworld.institution_service.domain.enums.Role;
 import healoworld.institution_service.global.dto.ApiResponse;
+import healoworld.institution_service.presentation.dto.response.EquipmentOwnerResponse;
 import healoworld.institution_service.presentation.dto.response.EquipmentSlotContextResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -21,6 +23,7 @@ public class EquipmentInternalController {
 
     private final EquipmentSlotContextService slotContextService;
     private final EquipmentVisibilityService equipmentVisibilityService;
+    private final EquipmentOwnerService equipmentOwnerService;
 
     @GetMapping("/{equipmentId}/slot-context")
     public ResponseEntity<ApiResponse<EquipmentSlotContextResponse>> getSlotContext(
@@ -32,6 +35,12 @@ public class EquipmentInternalController {
         EquipmentSlotContextResponse response = slotContextService.getSlotContext(equipmentId, examTypeId, date);
 
         return ResponseEntity.ok(ApiResponse.ok("슬롯 생성 기준정보 조회에 성공했습니다.", response));
+    }
+
+    // 장비의 실제 소속 기관 조회. Gateway의 block-internal 라우트가 /api/v1/internal/** 외부 접근을 막는다
+    @GetMapping("/{equipmentId}/owner")
+    public ResponseEntity<ApiResponse<EquipmentOwnerResponse>> getOwner(@PathVariable("equipmentId") UUID equipmentId) {
+        return ResponseEntity.ok(ApiResponse.ok("장비 소속 기관 조회에 성공했습니다.", equipmentOwnerService.getOwner(equipmentId)));
     }
 
     @GetMapping("/visible")

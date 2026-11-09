@@ -17,6 +17,8 @@ import healoworld.institution_service.presentation.dto.request.EquipmentUpdateRe
 import healoworld.institution_service.presentation.dto.response.EquipmentCreateResponse;
 import healoworld.institution_service.presentation.dto.response.EquipmentDetailResponse;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -28,6 +30,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class EquipmentService {
+
+    private static final String UNIQUE_EQUIPMENT_NAME_INDEX = "uq_equipment_active_institution_name";
 
     private final EquipmentRepository equipmentRepository;
     private final InstitutionRepository institutionRepository;
@@ -67,7 +71,17 @@ public class EquipmentService {
                 request.getModality()
         );
 
-        Equipment savedEquipment = equipmentRepository.save(equipment);
+        if (equipmentRepository.existsByInstitutionIdAndNameAndDeletedAtIsNull(
+                institutionId, equipment.getName())) {
+            throw new BaseException(ErrorCode.DUPLICATE_EQUIPMENT_NAME);
+        }
+
+        Equipment savedEquipment;
+        try {
+            savedEquipment = equipmentRepository.saveAndFlush(equipment);
+        } catch (DataIntegrityViolationException exception) {
+            throw translateConstraint(exception);
+        }
 
         return EquipmentCreateResponse.from(savedEquipment);
     }
@@ -177,9 +191,31 @@ public class EquipmentService {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
 
-        equipment.changeName(request.getName());
+        String normalizedName = request.getName().trim();
+        if (equipmentRepository.existsByInstitutionIdAndNameAndDeletedAtIsNullAndIdNot(
+                equipment.getInstitutionId(), normalizedName, equipmentId)) {
+            throw new BaseException(ErrorCode.DUPLICATE_EQUIPMENT_NAME);
+        }
+
+        equipment.changeName(normalizedName);
+        try {
+            equipmentRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw translateConstraint(exception);
+        }
 
         return EquipmentDetailResponse.from(equipment);
+    }
+
+    private RuntimeException translateConstraint(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation
+                    && "23505".equals(violation.getSQLState())
+                    && UNIQUE_EQUIPMENT_NAME_INDEX.equals(violation.getConstraintName())) {
+                return new BaseException(ErrorCode.DUPLICATE_EQUIPMENT_NAME);
+            }
+        }
+        return exception;
     }
 
     private void validateRequest(EquipmentCreateRequest request) {

@@ -37,6 +37,12 @@ public class SlotReleaseService {
                     SlotStatus.HELD, SlotStatus.AVAILABLE, SlotStatusChangeReason.RELEASE_HOLD, eventId, now);
             return ReleaseOutcome.RELEASED;
         }
+        // 장비 중단 구간에 걸린 HOLD는 새 예약을 받지 않도록 UNAVAILABLE로 반환한다
+        if (slotRepository.releaseIntoUnavailable(slotId, reservationId, now, SlotStatus.HELD, SlotStatus.UNAVAILABLE) == 1) {
+            slotStatusHistoryRecorder.recordByEvent(slotId, reservationId,
+                    SlotStatus.HELD, SlotStatus.UNAVAILABLE, SlotStatusChangeReason.RELEASE_HOLD, eventId, now);
+            return ReleaseOutcome.RELEASED_UNAVAILABLE;
+        }
 
         // 확정 실패 보상인데 같은 예약으로 BOOKED면 Referral과 Slot의 판단이 어긋난 것이다.
         // 어느 쪽이 맞는지 알 수 없으므로 자동으로 풀지 않고 관리자가 확인하도록 남긴다
@@ -58,6 +64,12 @@ public class SlotReleaseService {
             slotStatusHistoryRecorder.recordByEvent(slotId, reservationId,
                     SlotStatus.BOOKED, SlotStatus.AVAILABLE, SlotStatusChangeReason.RELEASE_SLOT, eventId, now);
             return ReleaseOutcome.RELEASED;
+        }
+        // 장비 중단 구간에 걸린 BOOKED는 새 예약을 받지 않도록 UNAVAILABLE로 반환한다
+        if (slotRepository.releaseIntoUnavailable(slotId, reservationId, now, SlotStatus.BOOKED, SlotStatus.UNAVAILABLE) == 1) {
+            slotStatusHistoryRecorder.recordByEvent(slotId, reservationId,
+                    SlotStatus.BOOKED, SlotStatus.UNAVAILABLE, SlotStatusChangeReason.RELEASE_SLOT, eventId, now);
+            return ReleaseOutcome.RELEASED_UNAVAILABLE;
         }
         // 상태는 UNAVAILABLE 그대로지만 예약 연결이 끊긴 것도 추적할 수 있게 이력을 남긴다
         if (slotRepository.detachReservationIfUnavailable(slotId, reservationId, now, SlotStatus.UNAVAILABLE) == 1) {
@@ -92,6 +104,17 @@ public class SlotReleaseService {
             log.warn("관리자 슬롯 강제 해제. slotId={}, reservationId={}, from={}, adminId={}",
                     slotId, reservationId, fromStatus, changedBy);
             return ReleaseOutcome.RELEASED;
+        }
+
+        // 장비 중단 구간에 걸린 HELD·BOOKED는 AVAILABLE 대신 UNAVAILABLE로 반환한다
+        for (SlotStatus occupied : new SlotStatus[]{SlotStatus.HELD, SlotStatus.BOOKED}) {
+            if (slotRepository.releaseIntoUnavailable(slotId, reservationId, now, occupied, SlotStatus.UNAVAILABLE) == 1) {
+                slotStatusHistoryRecorder.recordByUser(slotId, reservationId,
+                        occupied, SlotStatus.UNAVAILABLE, SlotStatusChangeReason.ADMIN_RELEASE, changedBy, now);
+                log.warn("관리자 슬롯 강제 해제(장비 중단으로 UNAVAILABLE). slotId={}, reservationId={}, from={}, adminId={}",
+                        slotId, reservationId, occupied, changedBy);
+                return ReleaseOutcome.RELEASED_UNAVAILABLE;
+            }
         }
 
         if (slotRepository.detachReservationIfUnavailable(slotId, reservationId, now, SlotStatus.UNAVAILABLE) == 1) {
