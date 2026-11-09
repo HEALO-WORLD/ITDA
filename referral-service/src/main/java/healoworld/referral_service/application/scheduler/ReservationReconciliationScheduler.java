@@ -105,7 +105,6 @@ public class ReservationReconciliationScheduler {
         Map<UUID, SlotStatusResponse> slotById = responses.stream()
                 .collect(Collectors.toMap(SlotStatusResponse::slotId, Function.identity(), (first, second) -> first));
 
-        // 2. 작업별로 독립적으로 처리
         for (ReconciliationTarget target : targets) {
             try {
                 SlotStatusResponse response = slotById.get(target.slotId());
