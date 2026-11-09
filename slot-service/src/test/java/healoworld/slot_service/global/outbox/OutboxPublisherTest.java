@@ -1,6 +1,7 @@
 package healoworld.slot_service.global.outbox;
 
 import brave.Tracing;
+import healoworld.slot_service.global.config.ClockConfig;
 import healoworld.slot_service.support.FixedClockConfig;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.brave.bridge.BraveCurrentTraceContext;
@@ -50,7 +51,7 @@ class OutboxPublisherTest {
 
     @BeforeEach
     void setUp() {
-        ZoneId zone = ZoneId.systemDefault();
+        ZoneId zone = ClockConfig.ZONE;
         Clock clock = Clock.fixed(FixedClockConfig.NOW.atZone(zone).toInstant(), zone);
         tracing = Tracing.newBuilder().traceId128Bit(true).propagationFactory(new W3CPropagation()).build();
         tracer = new BraveTracer(tracing.tracer(), new BraveCurrentTraceContext(tracing.currentTraceContext()));
