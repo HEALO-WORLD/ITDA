@@ -6,6 +6,7 @@ import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
+import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,10 @@ class EquipmentIncidentLastErrorResponseTest {
 
     @MockitoBean
     private IncidentReferralRepository incidentReferralRepository;
+
+    // EquipmentIncidentQueryService의 현황 집계용 의존성 (이 테스트에서는 호출하지 않음)
+    @MockitoBean
+    private ReferralRepository referralRepository;
 
     // 메인 클래스의 @EnableJpaAuditing이 웹 슬라이스 테스트에서도 JPA 메타모델을 찾기 때문에 대체한다
     @MockitoBean

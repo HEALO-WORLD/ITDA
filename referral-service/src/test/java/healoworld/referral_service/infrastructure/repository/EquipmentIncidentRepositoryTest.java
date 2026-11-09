@@ -134,4 +134,117 @@ class EquipmentIncidentRepositoryTest extends PostgresContainerSupport {
         assertThat(equipmentIncidentRepository.findById(saved.getId()).orElseThrow().getOccurredAt())
                 .isEqualTo(occurredAt);
     }
+
+    // =========================================================
+    // 현재 중단 구간 장비 수 (startAt <= now < endAt, 장비 중복 제외)
+    // =========================================================
+
+    // 모든 경계 테스트가 쓰는 중단 구간: BASE(09:00) ~ BASE + 2시간(11:00)
+    private static final LocalDateTime DOWNTIME_START = BASE;
+    private static final LocalDateTime DOWNTIME_END = BASE.plusHours(2);
+
+    private void saveDowntime(UUID equipmentId, UUID institutionId, LocalDateTime startAt, LocalDateTime endAt) {
+        equipmentIncidentRepository.saveAndFlush(EquipmentIncident.occur(UUID.randomUUID(), equipmentId,
+                institutionId, "테스트용 가상 장애 사유", startAt, startAt, endAt));
+    }
+
+    // 기관 하나에 장비 하나의 중단 구간을 저장하고 기관 ID를 돌려준다
+    private UUID institutionWithOneDowntime() {
+        UUID institutionId = UUID.randomUUID();
+        saveDowntime(UUID.randomUUID(), institutionId, DOWNTIME_START, DOWNTIME_END);
+        return institutionId;
+    }
+
+    @Test
+    @DisplayName("중단 시작 전이면 집계하지 않는다")
+    void countBeforeStart() {
+        UUID institutionId = institutionWithOneDowntime();
+
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId,
+                DOWNTIME_START.minus(1, ChronoUnit.MICROS))).isZero();
+    }
+
+    @Test
+    @DisplayName("기준 시각이 중단 시작 시각과 같으면 집계한다 (시작 포함)")
+    void countAtStart() {
+        UUID institutionId = institutionWithOneDowntime();
+
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId, DOWNTIME_START))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("기준 시각이 중단 구간 중간이면 집계한다")
+    void countInMiddle() {
+        UUID institutionId = institutionWithOneDowntime();
+
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId,
+                DOWNTIME_START.plusHours(1))).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("기준 시각이 중단 종료 시각과 같으면 집계하지 않는다 (종료 미포함)")
+    void countAtEnd() {
+        UUID institutionId = institutionWithOneDowntime();
+
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId, DOWNTIME_END))
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("중단 종료 시각 이후면 집계하지 않는다")
+    void countAfterEnd() {
+        UUID institutionId = institutionWithOneDowntime();
+
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId,
+                DOWNTIME_END.plus(1, ChronoUnit.MICROS))).isZero();
+    }
+
+    @Test
+    @DisplayName("같은 장비에 여러 장애 이력이 있어도 한 대로 센다")
+    void countSameEquipmentOnce() {
+        UUID institutionId = UUID.randomUUID();
+        UUID equipmentId = UUID.randomUUID();
+        // 기준 시각에 걸친 장애 2건 (Slot은 겹치는 중단을 막지만 이 쿼리는 그 보장에 기대지 않는다)
+        saveDowntime(equipmentId, institutionId, DOWNTIME_START, DOWNTIME_END);
+        saveDowntime(equipmentId, institutionId, DOWNTIME_START.plusMinutes(30), DOWNTIME_END.plusHours(1));
+        // 이미 끝난 과거 장애 1건
+        saveDowntime(equipmentId, institutionId, DOWNTIME_START.minusDays(1), DOWNTIME_END.minusDays(1));
+
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId,
+                DOWNTIME_START.plusHours(1))).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 기관의 서로 다른 장비는 각각 센다")
+    void countDifferentEquipments() {
+        UUID institutionId = UUID.randomUUID();
+        saveDowntime(UUID.randomUUID(), institutionId, DOWNTIME_START, DOWNTIME_END);
+        saveDowntime(UUID.randomUUID(), institutionId, DOWNTIME_START, DOWNTIME_END);
+
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId,
+                DOWNTIME_START.plusHours(1))).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("다른 검사기관의 장비는 포함하지 않는다")
+    void countExcludesOtherInstitution() {
+        UUID institutionId = institutionWithOneDowntime();
+        UUID otherInstitutionId = institutionWithOneDowntime();
+        saveDowntime(UUID.randomUUID(), otherInstitutionId, DOWNTIME_START, DOWNTIME_END);
+
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(institutionId,
+                DOWNTIME_START.plusHours(1))).isEqualTo(1);
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(otherInstitutionId,
+                DOWNTIME_START.plusHours(1))).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("해당 기관의 중단 구간이 없으면 0을 반환한다")
+    void countZeroWhenNoDowntime() {
+        institutionWithOneDowntime(); // 다른 기관의 데이터만 있음
+
+        assertThat(equipmentIncidentRepository.countEquipmentsInDowntime(UUID.randomUUID(),
+                DOWNTIME_START.plusHours(1))).isZero();
+    }
 }

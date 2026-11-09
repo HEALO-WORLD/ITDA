@@ -3,8 +3,14 @@ package healoworld.gateway_service.policy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpMethod;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -137,6 +143,78 @@ class RolePolicyTest {
             assertThatThrownBy(() -> new RolePolicy(new RolePolicyProperties(List.of(), List.of(
                     group(List.of("ADMIN"), "/api/v1/users")
             )))).isInstanceOf(IllegalStateException.class).hasMessageContaining("잘못된 정책 형식");
+        }
+    }
+
+    // 축소본이 아니라 실제 application.yml의 gateway.policy로 만든 정책 (Spring 컨텍스트 없이 바인딩만 한다)
+    @Nested
+    @DisplayName("실제 정책표 (application.yml)")
+    class ActualPolicy {
+
+        private static final String RESERVATION = "/api/v1/referrals/reservations/71de0c4e-1b2a-4c3d-9e8f-0a1b2c3d4e5f";
+
+        private final RolePolicy actual = loadActualPolicy();
+
+        @Test
+        @DisplayName("예약 삭제는 제공하지 않으므로 모든 역할을 거부한다")
+        void deleteReservationDeniedForAllRoles() {
+            for (String role : List.of("REQUESTER", "EXAMINER", "ADMIN")) {
+                assertThat(actual.isAllowed(HttpMethod.DELETE, RESERVATION, role)).as(role).isFalse();
+            }
+        }
+
+        @Test
+        @DisplayName("예약 취소 권한은 그대로 REQUESTER만 허용한다")
+        void cancelReservationUnchanged() {
+            assertThat(actual.isAllowed(HttpMethod.PATCH, RESERVATION + "/cancel", "REQUESTER")).isTrue();
+            assertThat(actual.isAllowed(HttpMethod.PATCH, RESERVATION + "/cancel", "EXAMINER")).isFalse();
+            assertThat(actual.isAllowed(HttpMethod.PATCH, RESERVATION + "/cancel", "ADMIN")).isFalse();
+        }
+
+        @Test
+        @DisplayName("의뢰 삭제·예약 조회 권한은 바뀌지 않는다")
+        void otherReservationRulesUnchanged() {
+            String referral = "/api/v1/referrals/71de0c4e-1b2a-4c3d-9e8f-0a1b2c3d4e5f";
+            assertThat(actual.isAllowed(HttpMethod.DELETE, referral, "REQUESTER")).isTrue();
+            assertThat(actual.isAllowed(HttpMethod.DELETE, referral, "ADMIN")).isTrue();
+            assertThat(actual.isAllowed(HttpMethod.DELETE, referral, "EXAMINER")).isFalse();
+            for (String role : List.of("REQUESTER", "EXAMINER", "ADMIN")) {
+                assertThat(actual.isAllowed(HttpMethod.GET, RESERVATION, role)).as(role).isTrue();
+            }
+        }
+
+        @Test
+        @DisplayName("장비 장애 현황(summary)은 EXAMINER·ADMIN만 허용하고 REQUESTER는 거부한다")
+        void incidentSummaryForExaminerAndAdmin() {
+            String summary = "/api/v1/equipment-incidents/summary";
+            assertThat(actual.isAllowed(HttpMethod.GET, summary, "EXAMINER")).isTrue();
+            assertThat(actual.isAllowed(HttpMethod.GET, summary, "ADMIN")).isTrue();
+            assertThat(actual.isAllowed(HttpMethod.GET, summary, "REQUESTER")).isFalse();
+            // 다른 메서드는 규칙이 없어 거부된다
+            assertThat(actual.isAllowed(HttpMethod.POST, summary, "ADMIN")).isFalse();
+        }
+
+        @Test
+        @DisplayName("기존 장애 목록·상세·영향 의뢰 권한은 바뀌지 않는다 (EXAMINER·ADMIN)")
+        void incidentRulesUnchanged() {
+            String detail = "/api/v1/equipment-incidents/71de0c4e-1b2a-4c3d-9e8f-0a1b2c3d4e5f";
+            for (String path : List.of("/api/v1/equipment-incidents", detail, detail + "/referrals")) {
+                assertThat(actual.isAllowed(HttpMethod.GET, path, "EXAMINER")).as(path).isTrue();
+                assertThat(actual.isAllowed(HttpMethod.GET, path, "ADMIN")).as(path).isTrue();
+                assertThat(actual.isAllowed(HttpMethod.GET, path, "REQUESTER")).as(path).isFalse();
+            }
+        }
+    }
+
+    private static RolePolicy loadActualPolicy() {
+        try {
+            var sources = new YamlPropertySourceLoader().load("application", new ClassPathResource("application.yml"));
+            RolePolicyProperties properties = new Binder(ConfigurationPropertySources.from(sources))
+                    .bind("gateway.policy", RolePolicyProperties.class)
+                    .orElseThrow(() -> new IllegalStateException("gateway.policy가 없습니다"));
+            return new RolePolicy(properties);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 

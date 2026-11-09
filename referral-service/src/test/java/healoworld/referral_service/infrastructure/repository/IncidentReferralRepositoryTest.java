@@ -363,4 +363,134 @@ class IncidentReferralRepositoryTest extends PostgresContainerSupport {
         // 같은 나노초 값을 다시 바인딩하면 DB 쪽에서도 같은 정밀도로 바뀌어 비교되므로 일치한다
         assertThat(incidentReferralRepository.markSucceeded(job.getId(), lockedUntil, null, now())).isEqualTo(1);
     }
+
+    // =========================================================
+    // 누적 영향 대상 의뢰 수 (기관별, 의뢰 중복 제외, 처리 상태 무관)
+    // =========================================================
+
+    // 지정한 검사기관 소유 장비의 장애
+    private EquipmentIncident saveIncident(UUID institutionId) {
+        LocalDateTime start = now();
+        return equipmentIncidentRepository.saveAndFlush(EquipmentIncident.occur(UUID.randomUUID(),
+                UUID.randomUUID(), institutionId, "테스트용 가상 장애 사유", start, start, start.plusHours(2)));
+    }
+
+    // 지정한 의뢰의 영향 작업 (예약 ID는 매번 새로 만든다)
+    private IncidentReferral save(EquipmentIncident incident, UUID referralId) {
+        return incidentReferralRepository.saveAndFlush(
+                IncidentReferral.pending(incident, referralId, UUID.randomUUID()));
+    }
+
+    private long countAffected(UUID institutionId) {
+        return incidentReferralRepository.countAffectedReferrals(institutionId);
+    }
+
+    @Test
+    @DisplayName("영향 의뢰가 없으면 0을 반환한다")
+    void countAffectedZero() {
+        UUID institutionId = UUID.randomUUID();
+        saveIncident(institutionId); // 장애는 있지만 영향 의뢰 없음
+
+        assertThat(countAffected(institutionId)).isZero();
+        assertThat(countAffected(UUID.randomUUID())).isZero(); // 장애도 없는 기관
+    }
+
+    @Test
+    @DisplayName("영향 의뢰 1건이면 1, 서로 다른 의뢰 2건이면 2를 반환한다")
+    void countAffectedDistinctReferrals() {
+        UUID institutionId = UUID.randomUUID();
+        EquipmentIncident incident = saveIncident(institutionId);
+
+        save(incident, UUID.randomUUID());
+        assertThat(countAffected(institutionId)).isEqualTo(1);
+
+        save(incident, UUID.randomUUID());
+        assertThat(countAffected(institutionId)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("같은 의뢰가 같은 기관의 여러 장애에 연결돼도 한 번만 센다")
+    void countAffectedSameReferralManyIncidents() {
+        UUID institutionId = UUID.randomUUID();
+        UUID referralId = UUID.randomUUID();
+        save(saveIncident(institutionId), referralId);
+        save(saveIncident(institutionId), referralId);
+        save(saveIncident(institutionId), referralId);
+
+        assertThat(countAffected(institutionId)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 의뢰가 여러 예약(재예약 시도)으로 연결돼도 한 번만 센다")
+    void countAffectedSameReferralManyReservations() {
+        UUID institutionId = UUID.randomUUID();
+        UUID referralId = UUID.randomUUID();
+        EquipmentIncident incident = saveIncident(institutionId);
+        IncidentReferral first = save(incident, referralId);
+        IncidentReferral second = save(incident, referralId);
+
+        assertThat(first.getReservationId()).isNotEqualTo(second.getReservationId());
+        assertThat(countAffected(institutionId)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("처리 대기(PENDING) 작업의 의뢰도 영향 대상으로 센다")
+    void countAffectedIncludesPending() {
+        UUID institutionId = UUID.randomUUID();
+        IncidentReferral job = save(saveIncident(institutionId), UUID.randomUUID());
+
+        assertThat(reload(job.getId()).getProcessingStatus()).isEqualTo(IncidentProcessingStatus.PENDING);
+        assertThat(countAffected(institutionId)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("PROCESSING·SUCCEEDED·FAILED 작업도 포함하고, 처리 상태가 바뀌어도 누적 건수는 그대로다")
+    void countAffectedIncludesAllStatuses() {
+        UUID institutionId = UUID.randomUUID();
+        EquipmentIncident incident = saveIncident(institutionId);
+        IncidentReferral processing = save(incident, UUID.randomUUID());
+        IncidentReferral succeeded = save(incident, UUID.randomUUID());
+        IncidentReferral failed = save(incident, UUID.randomUUID());
+        assertThat(countAffected(institutionId)).isEqualTo(3); // 모두 PENDING일 때
+
+        LocalDateTime lockedUntil = now().plusMinutes(5);
+        incidentReferralRepository.claim(processing.getId(), now(), lockedUntil);
+        incidentReferralRepository.claim(succeeded.getId(), now(), lockedUntil);
+        incidentReferralRepository.markSucceeded(succeeded.getId(), lockedUntil, "TEST_RESULT", now());
+        fail(failed.getId(), null);
+
+        assertThat(reload(processing.getId()).getProcessingStatus()).isEqualTo(IncidentProcessingStatus.PROCESSING);
+        assertThat(reload(succeeded.getId()).getProcessingStatus()).isEqualTo(IncidentProcessingStatus.SUCCEEDED);
+        assertThat(reload(failed.getId()).getProcessingStatus()).isEqualTo(IncidentProcessingStatus.FAILED);
+        assertThat(countAffected(institutionId)).isEqualTo(3); // 상태가 바뀐 뒤에도 같음
+    }
+
+    @Test
+    @DisplayName("다른 검사기관의 장애에 연결된 의뢰는 포함하지 않는다")
+    void countAffectedExcludesOtherInstitution() {
+        UUID institutionId = UUID.randomUUID();
+        UUID otherInstitutionId = UUID.randomUUID();
+        save(saveIncident(institutionId), UUID.randomUUID());
+        EquipmentIncident otherIncident = saveIncident(otherInstitutionId);
+        save(otherIncident, UUID.randomUUID());
+        save(otherIncident, UUID.randomUUID());
+
+        assertThat(countAffected(institutionId)).isEqualTo(1);
+        assertThat(countAffected(otherInstitutionId)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("같은 의뢰가 서로 다른 기관의 장애에 연결되면 각 기관에서 한 번씩 센다")
+    void countAffectedSameReferralAcrossInstitutions() {
+        UUID institutionA = UUID.randomUUID();
+        UUID institutionB = UUID.randomUUID();
+        UUID sharedReferralId = UUID.randomUUID();
+        // A 기관 장애로 차단된 뒤 B 기관으로 재예약했다가 B 기관 장애에도 걸린 의뢰
+        save(saveIncident(institutionA), sharedReferralId);
+        save(saveIncident(institutionB), sharedReferralId);
+        save(saveIncident(institutionB), UUID.randomUUID()); // B 기관에만 있는 의뢰
+
+        assertThat(countAffected(institutionA)).isEqualTo(1);
+        assertThat(countAffected(institutionB)).isEqualTo(2);
+    }
 }

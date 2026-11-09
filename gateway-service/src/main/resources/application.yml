@@ -86,6 +86,7 @@ gateway:
           - "PATCH,DELETE /api/v1/institutions/*"
           - "POST /api/v1/slots/*/release"
           - "GET /api/v1/slots/*/status-histories"
+          # 예약 삭제(DELETE /api/v1/referrals/reservations/*)는 제공하지 않으므로 규칙을 두지 않는다 (fail-closed로 모든 역할 거부)
           - "POST /api/v1/exam-types"
           - "PATCH /api/v1/exam-types/*"
 
@@ -134,6 +135,7 @@ gateway:
           - "POST /api/v1/equipment-downtimes"
           - "PATCH,DELETE /api/v1/equipment-downtimes/*"
           - "GET /api/v1/equipment-incidents"
+          - "GET /api/v1/equipment-incidents/summary"   # 장비 장애 현황 집계
           - "GET /api/v1/equipment-incidents/{incidentId}"
           - "GET /api/v1/equipment-incidents/{incidentId}/referrals"
 
@@ -145,7 +147,6 @@ gateway:
           - "GET /api/v1/referrals"
           - "GET /api/v1/referrals/*/histories"
           - "DELETE /api/v1/referrals/*"
-          - "DELETE /api/v1/referrals/reservations/*"
 
       # ── 로그인 사용자 전체 ──
       - roles: [ REQUESTER, EXAMINER, ADMIN ]

@@ -1,5 +1,6 @@
 package healoworld.referral_service.presentation.controller;
 
+import healoworld.referral_service.application.service.ExaminationQueryService;
 import healoworld.referral_service.application.service.ExaminationResultService;
 import healoworld.referral_service.application.service.ExaminationService;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
@@ -54,6 +55,9 @@ class ExaminationControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private ExaminationQueryService examinationQueryService;
 
     @MockitoBean
     private ExaminationService examinationService;
@@ -127,7 +131,7 @@ class ExaminationControllerTest {
                             false
                     );
 
-            given(examinationService.getExaminations(
+            given(examinationQueryService.getExaminations(
                     institutionId,
                     RoleType.EXAMINER,
                     pageable(0, 10)
@@ -159,7 +163,7 @@ class ExaminationControllerTest {
                     .andExpect(jsonPath("$.data.size").value(10))
                     .andExpect(jsonPath("$.data.number").value(0));
 
-            then(examinationService).should()
+            then(examinationQueryService).should()
                     .getExaminations(
                             institutionId,
                             RoleType.EXAMINER,
@@ -172,7 +176,7 @@ class ExaminationControllerTest {
         void getExaminationsDefaultPage() throws Exception {
 
             // given
-            given(examinationService.getExaminations(
+            given(examinationQueryService.getExaminations(
                     institutionId,
                     RoleType.EXAMINER,
                     pageable(0, 10)
@@ -194,7 +198,7 @@ class ExaminationControllerTest {
                     .andExpect(jsonPath("$.data.number").value(0))
                     .andExpect(jsonPath("$.data.size").value(10));
 
-            then(examinationService).should()
+            then(examinationQueryService).should()
                     .getExaminations(
                             institutionId,
                             RoleType.EXAMINER,
@@ -207,7 +211,7 @@ class ExaminationControllerTest {
         void getExaminationsAccessDenied() throws Exception {
 
             // given
-            given(examinationService.getExaminations(
+            given(examinationQueryService.getExaminations(
                     institutionId,
                     RoleType.REQUESTER,
                     pageable(0, 10)
@@ -239,7 +243,7 @@ class ExaminationControllerTest {
                     .andExpect(jsonPath("$.code")
                             .value("MISSING_HEADER"));
 
-            then(examinationService).shouldHaveNoInteractions();
+            then(examinationQueryService).shouldHaveNoInteractions();
         }
 
         @Test
@@ -255,7 +259,7 @@ class ExaminationControllerTest {
                     .andExpect(jsonPath("$.code")
                             .value("MISSING_HEADER"));
 
-            then(examinationService).shouldHaveNoInteractions();
+            then(examinationQueryService).shouldHaveNoInteractions();
         }
 
         @Test
@@ -271,7 +275,7 @@ class ExaminationControllerTest {
                     )
                     .andExpect(status().isBadRequest());
 
-            then(examinationService).shouldHaveNoInteractions();
+            then(examinationQueryService).shouldHaveNoInteractions();
         }
 
         @Test
@@ -287,7 +291,7 @@ class ExaminationControllerTest {
                     )
                     .andExpect(status().isBadRequest());
 
-            then(examinationService).shouldHaveNoInteractions();
+            then(examinationQueryService).shouldHaveNoInteractions();
         }
     }
 

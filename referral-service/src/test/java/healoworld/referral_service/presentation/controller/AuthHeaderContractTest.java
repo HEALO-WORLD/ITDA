@@ -254,15 +254,22 @@ class AuthHeaderContractTest {
         then(reservationRepository).should().search(any(), eq(requesterInstitutionId), eq(RoleType.EXAMINER), any());
     }
 
-    @Test
-    @DisplayName("예약 삭제: X-User-Role: ADMIN을 더해도 다른 사람의 예약은 404이고 저장되지 않는다")
-    void forgedRoleCannotDeleteReservation() throws Exception {
+    // 예약 삭제 API는 제공하지 않는다. Gateway를 거치지 않고 직접 호출해도 어떤 역할이든 405이고 예약을 읽거나 바꾸지 않는다
+    // (취소된 예약 = 예전 정책에서 삭제할 수 있던 상태로 확인)
+    @ParameterizedTest
+    @EnumSource(RoleType.class)
+    @DisplayName("예약 삭제: 모든 역할의 DELETE 요청은 405 UNSUPPORTED_REQUEST이고 삭제·조회·저장되지 않는다")
+    void deleteReservationIsNotProvided(RoleType role) throws Exception {
         mockMvc.perform(delete("/api/v1/referrals/reservations/{id}", othersReservation.getId())
-                        .header(USER_ID, requesterId.toString())
-                        .header(ROLE, "REQUESTER")
+                        .header(USER_ID, othersReferral.getReferrerId().toString())   // 의뢰 작성자 본인이라도
+                        .header(ROLE, role.name())
                         .header(FORGED_ROLE, "ADMIN"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.code").value("UNSUPPORTED_REQUEST"));
+        then(reservationRepository).should(never()).softDeleteIf(any(), any(), any(), any());
+        then(reservationRepository).should(never()).findByIdWithReferral(any());
         then(reservationRepository).should(never()).save(any());
+        assertThat(othersReservation.getDeletedAt()).isNull();
     }
 
     @Test

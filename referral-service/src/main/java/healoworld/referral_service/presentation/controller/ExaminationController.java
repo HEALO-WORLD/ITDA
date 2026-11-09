@@ -1,5 +1,6 @@
 package healoworld.referral_service.presentation.controller;
 
+import healoworld.referral_service.application.service.ExaminationQueryService;
 import healoworld.referral_service.application.service.ExaminationService;
 import healoworld.referral_service.application.service.ExaminationResultService;
 import healoworld.referral_service.domain.enums.RoleType;
@@ -36,7 +37,8 @@ import java.util.UUID;
 @RequestMapping("/api/v1/examinations")
 public class ExaminationController {
 
-    private final ExaminationService examinationService;
+    private final ExaminationQueryService examinationQueryService;   // 검사 목록 조회
+    private final ExaminationService examinationService;             // 검사 상태 변경
     private final ExaminationResultService examinationResultService;
 
     // ==============================
@@ -89,7 +91,7 @@ public class ExaminationController {
         PageRequest pageable = PageRequest.of(page, size, sort);
 
         PagedResponse<ExaminationListResponse> response =
-                examinationService.getExaminations(
+                examinationQueryService.getExaminations(
                         institutionId,
                         role,
                         pageable

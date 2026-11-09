@@ -16,6 +16,15 @@ import java.util.UUID;
 public interface ReservationRepository extends JpaRepository<Reservation, UUID>, ReservationRepositoryCustom {
     Optional<Reservation> findTopByReferralIdOrderByAttemptNoDesc(UUID referralId);
 
+    // 의뢰의 마지막 예약 시도 번호. 소프트 삭제된 예약도 포함하고, 예약이 없으면 0
+    // Reservation의 @SQLRestriction("deleted_at IS NULL")은 JPQL·메서드 이름 조회에만 붙으므로 native 쿼리로 삭제된 행까지 본다
+    // (삭제된 마지막 예약을 빼고 세면 다음 예약이 같은 번호를 다시 쓰고, 재예약 실패가 첫 예약 실패로 처리된다)
+    // 동시성: 같은 의뢰의 예약 생성은 의뢰 행 잠금(ReferralRepository.findByIdForUpdate) 안 또는 아직 커밋되지 않은 새 의뢰 안에서만 일어나므로
+    // 이 조회와 예약 저장 사이에 같은 의뢰의 다른 예약이 끼어들지 않는다. MAX 조회 자체가 동시성을 보장하지는 않는다
+    @Query(value = "select coalesce(max(attempt_no), 0) from p_reservations where referral_id = :referralId",
+            nativeQuery = true)
+    int findMaxAttemptNoIncludingDeleted(@Param("referralId") UUID referralId);
+
     Optional<Reservation> findByReferralIdAndAttemptNo(UUID id, int i);
 
     @Query("select r.referral.id from Reservation r where r.id = :id")
