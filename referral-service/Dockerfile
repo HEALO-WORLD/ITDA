@@ -2,14 +2,17 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /workspace
 
-# 의존성 다운로드를 소스 복사보다 먼저 해서, 소스만 바뀌면 이 레이어를 캐시로 재사용한다
+# 빌드 설정만 먼저 복사해 의존성을 받는다. 빌드 설정이 그대로면 이 단계는 레이어 캐시로 건너뛴다
+# 받은 의존성은 이미지 레이어가 아니라 캐시 마운트(/root/.gradle)에 저장되어 아래 bootJar 단계와 다음 빌드에서 재사용된다
 COPY gradlew settings.gradle build.gradle ./
 COPY gradle gradle
-RUN ./gradlew dependencies --no-daemon > /dev/null
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
+    ./gradlew dependencies --no-daemon > /dev/null
 
 COPY src src
 # 테스트는 CI의 build 단계에서 돌리므로 이미지 빌드에서는 건너뛴다
-RUN ./gradlew bootJar --no-daemon -x test \
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
+    ./gradlew bootJar --no-daemon -x test --build-cache \
     && cp build/libs/*-SNAPSHOT.jar app.jar
 
 # 실행 단계: JRE만 담아 이미지 크기를 줄인다
