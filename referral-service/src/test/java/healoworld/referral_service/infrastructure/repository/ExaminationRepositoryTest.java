@@ -1,6 +1,8 @@
 package healoworld.referral_service.infrastructure.repository;
 
 import healoworld.referral_service.domain.entity.Examination;
+import healoworld.referral_service.domain.entity.Referral;
+import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.global.config.QuerydslConfig;
 
 import healoworld.referral_service.support.PostgresContainerSupport;
@@ -13,9 +15,12 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,11 +35,35 @@ class ExaminationRepositoryTest extends PostgresContainerSupport {
     @Autowired
     private ExaminationRepository examinationRepository;
 
-    // 테스트용 검사 데이터 생성
+    @Autowired
+    private ReferralRepository referralRepository;
+
+    // 컨트롤러와 같은 정렬 (생성일 최신순, 같으면 ID 내림차순)
+    private static final Sort LIST_SORT = Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+
+    // 테스트용 검사 데이터 생성 (확정된 의뢰에 연결)
     private Examination createExamination(UUID institutionId) {
+        return createExamination(institutionId, ReferralStatus.CONFIRMED, false);
+    }
+
+    // 지정한 상태의 의뢰에 연결된 검사를 만든다. deleted면 의뢰를 soft delete한다 (취소된 의뢰만 삭제 가능)
+    private Examination createExamination(UUID institutionId, ReferralStatus referralStatus, boolean deleted) {
+
+        Referral referral = Referral.create(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "테스트 환자", UUID.randomUUID());
+        referral.confirm();
+        if (referralStatus == ReferralStatus.CANCELED) {
+            referral.cancel();
+        } else if (referralStatus == ReferralStatus.NEEDS_RESCHEDULE) {
+            referral.requestReschedule();
+        }
+        if (deleted) {
+            referral.delete(UUID.randomUUID());
+        }
+        referralRepository.saveAndFlush(referral);
 
         Examination examination = Examination.schedule(
-                UUID.randomUUID(), // 의뢰 ID
+                referral.getId(),  // 의뢰 ID
                 UUID.randomUUID(), // 예약 ID
                 institutionId      // 검사기관 ID
         );
@@ -153,5 +182,90 @@ class ExaminationRepositoryTest extends PostgresContainerSupport {
 
         assertThat(firstPage.getNumber()).isZero();
         assertThat(secondPage.getNumber()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("취소된 의뢰의 검사는 목록과 전체 건수에서 제외되고, 재조정 필요 의뢰의 검사는 포함된다")
+    void findByExamInstitutionId_excludesCanceledReferral() {
+
+        // given
+        UUID institutionId = UUID.randomUUID();
+
+        Examination confirmed = createExamination(institutionId, ReferralStatus.CONFIRMED, false);
+        Examination needsReschedule = createExamination(institutionId, ReferralStatus.NEEDS_RESCHEDULE, false);
+        Examination canceled = createExamination(institutionId, ReferralStatus.CANCELED, false);
+
+        // when
+        Page<Examination> result =
+                examinationRepository.findByExamInstitutionId(
+                        institutionId,
+                        PageRequest.of(0, 10, LIST_SORT)
+                );
+
+        // then
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getContent())
+                .extracting(Examination::getId)
+                .containsExactlyInAnyOrder(confirmed.getId(), needsReschedule.getId())
+                .doesNotContain(canceled.getId());
+    }
+
+    @Test
+    @DisplayName("soft delete된 의뢰의 검사는 목록과 전체 건수에서 제외된다")
+    void findByExamInstitutionId_excludesDeletedReferral() {
+
+        // given
+        UUID institutionId = UUID.randomUUID();
+
+        Examination confirmed = createExamination(institutionId);
+        Examination deleted = createExamination(institutionId, ReferralStatus.CANCELED, true);
+
+        // when
+        Page<Examination> result =
+                examinationRepository.findByExamInstitutionId(
+                        institutionId,
+                        PageRequest.of(0, 10, LIST_SORT)
+                );
+
+        // then
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent())
+                .extracting(Examination::getId)
+                .containsExactly(confirmed.getId())
+                .doesNotContain(deleted.getId());
+    }
+
+    @Test
+    @DisplayName("제외 대상이 섞여 있어도 페이지 내용과 전체 건수·페이지 수가 같은 조건으로 계산된다")
+    void findByExamInstitutionId_paginationWithExcludedReferrals() {
+
+        // given: 유효 3건 + 취소 1건 + 삭제 1건
+        UUID institutionId = UUID.randomUUID();
+
+        Set<UUID> visibleIds = Set.of(
+                createExamination(institutionId).getId(),
+                createExamination(institutionId).getId(),
+                createExamination(institutionId).getId()
+        );
+        createExamination(institutionId, ReferralStatus.CANCELED, false);
+        createExamination(institutionId, ReferralStatus.CANCELED, true);
+
+        // when
+        Page<Examination> firstPage =
+                examinationRepository.findByExamInstitutionId(institutionId, PageRequest.of(0, 2, LIST_SORT));
+        Page<Examination> secondPage =
+                examinationRepository.findByExamInstitutionId(institutionId, PageRequest.of(1, 2, LIST_SORT));
+
+        // then
+        assertThat(firstPage.getContent()).hasSize(2);
+        assertThat(secondPage.getContent()).hasSize(1);
+        assertThat(firstPage.getTotalElements()).isEqualTo(3);
+        assertThat(secondPage.getTotalElements()).isEqualTo(3);
+        assertThat(firstPage.getTotalPages()).isEqualTo(2);
+
+        // 두 페이지를 합치면 유효한 검사 3건이 중복·누락 없이 나온다
+        assertThat(Stream.concat(firstPage.getContent().stream(), secondPage.getContent().stream())
+                .map(Examination::getId))
+                .containsExactlyInAnyOrderElementsOf(visibleIds);
     }
 }
