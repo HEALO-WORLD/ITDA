@@ -1,6 +1,6 @@
 package healoworld.referral_service.presentation.controller;
 
-import healoworld.referral_service.application.service.ExaminationService;
+import healoworld.referral_service.application.service.ExaminationQueryService;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -30,7 +30,7 @@ class ExaminationInternalControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private ExaminationService examinationService;
+    private ExaminationQueryService examinationQueryService;
 
     // 메인 클래스의 @EnableJpaAuditing이 웹 슬라이스 테스트에서도 JPA 메타모델을 찾기 때문에 대체한다
     @MockitoBean
@@ -42,7 +42,7 @@ class ExaminationInternalControllerTest {
         UUID referralId = UUID.randomUUID();
         UUID examinationId = UUID.randomUUID();
         UUID institutionId = UUID.randomUUID();
-        given(examinationService.getByReferralId(referralId)).willReturn(new ExaminationResponse(examinationId,
+        given(examinationQueryService.getByReferralId(referralId)).willReturn(new ExaminationResponse(examinationId,
                 referralId, institutionId, ExaminationStatus.IN_PROGRESS, LocalDateTime.of(2026, 10, 28, 9, 0), null));
 
         mockMvc.perform(get("/api/v1/internal/examinations/by-referral/{referralId}", referralId))
@@ -60,7 +60,7 @@ class ExaminationInternalControllerTest {
     @DisplayName("검사가 없으면 404 EXAMINATION_NOT_FOUND")
     void notFound() throws Exception {
         UUID referralId = UUID.randomUUID();
-        given(examinationService.getByReferralId(referralId))
+        given(examinationQueryService.getByReferralId(referralId))
                 .willThrow(new BaseException(ErrorCode.EXAMINATION_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/internal/examinations/by-referral/{referralId}", referralId))
