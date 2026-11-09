@@ -119,7 +119,7 @@ class EquipmentIncidentControllerTest {
                 new IncidentReferralSearchCondition(IncidentProcessingStatus.FAILED, 0, 10))).willReturn(
                 new PagedResponse<>(List.of(new IncidentReferralResponse(UUID.randomUUID(), incidentId, referralId,
                         reservationId, IncidentProcessingStatus.FAILED, 1, OCCURRED_AT, null, "[RETRYABLE] 가상 오류",
-                        null, null)), 1, 1, 10, 0));
+                        null, null, false)), 1, 1, 10, 0));
 
         mockMvc.perform(withAuth(get(BASE + "/{incidentId}/referrals", incidentId), "EXAMINER")
                         .param("status", "FAILED")
@@ -130,7 +130,26 @@ class EquipmentIncidentControllerTest {
                 .andExpect(jsonPath("$.data.contents[0].reservationId").value(reservationId.toString()))
                 .andExpect(jsonPath("$.data.contents[0].processingStatus").value("FAILED"))
                 .andExpect(jsonPath("$.data.contents[0].retryCount").value(1))
-                .andExpect(jsonPath("$.data.contents[0].lastError").value("[RETRYABLE] 가상 오류"));
+                .andExpect(jsonPath("$.data.contents[0].lastError").value("[RETRYABLE] 가상 오류"))
+                .andExpect(jsonPath("$.data.contents[0].manualReviewRequired").value(false));
+    }
+
+    @Test
+    @DisplayName("영향 의뢰: 수동 확인 대상은 processingStatus SUCCEEDED와 manualReviewRequired true가 함께 내려간다")
+    void referralManualReviewRequired() throws Exception {
+        given(equipmentIncidentQueryService.getIncidentReferrals(RoleType.EXAMINER, institutionId, incidentId,
+                new IncidentReferralSearchCondition(null, 0, 10))).willReturn(
+                new PagedResponse<>(List.of(new IncidentReferralResponse(UUID.randomUUID(), incidentId,
+                        UUID.randomUUID(), UUID.randomUUID(), IncidentProcessingStatus.SUCCEEDED, 0, null, null,
+                        null, "SKIPPED_IN_PROGRESS", OCCURRED_AT, true)), 1, 1, 10, 0));
+
+        mockMvc.perform(withAuth(get(BASE + "/{incidentId}/referrals", incidentId), "EXAMINER")
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.contents[0].processingStatus").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.contents[0].resultCode").value("SKIPPED_IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.contents[0].manualReviewRequired").value(true));
     }
 
     @Test

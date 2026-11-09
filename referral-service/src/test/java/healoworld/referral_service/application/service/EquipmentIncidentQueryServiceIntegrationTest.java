@@ -1,10 +1,12 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.domain.entity.EquipmentIncident;
+import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.EquipmentIncidentStatus;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
@@ -13,6 +15,8 @@ import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
+import healoworld.referral_service.infrastructure.repository.ExaminationProgress;
+import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -33,7 +37,10 @@ import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -313,5 +320,79 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
 
         assertThat(service.getSummary(RoleType.EXAMINER, myInstitutionId, null, BASE.plusHours(2)))
                 .isEqualTo(new EquipmentIncidentSummaryResponse(myInstitutionId, BASE.plusHours(2), 0, 1, 1));
+    }
+
+    // ===== 영향 의뢰: 수동 확인 필요 여부 (검사 일괄 조회 쿼리를 실제 DB로 확인) =====
+
+    @Autowired
+    private ExaminationRepository examinationRepository;
+
+    // 자동 후속 처리가 결과 코드와 함께 끝난 작업 (claim → markSucceeded)
+    private IncidentReferral succeeded(EquipmentIncident incident, String resultCode) {
+        IncidentReferral task = task(incident);
+        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
+        LocalDateTime lockedUntil = now.plusMinutes(5);
+        incidentReferralRepository.claim(task.getId(), now, lockedUntil);
+        incidentReferralRepository.markSucceeded(task.getId(), lockedUntil, resultCode, now);
+        return task;
+    }
+
+    // 의뢰의 검사를 reservationId 예약에 연결해 저장하고, inProgress면 검사 시작과 같은 조건부 UPDATE로 시작한다
+    private void examination(UUID referralId, UUID reservationId, boolean inProgress) {
+        Examination examination = examinationRepository.saveAndFlush(
+                Examination.schedule(referralId, reservationId, myInstitutionId));
+        if (inProgress) {
+            assertThat(examinationRepository.startIfScheduled(examination.getId(), reservationId,
+                    LocalDateTime.now())).isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("수동 확인: 같은 예약의 진행 중 검사만 true, 예약 불일치·검사 없음·SCHEDULED·다른 결과 코드·미처리 작업은 false")
+    void manualReviewAgainstRealExaminations() {
+        EquipmentIncident incident = incident(myInstitutionId, equipmentA, 0);
+        IncidentReferral matched = succeeded(incident, IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        IncidentReferral otherReservation = succeeded(incident, IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        IncidentReferral noExamination = succeeded(incident, IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        IncidentReferral scheduled = succeeded(incident, IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        IncidentReferral rescheduled = succeeded(incident, IncidentProcessingService.RESCHEDULE_REQUIRED);
+        IncidentReferral pending = task(incident);
+
+        examination(matched.getReferralId(), matched.getReservationId(), true);
+        examination(otherReservation.getReferralId(), UUID.randomUUID(), true);   // 다른 예약에 연결된 진행 중 검사
+        examination(scheduled.getReferralId(), scheduled.getReservationId(), false);
+        examination(rescheduled.getReferralId(), rescheduled.getReservationId(), true);
+        examination(pending.getReferralId(), pending.getReservationId(), true);
+
+        Map<UUID, Boolean> byTask = service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId,
+                        incident.getId(), new IncidentReferralSearchCondition(null, 0, 10)).contents().stream()
+                .collect(Collectors.toMap(IncidentReferralResponse::id, IncidentReferralResponse::manualReviewRequired));
+
+        assertThat(byTask).hasSize(6)
+                .containsEntry(matched.getId(), true)
+                .containsEntry(otherReservation.getId(), false)
+                .containsEntry(noExamination.getId(), false)
+                .containsEntry(scheduled.getId(), false)
+                .containsEntry(rescheduled.getId(), false)
+                .containsEntry(pending.getId(), false);
+    }
+
+    @Test
+    @DisplayName("수동 확인: 검사 일괄 조회는 요청한 의뢰의 연결 예약·상태만 돌려준다 (검사가 없는 의뢰는 결과에 없음)")
+    void findProgressByReferralIds() {
+        UUID inProgressReferral = UUID.randomUUID();
+        UUID inProgressReservation = UUID.randomUUID();
+        UUID scheduledReferral = UUID.randomUUID();
+        UUID scheduledReservation = UUID.randomUUID();
+        examination(inProgressReferral, inProgressReservation, true);
+        examination(scheduledReferral, scheduledReservation, false);
+        examination(UUID.randomUUID(), UUID.randomUUID(), true);   // 요청하지 않은 의뢰
+
+        List<ExaminationProgress> progress = examinationRepository.findProgressByReferralIds(
+                List.of(inProgressReferral, scheduledReferral, UUID.randomUUID()));
+
+        assertThat(progress).containsExactlyInAnyOrder(
+                new ExaminationProgress(inProgressReferral, inProgressReservation, ExaminationStatus.IN_PROGRESS),
+                new ExaminationProgress(scheduledReferral, scheduledReservation, ExaminationStatus.SCHEDULED));
     }
 }
