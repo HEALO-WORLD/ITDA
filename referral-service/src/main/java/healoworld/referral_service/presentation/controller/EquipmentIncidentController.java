@@ -8,6 +8,7 @@ import healoworld.referral_service.presentation.dto.request.EquipmentIncidentSea
 import healoworld.referral_service.presentation.dto.request.IncidentReferralSearchCondition;
 import healoworld.referral_service.presentation.dto.response.EquipmentIncidentDetailResponse;
 import healoworld.referral_service.presentation.dto.response.EquipmentIncidentResponse;
+import healoworld.referral_service.presentation.dto.response.EquipmentIncidentSummaryResponse;
 import healoworld.referral_service.presentation.dto.response.IncidentReferralResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -57,6 +59,38 @@ public class EquipmentIncidentController {
         PagedResponse<EquipmentIncidentResponse> response =
                 equipmentIncidentQueryService.getIncidents(role, institutionId, cond);
         return ResponseEntity.ok(ApiResponse.ok("장비 장애 목록 조회가 완료되었습니다.", response));
+    }
+
+    @Operation(summary = "장비 장애 현황 조회",
+            description = """
+                    검사기관의 장비 장애 현황을 집계합니다. 세 값은 같은 기관과 같은 기준 시각(asOf)으로 계산합니다.
+
+                    - activeDowntimeEquipmentCount: 기준 시각에 중단 구간(시작 포함, 종료 미포함)에 있는 장비 수.
+                      실제 고장·복구 상태가 아니라 등록된 중단 구간 기준입니다.
+                    - affectedReferralCount: 전체 장애 이력에서 영향 대상으로 탐지된 의뢰 수 (누적, 후속 처리 상태와 무관)
+                    - needsRescheduleReferralCount: 지금 재조정이 필요하고(NEEDS_RESCHEDULE) 가장 최근 차단 예약이 이 기관인 의뢰 수
+                    - 장애 이벤트(Kafka)가 늦게 반영되면 Slot Service의 원본과 잠시 다를 수 있습니다.
+                    - 복구 완료 장애 수는 복구 데이터가 없어 제공하지 않습니다.
+
+                    - ADMIN: institutionId로 조회할 기관을 반드시 지정합니다.
+                    - EXAMINER: 자기 기관만 조회합니다. 요청의 institutionId는 무시됩니다.
+                    - REQUESTER: 조회할 수 없습니다.
+
+                    - 400 MISSING_HEADER: 필수 헤더 누락
+                    - 400 INVALID_INPUT: 헤더 또는 institutionId의 형식이 잘못됨
+                    - 400 VALIDATION_FAILED: ADMIN 요청에 institutionId가 없음
+                    - 403 EQUIPMENT_INCIDENT_ACCESS_DENIED: REQUESTER 요청
+                    """)
+    @GetMapping("/summary")
+    public ResponseEntity<ApiResponse<EquipmentIncidentSummaryResponse>> getSummary(
+            @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "조회할 기관 ID (ADMIN 필수, EXAMINER는 무시)")
+            @RequestParam(value = "institutionId", required = false) UUID requestedInstitutionId
+    ) {
+        EquipmentIncidentSummaryResponse response =
+                equipmentIncidentQueryService.getSummary(role, institutionId, requestedInstitutionId);
+        return ResponseEntity.ok(ApiResponse.ok("장비 장애 현황 조회가 완료되었습니다.", response));
     }
 
     @Operation(summary = "장비 장애 상세 조회",
