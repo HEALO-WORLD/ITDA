@@ -75,6 +75,7 @@ import static org.mockito.BDDMockito.given;
 @Import({
         ReferralService.class,
         SlotResultService.class,
+        InstitutionNotificationService.class,
         EquipmentIncidentService.class,
         EquipmentIncidentLockRepository.class,
         IncidentProcessingService.class,

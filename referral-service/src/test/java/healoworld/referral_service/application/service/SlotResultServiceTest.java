@@ -82,6 +82,9 @@ class SlotResultServiceTest {
     @Mock
     private ExaminationRepository examinationRepository;
 
+    @Mock
+    private InstitutionNotificationService institutionNotificationService;
+
     @InjectMocks
     private SlotResultService slotResultService;
 
@@ -138,6 +141,8 @@ class SlotResultServiceTest {
         assertThat(reservation.getConfirmedAt()).isNotNull();
         assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
         assertHistory(ReferralStatus.PENDING, ReferralStatus.CONFIRMED, Reason.RESERVATION_CONFIRMED, eventId);
+        // 예약·의뢰 확정이 성공한 뒤 검사기관 알림을 같은 SlotBooked eventId로 요청한다
+        verify(institutionNotificationService).notifyReservationConfirmed(referral.getId(), reservation, eventId);
     }
 
     @ParameterizedTest(name = "{0}: 재예약(attemptNo 2) 실패면 의뢰는 NEEDS_RESCHEDULE")
@@ -275,6 +280,7 @@ class SlotResultServiceTest {
 
         verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
         verify(consumedEventRepository).save(any(ConsumedEvent.class));
+        verifyNoInteractions(institutionNotificationService);
     }
 
     @Test
@@ -286,6 +292,7 @@ class SlotResultServiceTest {
         assertErrorCode(() -> handle("SlotBooked", reservation), ErrorCode.INVALID_REFERRAL_STATUS);
         verifyNoInteractions(referralHistoryRepository, examinationService);
         verify(consumedEventRepository, never()).save(any());
+        verifyNoInteractions(institutionNotificationService);
     }
 
     @ParameterizedTest(name = "{0}: 예약이 {1}이면 무시")
@@ -323,6 +330,7 @@ class SlotResultServiceTest {
         assertThat(referral.getReferralStatus()).isEqualTo(referralBefore);
         verify(slotCommandOutbox).recordOutbox(reservation, SlotCommandType.RELEASE_SLOT);
         verifyNoInteractions(referralHistoryRepository, examinationService);
+        verifyNoInteractions(institutionNotificationService);
         verify(consumedEventRepository).save(any(ConsumedEvent.class));
     }
 
@@ -336,6 +344,7 @@ class SlotResultServiceTest {
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
         verify(slotCommandOutbox, never()).recordOutbox(any(Reservation.class), any(SlotCommandType.class));
         verifyNoInteractions(referralHistoryRepository, examinationService);
+        verifyNoInteractions(institutionNotificationService);
     }
 
     @Test

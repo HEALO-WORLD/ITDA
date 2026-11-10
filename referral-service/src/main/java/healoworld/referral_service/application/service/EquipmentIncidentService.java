@@ -95,6 +95,7 @@ public class EquipmentIncidentService {
     }
 
     // 장애의 영향을 받는 확정 예약마다 후속 처리 작업(IncidentReferral, PENDING)을 만들고, 새로 만든 작업 수를 돌려준다
+    // 이 장애 이벤트보다 먼저 SlotsBlocked로 차단된 확정 예약도 대상이다 (조건은 IncidentReservationRepository.findAffected())
     // 호출 순서: register()로 장애 ID를 받은 뒤 이 메서드를 호출한다. 같은 이벤트가 다시 와도 register()가 같은 장애 ID를
     // 돌려주므로 이 메서드를 다시 실행하면 빠진 작업만 만들어진다 (이미 있는 작업은 건너뜀)
     //

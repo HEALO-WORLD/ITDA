@@ -7,6 +7,7 @@ import healoworld.referral_service.presentation.dto.response.NotificationReadRes
 import healoworld.referral_service.presentation.dto.response.NotificationResponse;
 import healoworld.referral_service.presentation.dto.response.UnreadCountResponse;
 import healoworld.referral_service.application.service.NotificationService;
+import healoworld.referral_service.application.service.InstitutionNotificationService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -47,6 +48,9 @@ class NotificationControllerTest {
     @MockitoBean
     private NotificationService notificationService;
 
+    @MockitoBean
+    private InstitutionNotificationService institutionNotificationService;
+
     // 메인 클래스의 @EnableJpaAuditing이 웹 슬라이스 테스트에서도 JPA 메타모델을 찾기 때문에 대체한다
     @MockitoBean
     private JpaMetamodelMappingContext jpaMetamodelMappingContext;
@@ -58,7 +62,7 @@ class NotificationControllerTest {
     void getMyNotifications() throws Exception {
         UUID referralId = UUID.randomUUID();
         NotificationResponse item = new NotificationResponse(UUID.randomUUID(), referralId, "TEST", "제목", "내용",
-                false, LocalDateTime.of(2026, 10, 27, 9, 0), null);
+                false, LocalDateTime.of(2026, 10, 27, 9, 0), null, null);
         given(notificationService.getMyNotifications(eq(userId), eq(referralId), eq(false), any(Pageable.class)))
                 .willReturn(new PagedResponse<>(List.of(item), 1, 1, 10, 0));
 
@@ -267,5 +271,170 @@ class NotificationControllerTest {
 
         then(notificationService).should().getMyNotifications(eq(userId), eq(referralId), eq(true),
                 eq(PageRequest.of(1, 30, Sort.by(Sort.Order.desc("readAt")))));
+    }
+
+    // ===== 역할별 분기: EXAMINER는 소속 검사기관 공통 알림, 그 밖은 개인 알림 =====
+
+    private final UUID institutionId = UUID.randomUUID();
+
+    @Test
+    @DisplayName("EXAMINER 목록 조회는 X-Institution-Id의 기관 알림을 같은 페이지·필터로 조회하고 개인 알림은 조회하지 않는다")
+    void examinerListUsesInstitution() throws Exception {
+        UUID referralId = UUID.randomUUID();
+        UUID reservationId = UUID.randomUUID();
+        NotificationResponse item = new NotificationResponse(UUID.randomUUID(), referralId, "RESERVATION_CONFIRMED",
+                "제목", "내용", false, LocalDateTime.of(2026, 11, 10, 9, 0), null, reservationId);
+        given(institutionNotificationService.getInstitutionNotifications(eq(institutionId), eq(userId), eq(referralId),
+                eq(false), any(Pageable.class))).willReturn(new PagedResponse<>(List.of(item), 1, 1, 30, 0));
+
+        mockMvc.perform(get("/api/v1/notifications")
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "EXAMINER")
+                        .header("X-Institution-Id", institutionId.toString())
+                        .param("referralId", referralId.toString())
+                        .param("isRead", "false")
+                        .param("size", "30")
+                        .param("sort", "readAt,desc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.contents[0].type").value("RESERVATION_CONFIRMED"))
+                .andExpect(jsonPath("$.data.contents[0].reservationId").value(reservationId.toString()));
+
+        then(institutionNotificationService).should().getInstitutionNotifications(eq(institutionId), eq(userId),
+                eq(referralId), eq(false), eq(PageRequest.of(0, 30, Sort.by(Sort.Order.desc("readAt")))));
+        then(notificationService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("EXAMINER 안 읽은 수·읽음 처리도 기관 알림으로 처리한다")
+    void examinerUnreadCountAndRead() throws Exception {
+        UUID notificationId = UUID.randomUUID();
+        given(institutionNotificationService.countUnread(institutionId, userId)).willReturn(new UnreadCountResponse(3));
+        given(institutionNotificationService.markAsRead(institutionId, userId, notificationId))
+                .willReturn(new NotificationReadResponse(notificationId, true, LocalDateTime.of(2026, 11, 10, 9, 30)));
+
+        mockMvc.perform(get("/api/v1/notifications/unread-count")
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "EXAMINER")
+                        .header("X-Institution-Id", institutionId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unreadCount").value(3));
+        mockMvc.perform(patch("/api/v1/notifications/{notificationId}/read", notificationId)
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "EXAMINER")
+                        .header("X-Institution-Id", institutionId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.isRead").value(true));
+
+        then(notificationService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("EXAMINER가 다른 기관 알림을 읽음 처리하면 403 NOTIFICATION_ACCESS_DENIED")
+    void examinerReadOtherInstitution() throws Exception {
+        UUID notificationId = UUID.randomUUID();
+        given(institutionNotificationService.markAsRead(institutionId, userId, notificationId))
+                .willThrow(new BaseException(ErrorCode.NOTIFICATION_ACCESS_DENIED));
+
+        mockMvc.perform(patch("/api/v1/notifications/{notificationId}/read", notificationId)
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "EXAMINER")
+                        .header("X-Institution-Id", institutionId.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("NOTIFICATION_ACCESS_DENIED"));
+    }
+
+    @Test
+    @DisplayName("EXAMINER인데 X-Institution-Id가 없으면 400 MISSING_HEADER이고 어떤 알림도 조회하지 않는다")
+    void examinerWithoutInstitution() throws Exception {
+        mockMvc.perform(get("/api/v1/notifications")
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "EXAMINER"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MISSING_HEADER"));
+        mockMvc.perform(get("/api/v1/notifications/unread-count")
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "EXAMINER"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MISSING_HEADER"));
+        mockMvc.perform(patch("/api/v1/notifications/{notificationId}/read", UUID.randomUUID())
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "EXAMINER"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MISSING_HEADER"));
+
+        then(institutionNotificationService).shouldHaveNoInteractions();
+        then(notificationService).shouldHaveNoInteractions();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"REQUESTER", "ADMIN"})
+    @DisplayName("REQUESTER·ADMIN은 X-Institution-Id가 있어도 기존처럼 본인 개인 알림을 조회·읽음 처리한다")
+    void nonExaminerUsesPersonal(String role) throws Exception {
+        UUID notificationId = UUID.randomUUID();
+        given(notificationService.getMyNotifications(eq(userId), isNull(), isNull(), any(Pageable.class)))
+                .willReturn(new PagedResponse<>(List.of(), 0, 0, 10, 0));
+        given(notificationService.countUnread(userId)).willReturn(new UnreadCountResponse(1));
+        given(notificationService.markAsRead(userId, notificationId))
+                .willReturn(new NotificationReadResponse(notificationId, true, LocalDateTime.of(2026, 11, 10, 9, 30)));
+
+        mockMvc.perform(get("/api/v1/notifications").header("X-User-Id", userId.toString())
+                        .header("X-Role", role).header("X-Institution-Id", institutionId.toString()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/notifications/unread-count").header("X-User-Id", userId.toString())
+                        .header("X-Role", role).header("X-Institution-Id", institutionId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unreadCount").value(1));
+        mockMvc.perform(patch("/api/v1/notifications/{notificationId}/read", notificationId)
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", role).header("X-Institution-Id", institutionId.toString()))
+                .andExpect(status().isOk());
+
+        then(institutionNotificationService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("X-Role이 알 수 없는 값이면 400 INVALID_INPUT이고 어떤 알림도 조회하지 않는다")
+    void invalidRole() throws Exception {
+        mockMvc.perform(get("/api/v1/notifications")
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "PATIENT"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+        then(institutionNotificationService).shouldHaveNoInteractions();
+        then(notificationService).shouldHaveNoInteractions();
+    }
+    @Test
+    @DisplayName("EXAMINER 읽음 처리·목록은 헤더의 사용자·기관 ID만 쓰고, 쿼리·본문의 userId·institutionId는 무시한다")
+    void examinerUsesOnlyGatewayHeaders() throws Exception {
+        UUID notificationId = UUID.randomUUID();
+        UUID forgedUser = UUID.randomUUID();
+        UUID forgedInstitution = UUID.randomUUID();
+        given(institutionNotificationService.markAsRead(institutionId, userId, notificationId))
+                .willReturn(new NotificationReadResponse(notificationId, true, LocalDateTime.of(2026, 11, 10, 9, 30)));
+        given(institutionNotificationService.getInstitutionNotifications(eq(institutionId), eq(userId), isNull(),
+                isNull(), any(Pageable.class))).willReturn(new PagedResponse<>(List.of(), 0, 0, 10, 0));
+
+        mockMvc.perform(patch("/api/v1/notifications/{notificationId}/read", notificationId)
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "EXAMINER")
+                        .header("X-Institution-Id", institutionId.toString())
+                        .param("userId", forgedUser.toString())
+                        .param("institutionId", forgedInstitution.toString())
+                        .contentType("application/json")
+                        .content("{\"userId\":\"" + forgedUser + "\",\"institutionId\":\"" + forgedInstitution + "\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/notifications")
+                        .header("X-User-Id", userId.toString())
+                        .header("X-Role", "EXAMINER")
+                        .header("X-Institution-Id", institutionId.toString())
+                        .param("userId", forgedUser.toString())
+                        .param("institutionId", forgedInstitution.toString()))
+                .andExpect(status().isOk());
+
+        then(institutionNotificationService).should().markAsRead(institutionId, userId, notificationId);
+        then(institutionNotificationService).should().getInstitutionNotifications(eq(institutionId), eq(userId),
+                isNull(), isNull(), any(Pageable.class));
+        then(institutionNotificationService).shouldHaveNoMoreInteractions();
     }
 }
