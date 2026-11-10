@@ -16,6 +16,7 @@ import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentAffectedReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
+import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import healoworld.referral_service.support.DomainFixtures;
@@ -82,6 +83,9 @@ class IncidentProcessingServiceTest {
     private ReferralHistoryRepository referralHistoryRepository;
 
     @Mock
+    private ReferralRepository referralRepository;
+
+    @Mock
     private NotificationService notificationService;
 
     private IncidentProcessingService service;
@@ -98,7 +102,8 @@ class IncidentProcessingServiceTest {
                 incidentReservationRepository,
                 notificationService,
                 examinationRepository,
-                referralHistoryRepository,
+                // 실제 이력 서비스를 써서 referralHistoryRepository.save()까지 검증한다 (referralRepository는 이력 기록에 쓰이지 않음)
+                new ReferralHistoryService(referralHistoryRepository, referralRepository),
                 transactionManager,
                 Duration.ofMinutes(5),
                 Duration.ofMinutes(1),

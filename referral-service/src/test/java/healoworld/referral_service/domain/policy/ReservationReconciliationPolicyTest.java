@@ -1,6 +1,7 @@
 package healoworld.referral_service.domain.policy;
 
 import healoworld.referral_service.application.event.result.SlotResultType;
+import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -119,6 +120,34 @@ class ReservationReconciliationPolicyTest {
         void decide_terminal_ownBooked(ReservationStatus reservationStatus) {
             assertThat(decide(reservationStatus, "BOOKED", Owner.MINE))
                     .contains(SlotResultType.SLOT_BOOKED);
+        }
+
+        // 장비 장애로 확정 뒤 차단된 예약은 정책상 BOOKED 슬롯·예약 연결을 유지한다 → 보상 ReleaseSlot을 만들지 않는다
+        // 그 밖의 종료 예약(확정 전 차단, 사유 없는 차단, 실패, 취소)은 기존처럼 SLOT_BOOKED로 슬롯을 풀어 준다
+        @ParameterizedTest(name = "{0} + 사유 {1} + 확정 시각 {2} + 이 예약이 BOOKED한 슬롯 → {3}")
+        @CsvSource(nullValues = "-", value = {
+                "BLOCKED,  EQUIPMENT_FAILURE, true,  -",             // 확정 뒤 장애 차단: 슬롯 유지
+                "BLOCKED,  EQUIPMENT_FAILURE, false, SLOT_BOOKED",   // 확정 전(REQUESTED·HELD) 차단: 늦은 확정 슬롯은 해제
+                "BLOCKED,  -,                 true,  SLOT_BOOKED",   // 사유 없는 차단(과거 데이터 등): 기존 동작
+                "FAILED,   CONFIRM_FAILED,    false, SLOT_BOOKED",
+                "FAILED,   EQUIPMENT_FAILURE, false, SLOT_BOOKED",
+                "CANCELED, -,                 true,  SLOT_BOOKED",   // 취소는 확정 시각이 남아 있어도 해제 (사용자 취소)
+        })
+        void decide_terminal_withFailureContext(ReservationStatus reservationStatus, FailureReason failureReason,
+                                                boolean confirmed, SlotResultType expected) {
+            LocalDateTime confirmedAt = confirmed ? NOW.minusDays(1) : null;
+            assertThat(policy.decide(RESERVATION_ID, reservationStatus, failureReason, confirmedAt,
+                    slot("BOOKED", Owner.MINE), NOW))
+                    .isEqualTo(Optional.ofNullable(expected));
+        }
+
+        @ParameterizedTest(name = "확정 뒤 장애 차단 + 슬롯 {0}, 소유 {1} → 처리하지 않음")
+        @CsvSource(nullValues = "-", value = {
+                "BOOKED,      OTHER", "HELD,        MINE", "AVAILABLE,   NONE", "UNAVAILABLE, NONE", "UNAVAILABLE, MINE"
+        })
+        void decide_equipmentBlockedAfterConfirm_otherSlotStates(String slotStatus, Owner owner) {
+            assertThat(policy.decide(RESERVATION_ID, ReservationStatus.BLOCKED, FailureReason.EQUIPMENT_FAILURE,
+                    NOW.minusDays(1), slot(slotStatus, owner), NOW)).isEmpty();
         }
 
         @ParameterizedTest(name = "{0}: 슬롯 {1}, 소유 {2} → 처리하지 않음")

@@ -91,6 +91,79 @@ class FailureLoggingRetryListenerTest {
         assertThat(output).contains("topic=equipment-events", "eventId=null", "eventType=null");
     }
 
+    @Test
+    @DisplayName("DLT로 보낼 때 예외 클래스·원인·호출 위치(스택)를 남기고, 어느 원인의 메시지 원문도 남기지 않는다")
+    void recoveredLogsStackWithoutMessages(CapturedOutput output) {
+        SQLException sql = new SQLException("Failing row contains (가상환자, 010-0000-0000)", "23502");
+        Exception failure = new ListenerExecutionFailedException("listener failed",
+                new IllegalStateException("가상환자 처리 중 오류", sql));
+
+        listener.recovered(record(), failure);
+
+        assertThat(output).contains("DLT로 이동",
+                ListenerExecutionFailedException.class.getName(),
+                "Caused by: java.lang.IllegalStateException",
+                "Caused by: java.sql.SQLException",
+                "\tat " + FailureLoggingRetryListenerTest.class.getName() + ".recoveredLogsStackWithoutMessages");
+        assertThat(output).doesNotContain("listener failed", "가상환자", "Failing row", "010-0000-0000", PAYLOAD);
+    }
+
+    @Test
+    @DisplayName("재시도 중 실패 로그(failedDelivery)에는 스택을 남기지 않는다 (DLT로 갈 때 한 번만)")
+    void failedDeliveryDoesNotLogStack(CapturedOutput output) {
+        listener.failedDelivery(record(), new IllegalStateException("x"), 1);
+
+        assertThat(output).contains("attempt=1").doesNotContain("\tat ");
+    }
+
+    @Test
+    @DisplayName("스택은 원인마다 앞쪽 일부 줄만 남기고 나머지는 생략 줄 수로 표시한다")
+    void describeStackLimitsFramesPerCause() {
+        IllegalStateException deep = deepException(KafkaConfig.STACK_FRAMES_PER_CAUSE + 20);
+
+        String stack = KafkaConfig.describeStack(deep);
+
+        assertThat(stack.lines().filter(line -> line.startsWith("\tat ")).count())
+                .isEqualTo(KafkaConfig.STACK_FRAMES_PER_CAUSE);
+        assertThat(stack).containsPattern("\\t\\.\\.\\. \\d+ more");
+    }
+
+    @Test
+    @DisplayName("원인이 서로를 가리키는(순환) 예외도 멈추지 않고 한 번씩만 기록한다")
+    void describeStackHandlesCyclicCause() {
+        IllegalStateException first = new IllegalStateException("a");
+        IllegalArgumentException second = new IllegalArgumentException("b", first);
+        first.initCause(second);
+
+        String stack = KafkaConfig.describeStack(first);
+
+        assertThat(stack).containsOnlyOnce("java.lang.IllegalStateException")
+                .containsOnlyOnce("java.lang.IllegalArgumentException");
+    }
+
+    @Test
+    @DisplayName("리스너 예외를 감싼 ListenerExecutionFailedException은 스택 줄 없이 클래스 이름만 남기고, 실제 원인의 스택은 남긴다")
+    void describeStackSkipsListenerWrapperFrames() {
+        Exception failure = new ListenerExecutionFailedException("listener failed", new IllegalStateException("x"));
+
+        String stack = KafkaConfig.describeStack(failure);
+
+        assertThat(stack).startsWith(ListenerExecutionFailedException.class.getName() + "\nCaused by: java.lang.IllegalStateException\n\tat ");
+    }
+
+    @Test
+    @DisplayName("원인 없는 ListenerExecutionFailedException은 실패 위치가 그것뿐이므로 스택을 남긴다")
+    void describeStackKeepsWrapperFramesWithoutCause() {
+        String stack = KafkaConfig.describeStack(new ListenerExecutionFailedException("listener failed"));
+
+        assertThat(stack).startsWith(ListenerExecutionFailedException.class.getName() + "\n\tat ");
+    }
+
+    // depth만큼 재귀 호출한 위치에서 예외를 만든다 (스택이 깊은 예외)
+    private static IllegalStateException deepException(int depth) {
+        return depth == 0 ? new IllegalStateException("deep") : deepException(depth - 1);
+    }
+
     private ConsumerRecord<String, String> record() {
         ConsumerRecord<String, String> record = new ConsumerRecord<>("slot-results", 2, 211L, "slot-key", PAYLOAD);
         record.headers().add("eventId", EVENT_ID.getBytes(StandardCharsets.UTF_8));

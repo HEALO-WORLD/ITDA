@@ -43,6 +43,7 @@ public class ReservationService {
     private final ExaminationRepository examinationRepository;                   // 취소 시 검사 상태 확인
     private final Clock clock; // 취소 2시간 제한의 현재 시각 (한국 시간)
     private final ReferralHistoryService referralHistoryService;
+    private final InstitutionNotificationService institutionNotificationService;   // 취소 성공 시 검사기관 공통 알림 (같은 트랜잭션)
 
     public Reservation createReservation(UUID outboxEventId, Referral referral, CreateReservationRequest createReservationRequest) {
         // 삭제된 예약의 번호도 다시 쓰지 않도록 소프트 삭제된 예약까지 포함한 마지막 번호 + 1 (예약이 없으면 1)
@@ -126,6 +127,9 @@ public class ReservationService {
         }
         UUID eventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_SLOT);
         referralHistoryService.recordHistory(referral, reservation, fromStatus, ReferralStatus.CANCELED, Reason.CANCELED_BY_REQUESTER, eventId, userId);
+        // 예약·의뢰 취소와 ReleaseSlot Outbox 저장이 모두 성공한 뒤 취소된 예약의 검사기관에만 알림을 만든다
+        // 검증 실패·조건부 UPDATE 실패는 위에서 예외로 끝나 여기까지 오지 않고, 트랜잭션 롤백 시 알림도 함께 롤백된다
+        institutionNotificationService.notifyReservationCanceled(referral.getId(), reservation, eventId);
     }
 
     // 취소할 예약의 검사가 아직 시작 전(SCHEDULED)인지 확인한다. 의뢰·예약 다음에 검사를 잠근 뒤 읽는다

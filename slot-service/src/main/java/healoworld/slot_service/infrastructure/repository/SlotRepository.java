@@ -24,6 +24,9 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
 
     Optional<Slot> findByIdAndDeletedAtIsNull(UUID id);
 
+    // 여러 슬롯의 현재 상태 일괄 조회 (Referral 정합성 점검용 내부 API). 삭제된 슬롯은 제외한다
+    List<Slot> findAllByIdInAndDeletedAtIsNull(Collection<UUID> ids);
+
     @Query("""
         select count(s) > 0
         from Slot s
