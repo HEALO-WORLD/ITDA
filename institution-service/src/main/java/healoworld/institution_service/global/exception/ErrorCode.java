@@ -14,6 +14,8 @@ public enum ErrorCode {
     USER_NOT_APPROVED(HttpStatus.FORBIDDEN, "미승인 아이디입니다. 승인 후 이용해주세요."),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
     USER_ALREADY_APPROVED(HttpStatus.CONFLICT, "이미 승인된 사용자입니다."),
+    INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 Refresh Token입니다. 다시 로그인해 주세요."),
+    REFRESH_TOKEN_REUSED(HttpStatus.UNAUTHORIZED, "이미 사용된 Refresh Token입니다. 보안을 위해 다시 로그인해 주세요."),
 
     // institution
     INSTITUTION_NOT_FOUND(HttpStatus.NOT_FOUND, "기관을 찾을 수 없습니다."),
