@@ -7,12 +7,14 @@ import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
+import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ExaminationResultRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
+import healoworld.referral_service.presentation.dto.response.ExaminationListResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationResultCreateResponse;
 import healoworld.referral_service.presentation.dto.response.ExaminationStatusChangeResponse;
@@ -28,6 +30,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -564,6 +568,35 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
                 ),
                 ErrorCode.EXAMINATION_NOT_FOUND
         );
+    }
+
+    @Test
+    @DisplayName("예약 취소 후 의뢰가 삭제되어도 검사기관 목록은 오류 없이 조회되고 해당 검사는 제외된다")
+    void getExaminationsAfterCanceledReferralDeleted() {
+
+        // given: 확정된 의뢰·예약의 SCHEDULED 검사 → 예약·의뢰 취소 → 의뢰 soft delete
+        Examination examination = reload(createExaminationForStartTest(true, true, true));
+
+        Referral referral = referralRepository.findById(examination.getReferralId()).orElseThrow();
+        Reservation reservation = reservationRepository.findById(examination.getReservationId()).orElseThrow();
+        reservation.cancel();
+        referral.cancel();
+        referral.delete(UUID.randomUUID());
+        reservationRepository.saveAndFlush(reservation);
+        referralRepository.saveAndFlush(referral);
+
+        // when
+        PagedResponse<ExaminationListResponse> response =
+                examinationQueryService.getExaminations(
+                        examination.getExamInstitutionId(),
+                        RoleType.EXAMINER,
+                        PageRequest.of(0, 10, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")))
+                );
+
+        // then: 검사 행은 SCHEDULED로 남아 있지만 목록·전체 건수에는 나오지 않는다
+        assertThat(response.contents()).isEmpty();
+        assertThat(response.totalElements()).isZero();
+        assertThat(reload(examination.getId()).getStatus()).isEqualTo(ExaminationStatus.SCHEDULED);
     }
 
     // =========================================================

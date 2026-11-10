@@ -112,6 +112,7 @@ services:
     environment:
       <<: *app-env
       INCIDENT_PROCESSING_SCHEDULER_ENABLED: "true"
+      RESERVATION_RECONCILIATION_SCHEDULER_ENABLED: "true"
     depends_on: *app-depends
     healthcheck:
       test: [ "CMD", "curl", "-fs", "http://localhost:8083/actuator/health" ]
