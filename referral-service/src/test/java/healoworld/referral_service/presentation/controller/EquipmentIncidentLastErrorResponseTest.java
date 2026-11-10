@@ -4,6 +4,7 @@ import healoworld.referral_service.application.service.EquipmentIncidentQuerySer
 import healoworld.referral_service.domain.entity.EquipmentIncident;
 import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
@@ -39,7 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // 실제 Controller + 실제 EquipmentIncidentQueryService로 JSON 응답에 lastError가 역할별로 어떻게 담기는지 검증한다
 // (Repository만 Mock이며 DB는 사용하지 않는다)
 @WebMvcTest(EquipmentIncidentController.class)
-@Import(EquipmentIncidentQueryService.class)
+@Import({EquipmentIncidentQueryService.class, ClockConfig.class})
 @ActiveProfiles("test")
 class EquipmentIncidentLastErrorResponseTest {
 

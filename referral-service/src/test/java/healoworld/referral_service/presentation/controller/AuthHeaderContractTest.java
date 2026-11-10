@@ -9,6 +9,7 @@ import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.outbox.OutboxEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
@@ -53,7 +54,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // 역할: X-Role = REQUESTER / EXAMINER / ADMIN. 예전 이름인 X-User-Role은 어떤 경우에도 권한에 쓰이면 안 된다
 // 실제 Controller + 실제 Service로 권한 판단까지 실행한다 (Repository만 Mock, DB 미사용)
 @WebMvcTest({ReferralController.class, ReservationController.class})
-@Import({ReferralService.class, ReservationService.class, ReferralHistoryService.class, SlotCommandOutbox.class})
+@Import({ReferralService.class, ReservationService.class, ReferralHistoryService.class, SlotCommandOutbox.class, ClockConfig.class})
 @ActiveProfiles("test")
 class AuthHeaderContractTest {
 

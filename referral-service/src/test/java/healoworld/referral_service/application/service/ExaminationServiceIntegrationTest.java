@@ -5,6 +5,7 @@ import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -57,7 +58,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         ExaminationService.class,
         ExaminationQueryService.class,
         ExaminationResultService.class,
-        QuerydslConfig.class
+        QuerydslConfig.class, ClockConfig.class
 })
 class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
 
