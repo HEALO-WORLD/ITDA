@@ -37,4 +37,11 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             UUID recipientUserId,
             String type
     );
+
+    // 같은 예약에 대해 같은 사용자에게 이미 만든 알림 존재 여부 (서로 다른 장애 작업이 같은 예약을 처리하는 경우의 중복 방지)
+    boolean existsByReservationIdAndRecipientUserIdAndType(
+            UUID reservationId,
+            UUID recipientUserId,
+            String type
+    );
 }

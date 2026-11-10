@@ -6,6 +6,7 @@ import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.infrastructure.client.slot.SlotClient;
 import healoworld.referral_service.infrastructure.client.slot.SlotStatusQueryRequest;
 import healoworld.referral_service.infrastructure.client.slot.SlotStatusResponse;
+import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ReconciliationTarget;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.IntStream;
@@ -40,17 +42,22 @@ class ReservationReconciliationSchedulerUnitTest {
     @Mock
     private SlotClient slotClient;
 
+    @Mock
+    private ExaminationRepository examinationRepository;
+
     private ReservationReconciliationScheduler scheduler;
 
     @BeforeEach
     void setUp() {
         scheduler = new ReservationReconciliationScheduler(
-                reconciliationService, reservationRepository, slotClient, BATCH_SIZE, 24, 10);
+                reconciliationService, reservationRepository, slotClient, examinationRepository, BATCH_SIZE, 24, 10);
 
         // 기본값: 세 쿼리 모두 대상 없음. 테스트마다 필요한 쿼리만 덮어쓴다
         lenient().when(reservationRepository.findStaleInProgress(any(), any(), any())).thenReturn(List.of());
         lenient().when(reservationRepository.findUpcomingConfirmed(any(), any(), any())).thenReturn(List.of());
         lenient().when(reservationRepository.findRecentlyEnded(any(), any(), any(), any())).thenReturn(List.of());
+        // 기본값: 검사가 시작·완료된 예약 없음
+        lenient().when(examinationRepository.findReservationIdsWithStartedExamination(any())).thenReturn(List.of());
     }
 
     private static ReconciliationTarget target(ReservationStatus status) {
@@ -229,5 +236,88 @@ class ReservationReconciliationSchedulerUnitTest {
         ArgumentCaptor<UUID> lastIds = ArgumentCaptor.forClass(UUID.class);
         verify(reservationRepository, times(2)).findStaleInProgress(any(), lastIds.capture(), any());
         assertThat(lastIds.getAllValues()).containsExactly(MIN_ID, MIN_ID);
+    }
+
+    // ---------- SlotsBlocked 사전 확인 (검사가 이미 시작·완료된 확정 예약은 주입하지 않음) ----------
+
+    @Test
+    @DisplayName("A·B. CONFIRMED + SlotsBlocked 후보의 검사가 시작·완료됐으면 이벤트를 주입하지 않는다")
+    void skipsConfirmedWithStartedExamination() {
+        ReconciliationTarget started = target(ReservationStatus.CONFIRMED);
+        when(reservationRepository.findUpcomingConfirmed(any(), any(), any())).thenReturn(List.of(started));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(slot(started, "UNAVAILABLE", null)));
+        when(examinationRepository.findReservationIdsWithStartedExamination(List.of(started.reservationId())))
+                .thenReturn(List.of(started.reservationId()));
+
+        scheduler.reconcileReservations();
+
+        verifyNoInteractions(reconciliationService);
+    }
+
+    @Test
+    @DisplayName("C. 검사가 SCHEDULED이거나 없으면(사전 확인 결과 없음) 기존처럼 SlotsBlocked로 복구한다")
+    void reconcilesConfirmedWithoutStartedExamination() {
+        ReconciliationTarget confirmed = target(ReservationStatus.CONFIRMED);
+        when(reservationRepository.findUpcomingConfirmed(any(), any(), any())).thenReturn(List.of(confirmed));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(slot(confirmed, "UNAVAILABLE", null)));
+
+        scheduler.reconcileReservations();
+
+        verify(examinationRepository).findReservationIdsWithStartedExamination(List.of(confirmed.reservationId()));
+        verify(reconciliationService).reconcile(eq(confirmed), eq(SlotResultType.SLOTS_BLOCKED), any());
+    }
+
+    @Test
+    @DisplayName("D. REQUESTED·HELD의 SlotsBlocked는 사전 확인 대상이 아니라 기존처럼 복구한다")
+    void requestedAndHeldAreNotFiltered() {
+        ReconciliationTarget requested = target(ReservationStatus.REQUESTED);
+        ReconciliationTarget held = target(ReservationStatus.HELD);
+        when(reservationRepository.findStaleInProgress(any(), any(), any())).thenReturn(List.of(requested, held));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(
+                slot(requested, "UNAVAILABLE", null), slot(held, "UNAVAILABLE", null)));
+
+        scheduler.reconcileReservations();
+
+        verify(examinationRepository, never()).findReservationIdsWithStartedExamination(any());
+        verify(reconciliationService).reconcile(eq(requested), eq(SlotResultType.SLOTS_BLOCKED), any());
+        verify(reconciliationService).reconcile(eq(held), eq(SlotResultType.SLOTS_BLOCKED), any());
+    }
+
+    @Test
+    @DisplayName("E. 한 회차에 SlotsBlocked 후보가 여러 건이어도 검사 상태는 한 번에 조회하고, 시작된 예약만 뺀다")
+    void queriesStartedExaminationOncePerRound() {
+        ReconciliationTarget started = target(ReservationStatus.CONFIRMED);
+        ReconciliationTarget scheduled = target(ReservationStatus.CONFIRMED);
+        ReconciliationTarget normal = target(ReservationStatus.CONFIRMED);   // 슬롯이 이 예약으로 BOOKED → 후보 아님
+        when(reservationRepository.findUpcomingConfirmed(any(), any(), any())).thenReturn(List.of(started, scheduled, normal));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(
+                slot(started, "UNAVAILABLE", null),
+                slot(scheduled, "UNAVAILABLE", null),
+                slot(normal, "BOOKED", normal.reservationId())));
+        when(examinationRepository.findReservationIdsWithStartedExamination(any())).thenReturn(List.of(started.reservationId()));
+
+        scheduler.reconcileReservations();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<UUID>> candidates = ArgumentCaptor.forClass(Collection.class);
+        verify(examinationRepository, times(1)).findReservationIdsWithStartedExamination(candidates.capture());
+        assertThat(candidates.getValue()).containsExactlyInAnyOrder(started.reservationId(), scheduled.reservationId());
+        verify(reconciliationService).reconcile(eq(scheduled), eq(SlotResultType.SLOTS_BLOCKED), any());
+        verify(reconciliationService, never()).reconcile(eq(started), any(), any());
+        verify(reconciliationService, never()).reconcile(eq(normal), any(), any());
+    }
+
+    @Test
+    @DisplayName("검사 상태 사전 확인이 실패하면 거르지 않고 기존처럼 주입한다 (최종 확인은 SlotsBlocked 처리에서 잠금 아래 수행)")
+    void injectsWhenPreCheckFails() {
+        ReconciliationTarget confirmed = target(ReservationStatus.CONFIRMED);
+        when(reservationRepository.findUpcomingConfirmed(any(), any(), any())).thenReturn(List.of(confirmed));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(slot(confirmed, "UNAVAILABLE", null)));
+        when(examinationRepository.findReservationIdsWithStartedExamination(any()))
+                .thenThrow(new RuntimeException("DB 조회 실패"));
+
+        scheduler.reconcileReservations();
+
+        verify(reconciliationService).reconcile(eq(confirmed), eq(SlotResultType.SLOTS_BLOCKED), any());
     }
 }

@@ -3,6 +3,7 @@ package healoworld.referral_service.application.service;
 import healoworld.referral_service.application.service.IncidentProcessingService.Outcome;
 import healoworld.referral_service.domain.entity.*;
 import healoworld.referral_service.domain.enums.*;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -51,7 +52,7 @@ import static org.mockito.Mockito.reset;
  */
 @DataJpaTest
 @ExtendWith(OutputCaptureExtension.class)
-@Import({IncidentProcessingService.class, NotificationService.class, ExaminationService.class, QuerydslConfig.class})
+@Import({IncidentProcessingService.class, NotificationService.class, ExaminationService.class, QuerydslConfig.class, ClockConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
