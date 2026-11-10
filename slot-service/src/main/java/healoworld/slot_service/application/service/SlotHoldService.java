@@ -47,7 +47,7 @@ public class SlotHoldService {
                 .orElseThrow(() -> new BaseException(ErrorCode.SLOT_NOT_FOUND));
 
         if (slot.isHeldBy(reservationId)) {
-            return HoldResult.success(slotId, reservationId, slot.getHeldUntil());
+            return HoldResult.alreadyHeld(slotId, reservationId, slot.getHeldUntil());
         }
         return HoldResult.failed(slotId, reservationId, HoldFailureReason.SLOT_CONFLICT);
     }

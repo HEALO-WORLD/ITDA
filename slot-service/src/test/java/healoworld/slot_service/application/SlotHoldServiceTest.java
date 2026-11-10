@@ -98,6 +98,7 @@ class SlotHoldServiceTest extends PostgresContainerSupport {
 
         Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
         assertThat(result.isSuccess()).isTrue();
+        assertThat(result.isAlreadyHeld()).isTrue();   // 메트릭에서 idempotent로 구분
         assertThat(result.getHeldUntil()).isEqualTo(originalHeldUntil);
         assertThat(saved.getHeldUntil()).isEqualTo(originalHeldUntil);
         assertThat(saved.getReservationId()).isEqualTo(reservationId);
