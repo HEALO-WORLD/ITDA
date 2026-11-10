@@ -320,6 +320,46 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
         assertThat(outboxTypes(booking)).containsExactly(SlotCommandType.RELEASE_SLOT.value());
     }
 
+    // ---------- 장비 장애로 확정 뒤 차단된 예약: 정책상 BOOKED 슬롯·예약 연결 유지 ----------
+
+    @Test
+    @DisplayName("확정 뒤 장비 장애로 차단된 예약의 BOOKED 슬롯은 회차를 2번 돌려도 ReleaseSlot·inbox·상태 변경이 없다")
+    void keepsBookedSlotOfEquipmentBlockedAfterConfirm() {
+        Booking booking = booking(reservation -> {
+            reservation.hold();
+            reservation.confirm();
+            reservation.block();   // 장애 후속 처리와 같은 전이 (EQUIPMENT_FAILURE, 확정 시각 유지)
+        }, referral -> {
+            referral.confirm();
+            referral.requestReschedule();
+        });
+        slot(booking, "BOOKED", booking.reservationId(), null);   // slot-service는 장애 중에도 BOOKED·예약 연결을 유지한다
+
+        scheduler.reconcileReservations();
+        scheduler.reconcileReservations();
+
+        assertThat(outboxTypes(booking)).isEmpty();
+        assertThat(consumedEventsSinceStart()).isZero();
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(histories(booking)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("확정 전(HELD)에 장비 장애로 차단된 예약에 슬롯이 BOOKED로 남아 있으면 늦은 확정으로 보고 기존처럼 ReleaseSlot을 발행한다")
+    void releasesSlotOfEquipmentBlockedBeforeConfirm() {
+        Booking booking = booking(reservation -> {
+            reservation.hold();
+            reservation.block();   // 확정 시각 없음
+        }, Referral::requestReschedule);
+        slot(booking, "BOOKED", booking.reservationId(), null);
+
+        scheduler.reconcileReservations();
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(outboxTypes(booking)).containsExactly(SlotCommandType.RELEASE_SLOT.value());
+    }
+
     @Test
     @DisplayName("정상 확정 예약(슬롯이 이 예약으로 BOOKED)은 아무것도 바꾸지 않는다")
     void ignoresHealthyConfirmed() {

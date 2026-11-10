@@ -126,7 +126,9 @@ public class ReservationReconciliationScheduler {
                     continue;
                 }
                 SlotSnapshot slotSnapshot = response.toSnapshot();
-                Optional<SlotResultType> type = policy.decide(target.reservationId(), target.reservationStatus(), slotSnapshot, now);
+                // 실패 사유·확정 시각도 넘겨, 장비 장애로 확정 뒤 차단된 예약의 BOOKED 슬롯(정책상 유지)을 풀지 않게 한다
+                Optional<SlotResultType> type = policy.decide(target.reservationId(), target.reservationStatus(),
+                        target.failureReason(), target.confirmedAt(), slotSnapshot, now);
                 type.ifPresent(t -> decisions.add(new Decision(target, t, slotSnapshot)));
             } catch (RuntimeException e) {
                 log.error("정합성 점검: 복구 실패, 다음 회차 재시도. reservationId={}, status={}", target.reservationId(), target.reservationStatus(), e);

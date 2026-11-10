@@ -2,6 +2,7 @@ package healoworld.referral_service.application.scheduler;
 
 import healoworld.referral_service.application.event.result.SlotResultType;
 import healoworld.referral_service.application.service.ReservationReconciliationService;
+import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.infrastructure.client.slot.SlotClient;
 import healoworld.referral_service.infrastructure.client.slot.SlotStatusQueryRequest;
@@ -319,5 +320,32 @@ class ReservationReconciliationSchedulerUnitTest {
         scheduler.reconcileReservations();
 
         verify(reconciliationService).reconcile(eq(confirmed), eq(SlotResultType.SLOTS_BLOCKED), any());
+    }
+
+    // ---------- 장비 장애로 확정 뒤 차단된 예약의 BOOKED 슬롯 보호 ----------
+
+    @Test
+    @DisplayName("확정 뒤 장비 장애로 차단된 예약의 BOOKED 슬롯은 보상(SLOT_BOOKED)을 주입하지 않고, 확정 전 차단·취소 예약은 기존처럼 주입한다")
+    void keepsBookedSlotOfEquipmentBlockedAfterConfirm() {
+        LocalDateTime confirmedAt = LocalDateTime.now().minusDays(1);
+        ReconciliationTarget blockedAfterConfirm = new ReconciliationTarget(UUID.randomUUID(), UUID.randomUUID(),
+                ReservationStatus.BLOCKED, FailureReason.EQUIPMENT_FAILURE, confirmedAt);
+        ReconciliationTarget blockedBeforeConfirm = new ReconciliationTarget(UUID.randomUUID(), UUID.randomUUID(),
+                ReservationStatus.BLOCKED, FailureReason.EQUIPMENT_FAILURE, null);
+        ReconciliationTarget canceled = new ReconciliationTarget(UUID.randomUUID(), UUID.randomUUID(),
+                ReservationStatus.CANCELED, null, confirmedAt);
+        when(reservationRepository.findRecentlyEnded(any(), any(), any(), any()))
+                .thenReturn(List.of(blockedAfterConfirm, blockedBeforeConfirm, canceled));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(
+                slot(blockedAfterConfirm, "BOOKED", blockedAfterConfirm.reservationId()),
+                slot(blockedBeforeConfirm, "BOOKED", blockedBeforeConfirm.reservationId()),
+                slot(canceled, "BOOKED", canceled.reservationId())));
+
+        scheduler.reconcileReservations();
+        scheduler.reconcileReservations();   // 회차를 반복해도 보호 대상은 주입하지 않는다
+
+        verify(reconciliationService, never()).reconcile(eq(blockedAfterConfirm), any(), any());
+        verify(reconciliationService, times(2)).reconcile(eq(blockedBeforeConfirm), eq(SlotResultType.SLOT_BOOKED), any());
+        verify(reconciliationService, times(2)).reconcile(eq(canceled), eq(SlotResultType.SLOT_BOOKED), any());
     }
 }

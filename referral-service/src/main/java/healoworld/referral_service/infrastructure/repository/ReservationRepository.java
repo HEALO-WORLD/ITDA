@@ -135,7 +135,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
                      @Param("allowed") Collection<ReservationStatus> allowed);
 
     @Query("""
-                 select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus)
+                 select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus, r.failureReason, r.confirmedAt)
                  from Reservation r
                   where r.reservationStatus in (
                               healoworld.referral_service.domain.enums.ReservationStatus.REQUESTED,
@@ -154,7 +154,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
             Pageable pageable);
 
     @Query("""
-                 select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus)
+                 select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus, r.failureReason, r.confirmedAt)
                  from Reservation r
                  where r.reservationStatus = healoworld.referral_service.domain.enums.ReservationStatus.CONFIRMED
                    and r.startTime > :now
@@ -171,7 +171,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
             Pageable pageable);
 
     @Query("""
-                 select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus)
+                 select new healoworld.referral_service.infrastructure.repository.ReconciliationTarget(r.id, r.slotId, r.reservationStatus, r.failureReason, r.confirmedAt)
                  from Reservation r
                  where r.reservationStatus in (
                               healoworld.referral_service.domain.enums.ReservationStatus.FAILED,
