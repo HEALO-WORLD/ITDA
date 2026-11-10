@@ -73,6 +73,7 @@ import static org.mockito.Mockito.doThrow;
 @DataJpaTest
 @Import({
         SlotResultService.class,
+        InstitutionNotificationService.class,
         EquipmentIncidentService.class,
         EquipmentIncidentLockRepository.class,
         IncidentProcessingService.class,

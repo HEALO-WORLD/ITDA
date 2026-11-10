@@ -92,6 +92,7 @@ import static org.mockito.Mockito.doAnswer;
 @Import({
         ReferralService.class,
         SlotResultService.class,
+        InstitutionNotificationService.class,
         EquipmentIncidentService.class,
         EquipmentIncidentLockRepository.class,
         IncidentProcessingService.class,
