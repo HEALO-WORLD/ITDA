@@ -169,6 +169,20 @@ class OutboxPublisherTest {
     }
 
     @Test
+    void 발행에_성공하면_created_at부터_발행까지_Outbox_대기_시간을_기록한다() {
+        OutboxEvent event = outboxEvent("HoldExpired", null, FixedClockConfig.NOW.minusNanos(300_000_000));
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        Timer timer = meterRegistry.find(OutboxPublishMetrics.WAIT).tag("type", "HoldExpired").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+        assertThat(timer.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(300);
+    }
+
+    @Test
     void 원인_명령이_없는_이벤트는_체류_시간을_기록하지_않는다() {
         OutboxEvent event = outboxEvent("HoldExpired");
         when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
@@ -189,12 +203,17 @@ class OutboxPublisherTest {
         outboxPublisher.publish();
 
         assertThat(meterRegistry.find(OutboxPublishMetrics.DWELL).timer()).isNull();
+        assertThat(meterRegistry.find(OutboxPublishMetrics.WAIT).timer()).isNull();
     }
 
     private OutboxEvent outboxEvent(String eventType, LocalDateTime sourceOccurredAt) {
+        return outboxEvent(eventType, sourceOccurredAt, FixedClockConfig.NOW);
+    }
+
+    private OutboxEvent outboxEvent(String eventType, LocalDateTime sourceOccurredAt, LocalDateTime createdAt) {
         UUID slotId = UUID.randomUUID();
         return OutboxEvent.create(UUID.randomUUID(), "SLOT", slotId, "slot-results",
-                slotId.toString(), eventType, "{\"slotId\":\"" + slotId + "\"}", sourceOccurredAt, FixedClockConfig.NOW);
+                slotId.toString(), eventType, "{\"slotId\":\"" + slotId + "\"}", sourceOccurredAt, createdAt);
     }
 
     private OutboxEvent outboxEvent(String eventType) {

@@ -52,6 +52,7 @@ public class OutboxPublisher {
             }
             LocalDateTime publishedAt = LocalDateTime.now(clock);
             outboxEventRepository.markPublished(event.getId(), publishedAt);
+            outboxPublishMetrics.recordWait(event, publishedAt);
             outboxPublishMetrics.recordDwell(event, publishedAt);
             log.debug("Outbox 발행 완료. id={}, type={}", event.getId(), event.getEventType());
         }
