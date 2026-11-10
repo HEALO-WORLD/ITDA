@@ -65,6 +65,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
         ReferralHistoryService.class,
         SlotCommandOutbox.class,
         SlotResultService.class,
+        InstitutionNotificationService.class,
         EquipmentIncidentService.class,
         EquipmentIncidentLockRepository.class,
         QuerydslConfig.class, ClockConfig.class,

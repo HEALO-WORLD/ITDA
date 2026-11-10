@@ -86,6 +86,9 @@ class ReservationServiceTest {
     @Mock
     private ExaminationRepository examinationRepository;
 
+    @Mock
+    private InstitutionNotificationService institutionNotificationService;
+
     @InjectMocks
     private ReservationService reservationService;
 
@@ -226,6 +229,8 @@ class ReservationServiceTest {
             assertThat(history.getReason()).isEqualTo(Reason.CANCELED_BY_REQUESTER);
             assertThat(history.getEventId()).isEqualTo(releaseEventId);
             assertThat(history.getChangedBy()).isEqualTo(USER_ID);
+            // 취소가 모두 성공한 뒤 취소된 예약의 검사기관 알림을 ReleaseSlot eventId로 요청한다
+            verify(institutionNotificationService).notifyReservationCanceled(confirmedReferral.getId(), confirmed, releaseEventId);
         }
 
         @Test
@@ -247,7 +252,7 @@ class ReservationServiceTest {
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_NOT_FOUND);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
@@ -280,7 +285,7 @@ class ReservationServiceTest {
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
@@ -304,7 +309,7 @@ class ReservationServiceTest {
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
@@ -326,7 +331,7 @@ class ReservationServiceTest {
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, requested.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
@@ -338,7 +343,7 @@ class ReservationServiceTest {
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, canceled.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
@@ -350,7 +355,7 @@ class ReservationServiceTest {
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, reservation.getId()),
                     ErrorCode.INVALID_REFERRAL_STATUS);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
@@ -447,7 +452,7 @@ class ReservationServiceTest {
             assertThat(confirmedReferral.getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
             verify(reservationRepository, never()).cancelIfConfirmed(any(), any(), any());
             verify(referralRepository, never()).cancelIfCancelable(any(), any(), any());
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         // 실제 예약 확정 흐름처럼 의뢰가 이 예약을 현재 예약으로 가리키고, 이 예약에 연결된 SCHEDULED 검사가 있는 상태로 준비한다
