@@ -20,6 +20,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
 
   redis:
     image: redis:8.10.3
@@ -30,6 +31,7 @@ services:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
+    restart: unless-stopped
 
   kafka:
     image: apache/kafka:4.4.0
@@ -56,6 +58,7 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     volumes:
       - kafka-data:/var/lib/kafka/data
+    restart: unless-stopped
 
   kafka-ui:
     image: kafbat/kafka-ui:v1.5.0
@@ -68,6 +71,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     depends_on:
       - kafka
+    restart: unless-stopped
 
   kafka-init:
     image: apache/kafka:4.4.0
@@ -100,6 +104,7 @@ services:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:13.2.4
@@ -114,6 +119,7 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
+    restart: unless-stopped
 
 volumes:
   postgres-data:

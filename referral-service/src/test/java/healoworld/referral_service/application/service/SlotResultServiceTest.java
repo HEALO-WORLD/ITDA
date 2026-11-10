@@ -2,9 +2,11 @@ package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.application.event.command.SlotCommandType;
 import healoworld.referral_service.application.event.result.SlotResultType;
+import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
@@ -15,6 +17,8 @@ import healoworld.referral_service.global.inbox.ConsumedEvent;
 import healoworld.referral_service.global.inbox.ConsumedEventId;
 import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
+import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -41,6 +45,7 @@ import static healoworld.referral_service.support.DomainFixtures.reservationIn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
 
@@ -69,6 +74,13 @@ class SlotResultServiceTest {
     // SlotBooked 확정 직후 장비 장애 확인 (실제 동작은 SlotBookedIncidentLinkIntegrationTest에서 검증)
     @Mock
     private EquipmentIncidentService equipmentIncidentService;
+
+    // SlotsBlocked의 예약·검사 행 잠금 (stub하지 않으면 검사 없음 = Optional.empty)
+    @Mock
+    private IncidentReservationRepository incidentReservationRepository;
+
+    @Mock
+    private ExaminationRepository examinationRepository;
 
     @InjectMocks
     private SlotResultService slotResultService;
@@ -189,6 +201,55 @@ class SlotResultServiceTest {
         assertThat(reservation.getFailureReason()).isEqualTo(FailureReason.EQUIPMENT_FAILURE);
         assertThat(target.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
         assertHistory(before, ReferralStatus.NEEDS_RESCHEDULE, Reason.RESERVATION_BLOCKED, eventId);
+    }
+
+    @ParameterizedTest(name = "검사 {0}")
+    @EnumSource(value = ExaminationStatus.class, names = {"IN_PROGRESS", "COMPLETED"})
+    @DisplayName("SlotsBlocked: 검사가 이미 시작·완료됐으면 예약·의뢰를 바꾸지 않고 이력도 남기지 않는다 (inbox에는 기록)")
+    void slotsBlockedSkipsStartedExamination(ExaminationStatus examinationStatus) {
+        Referral confirmed = referralIn(ReferralStatus.CONFIRMED, USER_ID);
+        Reservation reservation = stored(ReservationStatus.CONFIRMED, confirmed);
+        givenExamination(confirmed, reservation, examinationStatus);
+
+        handle("SlotsBlocked", reservation);
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(reservation.getFailureReason()).isNull();
+        assertThat(confirmed.getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
+        verify(reservationRepository, never()).blockIfActive(any(), any());
+        verify(referralRepository, never()).requestRescheduleIfIn(any(), any(), any());
+        verifyNoInteractions(referralHistoryRepository, slotCommandOutbox);
+        verify(consumedEventRepository).save(any(ConsumedEvent.class));
+    }
+
+    @Test
+    @DisplayName("SlotsBlocked: 검사가 SCHEDULED이면 기존처럼 예약 BLOCKED, 의뢰 NEEDS_RESCHEDULE, 이력 1건")
+    void slotsBlockedScheduledExamination() {
+        Referral confirmed = referralIn(ReferralStatus.CONFIRMED, USER_ID);
+        Reservation reservation = stored(ReservationStatus.CONFIRMED, confirmed);
+        givenExamination(confirmed, reservation, ExaminationStatus.SCHEDULED);
+
+        UUID eventId = handle("SlotsBlocked", reservation);
+
+        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(confirmed.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertHistory(ReferralStatus.CONFIRMED, ReferralStatus.NEEDS_RESCHEDULE, Reason.RESERVATION_BLOCKED, eventId);
+    }
+
+    @Test
+    @DisplayName("SlotsBlocked: 의뢰 → 예약 → 검사 순서로 잠근 뒤 예약을 차단한다 (검사 시작·장애 후속 처리와 같은 순서)")
+    void slotsBlockedLockOrder() {
+        Referral confirmed = referralIn(ReferralStatus.CONFIRMED, USER_ID);
+        Reservation reservation = stored(ReservationStatus.CONFIRMED, confirmed);
+        givenExamination(confirmed, reservation, ExaminationStatus.SCHEDULED);
+
+        handle("SlotsBlocked", reservation);
+
+        InOrder inOrder = inOrder(referralRepository, incidentReservationRepository, examinationRepository, reservationRepository);
+        inOrder.verify(referralRepository).findByIdForUpdate(confirmed.getId());
+        inOrder.verify(incidentReservationRepository).findByIdForUpdate(reservation.getId());
+        inOrder.verify(examinationRepository).findByReferralIdForUpdate(confirmed.getId());
+        inOrder.verify(reservationRepository).blockIfActive(eq(reservation.getId()), any());
     }
 
     @ParameterizedTest(name = "{0}: UPDATE 이후 예약을 다시 읽지 않고 {2}를 기록한다")
@@ -383,6 +444,13 @@ class SlotResultServiceTest {
     }
 
     // 수신 eventId를 돌려준다. eventType은 Kafka 헤더 문자열로 받아 컨슈머처럼 enum으로 바꾼다
+    // 의뢰에 연결된 검사를 지정한 상태로 둔다 (잠금 조회 결과)
+    private void givenExamination(Referral owner, Reservation reservation, ExaminationStatus status) {
+        Examination examination = Examination.schedule(owner.getId(), reservation.getId(), reservation.getExamInstitutionId());
+        ReflectionTestUtils.setField(examination, "status", status);
+        given(examinationRepository.findByReferralIdForUpdate(owner.getId())).willReturn(Optional.of(examination));
+    }
+
     private UUID handle(String eventType, Reservation reservation) {
         UUID eventId = UUID.randomUUID();
         slotResultService.handle(eventId, SlotResultType.from(eventType).orElseThrow(), reservation.getId());

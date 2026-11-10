@@ -42,6 +42,19 @@ public interface ExaminationRepository extends JpaRepository<Examination, UUID> 
             """)
     List<ExaminationProgress> findProgressByReferralIds(@Param("referralIds") Collection<UUID> referralIds);
 
+    // 주어진 예약 중, 예약의 의뢰에 속한 검사가 이미 시작·완료된 예약 ID (정합성 복구의 SlotsBlocked 사전 확인용, 읽기 전용·잠금 없음)
+    // 검사의 reservationId가 아니라 의뢰(referral_id)로 찾는다. SlotsBlocked 최종 확인(SlotResultService.onSlotsBlocked)과 같은 기준이라
+    // 검사가 다른 예약에 연결돼 있어도 같은 판단을 한다
+    @Query("""
+            select r.id
+              from Reservation r, Examination e
+             where r.id in :reservationIds
+               and e.referralId = r.referral.id
+               and e.status in (healoworld.referral_service.domain.enums.ExaminationStatus.IN_PROGRESS,
+                                healoworld.referral_service.domain.enums.ExaminationStatus.COMPLETED)
+            """)
+    List<UUID> findReservationIdsWithStartedExamination(@Param("reservationIds") Collection<UUID> reservationIds);
+
     // 검사기관별 검사 목록 조회
     // - 취소(CANCELED)되거나 삭제(soft delete)된 의뢰의 검사는 제외한다.
     //   예약 취소 후에도 검사는 SCHEDULED로 남기 때문에, 제외하지 않으면 취소된 검사가 '검사 대기'로 보이고
