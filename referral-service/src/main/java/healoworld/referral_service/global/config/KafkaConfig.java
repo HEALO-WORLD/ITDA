@@ -14,6 +14,7 @@ import org.springframework.dao.TransientDataAccessException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.listener.ListenerExecutionFailedException;
 import org.springframework.kafka.listener.RecordInterceptor;
 import org.springframework.kafka.listener.RetryListener;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
@@ -24,6 +25,9 @@ import tools.jackson.core.JacksonException;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 
 @Slf4j
 @Configuration
@@ -33,6 +37,8 @@ public class KafkaConfig {
     public static final String FAILURE_SUMMARY_HEADER = "x-failure-summary";
     // DeadLetterPublishingRecoverer 기본 규칙의 DLT 토픽 이름 접미사 (docker-compose의 kafka-init이 같은 이름으로 미리 만든다)
     static final String DLT_SUFFIX = "-dlt";
+    // DLT 이동 로그에 남길 스택 줄 수 (예외·원인마다)
+    static final int STACK_FRAMES_PER_CAUSE = 10;
 
     @Bean
     public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<String, String> kafkaTemplate) {
@@ -93,11 +99,12 @@ public class KafkaConfig {
         }
 
         // DLT 전송에 성공한 뒤 호출된다. 원본 위치(topic·partition·offset)와 보낸 DLT 토픽(같은 파티션)을 남긴다
+        // DLT 헤더에는 스택트레이스를 싣지 않으므로, 실패 위치를 찾을 수 있게 메시지를 뺀 스택을 여기서 한 번 남긴다
         @Override
         public void recovered(ConsumerRecord<?, ?> record, Exception ex) {
-            log.error("Kafka 메시지 재시도 종료, DLT로 이동. topic={}, partition={}, offset={}, dltTopic={}, eventId={}, eventType={}, cause={}",
+            log.error("Kafka 메시지 재시도 종료, DLT로 이동. topic={}, partition={}, offset={}, dltTopic={}, eventId={}, eventType={}, cause={}\n{}",
                     record.topic(), record.partition(), record.offset(), record.topic() + DLT_SUFFIX,
-                    header(record, "eventId"), header(record, "eventType"), describe(ex));
+                    header(record, "eventId"), header(record, "eventType"), describe(ex), describeStack(ex));
         }
 
         // DLT 전송이 실패하면 메시지는 커밋되지 않고 같은 위치에서 다시 처리된다 (재시도 상태 초기화 후 반복)
@@ -129,6 +136,37 @@ public class KafkaConfig {
             description += " sqlState=" + sqlException.getSQLState();
         }
         return description;
+    }
+
+    // 로그에 남길 스택. 예외 클래스 이름과 호출 위치(at ...)만 쓰고 예외 메시지는 쓰지 않는다 (describe와 같은 이유)
+    // 원인(cause)마다 앞쪽 STACK_FRAMES_PER_CAUSE줄만 남긴다
+    // 리스너 예외를 감싼 ListenerExecutionFailedException은 Spring 컨테이너 내부 줄뿐이라 클래스 이름만 남긴다
+    static String describeStack(Throwable ex) {
+        StringBuilder stack = new StringBuilder();
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());   // 순환 cause 방지
+        for (Throwable cause = ex; cause != null && visited.add(cause); cause = cause.getCause()) {
+            if (cause != ex) {
+                stack.append("Caused by: ");
+            }
+            stack.append(cause.getClass().getName()).append('\n');
+            if (isListenerWrapper(cause)) {
+                continue;
+            }
+
+            StackTraceElement[] frames = cause.getStackTrace();
+            int shown = Math.min(frames.length, STACK_FRAMES_PER_CAUSE);
+            for (int i = 0; i < shown; i++) {
+                stack.append("\tat ").append(frames[i]).append('\n');
+            }
+            if (frames.length > shown) {
+                stack.append("\t... ").append(frames.length - shown).append(" more\n");
+            }
+        }
+        return stack.toString();
+    }
+
+    private static boolean isListenerWrapper(Throwable ex) {
+        return ex instanceof ListenerExecutionFailedException && ex.getCause() != null;
     }
 
     /**
