@@ -1,6 +1,9 @@
 package healoworld.referral_service.infrastructure.repository;
 
+import healoworld.referral_service.application.service.InstitutionNotificationService;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
+import healoworld.referral_service.presentation.dto.response.NotificationReadResponse;
 import healoworld.referral_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +24,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Statement;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -42,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   ddl-auto가 Entity로 만든 public 테이블과 컬럼·제약·인덱스가 같은지 두 테이블 모두 비교한다 (SQL 파일과 Entity가 어긋나면 실패)
  * - 동시 저장은 실제 커밋이 필요하므로 테스트 트랜잭션을 끄고, 이 테스트가 만든 행만 지운다
  * - 컨텍스트 설정은 NotificationRescheduleUniqueIndexTest와 같게 두어 기존 컨텍스트(연결 풀)를 재사용한다.
+ *   서비스도 @Import하지 않고 직접 만든다 (설정이 달라지면 새 컨텍스트가 생겨 DB 연결이 늘어난다)
  */
 @DataJpaTest
 @ActiveProfiles("test")
@@ -62,12 +67,22 @@ class InstitutionNotificationDdlTest extends PostgresContainerSupport {
     private InstitutionNotificationRepository repository;
 
     @Autowired
+    private InstitutionNotificationReadRepository readRepository;
+
+    @Autowired
+    private ReservationRepository reservationRepository;
+
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     private final List<UUID> institutionIds = new ArrayList<>();
+    private final List<UUID> notificationIds = new ArrayList<>();
 
     @AfterEach
     void cleanUp() {
+        for (UUID notificationId : notificationIds) {
+            jdbcTemplate.update("delete from p_institution_notification_reads where notification_id = ?", notificationId);
+        }
         for (UUID institutionId : institutionIds) {
             jdbcTemplate.update("delete from p_institution_notifications where institution_id = ?", institutionId);
         }
@@ -125,6 +140,35 @@ class InstitutionNotificationDdlTest extends PostgresContainerSupport {
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from p_institution_notifications where institution_id = ?", Long.class, institution))
                 .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 사용자가 같은 알림을 동시에 읽음 처리해도 읽음 기록은 1건이고, 두 응답의 readAt은 같은 처음 시각이다")
+    void concurrentReadBySameUserKeepsOne() throws Exception {
+        UUID institution = UUID.randomUUID();
+        institutionIds.add(institution);
+        UUID notificationId = UUID.randomUUID();
+        notificationIds.add(notificationId);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> repository.insertIfAbsent(
+                notificationId, institution, UUID.randomUUID(), UUID.randomUUID(), null, "RESERVATION_CONFIRMED",
+                "제목", "내용", LocalDateTime.of(2026, 11, 10, 9, 0)));
+        UUID user = UUID.randomUUID();
+        // 서비스의 @Transactional은 프록시가 아니라 직접 만든 객체라 적용되지 않으므로 트랜잭션은 여기서 연다
+        InstitutionNotificationService service = new InstitutionNotificationService(repository, readRepository,
+                reservationRepository, Clock.system(ClockConfig.ZONE));
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+
+        List<NotificationReadResponse> responses = runConcurrently(() ->
+                tx.execute(status -> service.markAsRead(institution, user, notificationId)));
+
+        assertThat(responses).allMatch(NotificationReadResponse::isRead);
+        assertThat(responses.get(0).readAt()).isNotNull().isEqualTo(responses.get(1).readAt());
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from p_institution_notification_reads where notification_id = ? and user_id = ?
+                """, Long.class, notificationId, user)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select read_at from p_institution_notification_reads where notification_id = ? and user_id = ?
+                """, LocalDateTime.class, notificationId, user)).isEqualTo(responses.get(0).readAt());
     }
 
     // 같은 작업을 두 스레드에서 동시에 시작해 결과를 모은다
