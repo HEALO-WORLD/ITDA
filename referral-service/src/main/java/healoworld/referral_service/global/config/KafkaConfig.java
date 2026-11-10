@@ -1,12 +1,11 @@
 package healoworld.referral_service.global.config;
 
-import java.nio.charset.StandardCharsets;
-import java.sql.SQLException;
 import healoworld.referral_service.global.exception.BaseException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,11 +22,15 @@ import org.springframework.util.backoff.BackOff;
 import org.springframework.util.backoff.FixedBackOff;
 import tools.jackson.core.JacksonException;
 
+import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
+
 @Slf4j
 @Configuration
 public class KafkaConfig {
 
     private static final String[] MDC_HEADER_KEYS = {"eventId", "eventType"};
+    public static final String FAILURE_SUMMARY_HEADER = "x-failure-summary";
     // DeadLetterPublishingRecoverer 기본 규칙의 DLT 토픽 이름 접미사 (docker-compose의 kafka-init이 같은 이름으로 미리 만든다)
     static final String DLT_SUFFIX = "-dlt";
 
@@ -36,7 +39,11 @@ public class KafkaConfig {
         // 실패한 메시지를 "원본토픽-dlt"의 같은 파티션으로 보낸다
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate);
 
-        // 1초 간격으로 3번 재시도 (최초 시도 포함 총 4번)
+        // 예외 메시지 원문, 스택 트레이스 제거
+        recoverer.excludeHeader(DeadLetterPublishingRecoverer.HeaderNames.HeadersToAdd.EX_MSG, DeadLetterPublishingRecoverer.HeaderNames.HeadersToAdd.EX_STACKTRACE);
+        recoverer.setHeadersFunction((record, ex) -> new RecordHeaders().add(FAILURE_SUMMARY_HEADER, describe(ex).getBytes(StandardCharsets.UTF_8)));
+
+        // 기본: 1초 간격으로 3번 재시도
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(recoverer, new FixedBackOff(1000L, 3L));
 
         // 다시 해도 결과가 같은 예외는 재시도 없이 바로 DLT로
@@ -68,7 +75,7 @@ public class KafkaConfig {
 
     private static boolean isTransient(Throwable ex) {
         for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
-            if (cause instanceof TransientDataAccessException || cause instanceof CannotCreateTransactionException ) {
+            if (cause instanceof TransientDataAccessException || cause instanceof CannotCreateTransactionException) {
                 return true;
             }
         }

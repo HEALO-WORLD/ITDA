@@ -6,6 +6,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.header.Header;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,12 +21,14 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.ListenerExecutionFailedException;
 import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
+import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.util.backoff.BackOff;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -80,6 +83,49 @@ class KafkaErrorHandlerPolicyTest {
         assertThat(new String(dlt.headers().lastHeader("eventId").value(), StandardCharsets.UTF_8)).isEqualTo(EVENT_ID);
         assertThat(output).contains("attempt=1", "attempt=2", "attempt=3",
                 "DLT로 이동", "dltTopic=slot-results-dlt", "cause=IllegalStateException");
+    }
+
+    @Test
+    @DisplayName("DLT 헤더: 예외 메시지 원문·스택트레이스는 빼고, 원본 위치·예외 클래스와 실패 요약은 남긴다")
+    void dltHeadersAreSanitized() {
+        givenDltSendSucceeds();
+        ConsumerRecord<String, String> record = record();
+        // 메시지 원문에 실제 값이 들어간 상황 (DB 제약 위반 메시지 등)
+        Exception failure = listenerFailure(new IllegalArgumentException("Key (patient_name)=(홍길동) already exists"));
+
+        errorHandler.handleOne(failure, record, consumer, container);
+
+        ProducerRecord<String, String> dlt = sentToDlt();
+        assertThat(dlt.headers().lastHeader(KafkaHeaders.DLT_EXCEPTION_MESSAGE)).isNull();
+        assertThat(dlt.headers().lastHeader(KafkaHeaders.DLT_EXCEPTION_STACKTRACE)).isNull();
+        assertThat(headerValue(dlt, KafkaHeaders.DLT_EXCEPTION_FQCN)).isNotNull();
+        assertThat(headerValue(dlt, KafkaHeaders.DLT_ORIGINAL_TOPIC)).isEqualTo("slot-results");
+        assertThat(ByteBuffer.wrap(dlt.headers().lastHeader(KafkaHeaders.DLT_ORIGINAL_PARTITION).value()).getInt()).isEqualTo(2);
+        assertThat(ByteBuffer.wrap(dlt.headers().lastHeader(KafkaHeaders.DLT_ORIGINAL_OFFSET).value()).getLong()).isEqualTo(211L);
+        assertThat(headerValue(dlt, KafkaConfig.FAILURE_SUMMARY_HEADER)).isEqualTo("IllegalArgumentException");
+        // 원본 eventId·eventType 헤더는 그대로 따라간다 (재처리 시 필요)
+        assertThat(headerValue(dlt, "eventId")).isEqualTo(EVENT_ID);
+        assertThat(headerValue(dlt, "eventType")).isEqualTo("SlotBooked");
+        // 어떤 헤더에도 메시지 원문 값이 남지 않는다
+        dlt.headers().forEach(header ->
+                assertThat(new String(header.value(), StandardCharsets.UTF_8)).doesNotContain("홍길동"));
+    }
+
+    @Test
+    @DisplayName("DLT 헤더: 업무 예외의 실패 요약은 ErrorCode와 한글 메시지를 UTF-8로 담는다")
+    void dltFailureSummaryForBaseExceptionIsUtf8() {
+        givenDltSendSucceeds();
+
+        errorHandler.handleOne(listenerFailure(new BaseException(ErrorCode.RESERVATION_NOT_FOUND)),
+                record(), consumer, container);
+
+        assertThat(headerValue(sentToDlt(), KafkaConfig.FAILURE_SUMMARY_HEADER))
+                .isEqualTo("BaseException errorCode=RESERVATION_NOT_FOUND message=예약을 찾을 수 없습니다.");
+    }
+
+    private static String headerValue(ProducerRecord<String, String> record, String key) {
+        Header header = record.headers().lastHeader(key);
+        return header == null ? null : new String(header.value(), StandardCharsets.UTF_8);
     }
 
     @Test
