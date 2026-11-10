@@ -68,6 +68,8 @@ management:
 jwt:
   secret: ${JWT_SECRET}
   access-token-expiration: 1h
+  refresh-token-expiration: 14d   # 재발급할 때마다 다시 14일
+  refresh-reuse-grace: 10s        # 동시 재발급 유예 시간
   dev-token:
     enabled: ${DEV_TOKEN_ENABLED:false}
 
