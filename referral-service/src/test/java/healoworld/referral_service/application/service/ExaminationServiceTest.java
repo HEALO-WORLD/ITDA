@@ -21,11 +21,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.sql.SQLException;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -38,6 +42,13 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ExaminationServiceTest {
+
+    // 서비스의 현재 시각: 한국 시간 2026-11-10 10:00으로 고정한다 (JVM 기본 시간대와 무관)
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 10, 10, 0);
+
+    @Spy
+    private Clock clock = Clock.fixed(NOW.atZone(SEOUL).toInstant(), SEOUL);
 
     @Mock
     private ExaminationRepository examinationRepository;
@@ -87,6 +98,8 @@ class ExaminationServiceTest {
         // findById는 UPDATE 이후 최신 상태를 응답하기 위한 1번뿐이다
         inOrder.verify(examinationRepository).findById(id);
         verify(examinationRepository, times(1)).findById(id);
+        // 시작 시각은 한국 시간 현재 시각으로 기록한다
+        verify(examinationRepository).startIfScheduled(id, reservation.getId(), NOW);
     }
 
     // ==============================

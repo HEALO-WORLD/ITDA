@@ -10,6 +10,7 @@ import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
@@ -47,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // 테스트 전용 PostgreSQL에서 목록 검색 조건·정렬·페이지, 상세 집계, 영향 의뢰 조회를 검증한다 (조회 전용이라 테스트마다 롤백)
 @DataJpaTest
-@Import({EquipmentIncidentQueryService.class, QuerydslConfig.class})
+@Import({EquipmentIncidentQueryService.class, QuerydslConfig.class, ClockConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupport {

@@ -9,6 +9,7 @@ import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.inbox.ConsumedEventId;
 import healoworld.referral_service.global.inbox.ConsumedEventRepository;
@@ -43,6 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,7 +81,7 @@ import static org.mockito.Mockito.doThrow;
         ReservationService.class,
         ReferralHistoryService.class,
         SlotCommandOutbox.class,
-        QuerydslConfig.class,
+        QuerydslConfig.class, ClockConfig.class,
         SlotBookedIncidentLinkIntegrationTest.JsonConfig.class
 })
 @ActiveProfiles("test")
@@ -112,6 +114,7 @@ class SlotBookedIncidentLinkIntegrationTest extends PostgresContainerSupport {
     @Autowired private ConsumedEventRepository consumedEventRepository;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private Clock clock;   // 서비스와 같은 한국 시간 기준 (재시도 가능 시각 비교에 사용)
 
     // 후속 처리 실패 재현용. 기본은 실제 메서드를 그대로 호출한다
     @MockitoSpyBean private NotificationService notificationService;
@@ -374,7 +377,8 @@ class SlotBookedIncidentLinkIntegrationTest extends PostgresContainerSupport {
         doThrow(new IllegalStateException("가상 알림 저장 실패")).doCallRealMethod()
                 .when(notificationService).createRescheduleRequired(any(), any());
 
-        LocalDateTime now = LocalDateTime.now();
+        // 실패 기록의 재시도 가능 시각(next_retry_at)은 서비스 Clock(한국 시간)으로 정해지므로 같은 기준의 현재 시각을 쓴다
+        LocalDateTime now = LocalDateTime.now(clock);
         assertThat(incidentProcessingService.process(task.getId(), now)).isEqualTo(Outcome.FAILED);
         assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);

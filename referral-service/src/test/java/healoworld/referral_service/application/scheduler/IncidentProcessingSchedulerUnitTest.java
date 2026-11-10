@@ -12,7 +12,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageRequest;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,6 +26,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class IncidentProcessingSchedulerUnitTest {  // 스케줄러의 기능 자체를 테스트
     private static final int BATCH_SIZE = 50;
+    // 한국 시간 2026-11-10 09:30 (UTC 00:30). JVM 기본 시간대와 관계없이 이 시각으로 조회해야 한다
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-10T00:30:00Z"), ZoneId.of("Asia/Seoul"));
 
     @Mock
     private IncidentReferralRepository incidentReferralRepository;
@@ -37,7 +42,8 @@ class IncidentProcessingSchedulerUnitTest {  // 스케줄러의 기능 자체를
         scheduler = new IncidentProcessingScheduler(
                 incidentReferralRepository,
                 incidentProcessingService,
-                BATCH_SIZE
+                BATCH_SIZE,
+                CLOCK
         );
     }
 
@@ -106,7 +112,8 @@ class IncidentProcessingSchedulerUnitTest {  // 스케줄러의 기능 자체를
         scheduler = new IncidentProcessingScheduler(
                 incidentReferralRepository,
                 incidentProcessingService,
-                customBatchSize
+                customBatchSize,
+                CLOCK
         );
 
         givenReadyTasks(List.of(UUID.randomUUID()), customBatchSize);
@@ -136,5 +143,21 @@ class IncidentProcessingSchedulerUnitTest {  // 스케줄러의 기능 자체를
         scheduler.processReadyTasks();
 
         verifyNoInteractions(incidentProcessingService);
+    }
+
+    @Test
+    @DisplayName("처리 가능 작업은 한국 시간 현재 시각을 기준으로 조회한다")
+    void queriesReadyTasksWithKoreanTime() {
+        givenReadyTasks(List.of(), BATCH_SIZE);
+
+        scheduler.processReadyTasks();
+
+        verify(incidentReferralRepository).findReadyTaskIds(
+                eq(LocalDateTime.of(2026, 11, 10, 9, 30)),
+                eq(IncidentProcessingStatus.PENDING),
+                eq(IncidentProcessingStatus.FAILED),
+                eq(IncidentProcessingStatus.PROCESSING),
+                eq(PageRequest.of(0, BATCH_SIZE))
+        );
     }
 }
