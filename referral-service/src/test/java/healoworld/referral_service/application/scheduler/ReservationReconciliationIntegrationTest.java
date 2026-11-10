@@ -5,6 +5,7 @@ import healoworld.referral_service.application.event.result.SlotResultType;
 import healoworld.referral_service.application.service.EquipmentIncidentService;
 import healoworld.referral_service.application.service.ExaminationService;
 import healoworld.referral_service.application.service.IncidentProcessingService;
+import healoworld.referral_service.application.service.InstitutionNotificationService;
 import healoworld.referral_service.application.service.NotificationService;
 import healoworld.referral_service.application.service.ReferralHistoryService;
 import healoworld.referral_service.application.service.ReservationReconciliationService;
@@ -75,6 +76,7 @@ import static org.mockito.Mockito.when;
 @Import({
         ReservationReconciliationService.class,
         SlotResultService.class,
+        InstitutionNotificationService.class,
         EquipmentIncidentService.class,
         EquipmentIncidentLockRepository.class,
         IncidentProcessingService.class,

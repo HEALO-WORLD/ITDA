@@ -1,6 +1,7 @@
 package healoworld.referral_service.presentation.controller;
 
 import healoworld.referral_service.application.service.ExaminationResultService;
+import healoworld.referral_service.application.service.InstitutionNotificationService;
 import healoworld.referral_service.application.service.ReferralHistoryService;
 import healoworld.referral_service.application.service.ReferralService;
 import healoworld.referral_service.application.service.ReservationService;
@@ -77,6 +78,9 @@ class AuthHeaderContractTest {
 
     @MockitoBean
     private ReferralRepository referralRepository;
+
+    @MockitoBean
+    private InstitutionNotificationService institutionNotificationService;
 
     @MockitoBean
     private ReservationRepository reservationRepository;
