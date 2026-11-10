@@ -27,6 +27,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -41,6 +42,7 @@ public class ReservationService {
     private final ReferralRepository referralRepository;
     private final IncidentReservationRepository incidentReservationRepository;   // 취소 시 예약 행 잠금 (의뢰 → 예약 → 검사 순서)
     private final ExaminationRepository examinationRepository;                   // 취소 시 검사 상태 확인
+    private final Clock clock;                                                   // 취소 2시간 제한의 현재 시각 (한국 시간)
 
     public Reservation createReservation(UUID outboxEventId, Referral referral, CreateReservationRequest createReservationRequest) {
         // 삭제된 예약의 번호도 다시 쓰지 않도록 소프트 삭제된 예약까지 포함한 마지막 번호 + 1 (예약이 없으면 1)
@@ -100,7 +102,8 @@ public class ReservationService {
             throw new BaseException(ErrorCode.RESERVATION_NOT_FOUND);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        // 예약 시작 시각은 한국 시간 LocalDateTime이므로 현재 시각도 한국 시간으로 구한다
+        LocalDateTime now = LocalDateTime.now(clock);
 
         if (!now.isBefore(reservation.getStartTime().minusHours(2))) {
             throw new BaseException(ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
