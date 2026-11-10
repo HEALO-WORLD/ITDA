@@ -52,7 +52,7 @@ import static org.mockito.Mockito.reset;
  */
 @DataJpaTest
 @ExtendWith(OutputCaptureExtension.class)
-@Import({IncidentProcessingService.class, NotificationService.class, ExaminationService.class, QuerydslConfig.class, ClockConfig.class})
+@Import({IncidentProcessingService.class, NotificationService.class, ExaminationService.class, ReferralHistoryService.class, QuerydslConfig.class, ClockConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
