@@ -176,7 +176,7 @@ public class EquipmentService {
 
         validateUpdateRequest(request);
 
-        Equipment equipment = equipmentRepository.findByIdAndDeletedAtIsNull(equipmentId)
+        Equipment equipment = equipmentRepository.findForUpdateById(equipmentId)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (!equipment.getInstitutionId().equals(userInstitutionId)) {
@@ -266,7 +266,7 @@ public class EquipmentService {
                         userInstitutionId,
                         examInstitutionId,
                         PartnershipStatus.ACTIVE
-                )) {
+        )) {
             return;
         }
 

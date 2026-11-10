@@ -97,6 +97,7 @@ gateway:
           - "PATCH /api/v1/partnerships/*/reject"
           - "POST /api/v1/institutions/*/equipments"
           - "PATCH /api/v1/equipments/*"
+          - "PATCH /api/v1/equipments/*/status"
           - "POST /api/v1/equipments/*/exam-types"
           - "PATCH /api/v1/equipments/*/exam-types/*"
           - "PUT /api/v1/equipments/*/operating-hours"

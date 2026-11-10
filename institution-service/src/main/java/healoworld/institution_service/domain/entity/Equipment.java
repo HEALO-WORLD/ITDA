@@ -56,6 +56,10 @@ public class Equipment extends BaseEntity {
         return new Equipment(institutionId, name, modality);
     }
 
+    public void changeStatus(EquipmentStatus status) {
+        this.status = Objects.requireNonNull(status, "장비 상태는 필수입니다.");
+    }
+
     public void changeName(String name) {
         this.name = normalizeName(name);
     }
