@@ -10,6 +10,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -26,11 +27,14 @@ public class IncidentProcessingScheduler {
     private final IncidentReferralRepository incidentReferralRepository;
     private final IncidentProcessingService incidentProcessingService;
     private final int batchSize;
+    // 처리 가능 작업(next_retry_at·locked_until 경과) 판단의 현재 시각 (한국 시간)
+    private final Clock clock;
 
     public IncidentProcessingScheduler(
             IncidentReferralRepository incidentReferralRepository,
             IncidentProcessingService incidentProcessingService,
-            @Value("${itda.incident-processing.scheduler.batch-size:50}") int batchSize
+            @Value("${itda.incident-processing.scheduler.batch-size:50}") int batchSize,
+            Clock clock
     ) {
         if (batchSize < 1) {
             throw new IllegalArgumentException("batchSize는 1 이상이어야 합니다.");
@@ -39,6 +43,7 @@ public class IncidentProcessingScheduler {
         this.incidentReferralRepository = incidentReferralRepository;
         this.incidentProcessingService = incidentProcessingService;
         this.batchSize = batchSize;
+        this.clock = clock;
     }
 
     // 이전 실행이 끝난 후 일정 시간 뒤 다시 실행
@@ -55,7 +60,7 @@ public class IncidentProcessingScheduler {
 
         try {
             taskIds = incidentReferralRepository.findReadyTaskIds(
-                    LocalDateTime.now(),
+                    LocalDateTime.now(clock),
                     IncidentProcessingStatus.PENDING,
                     IncidentProcessingStatus.FAILED,
                     IncidentProcessingStatus.PROCESSING,

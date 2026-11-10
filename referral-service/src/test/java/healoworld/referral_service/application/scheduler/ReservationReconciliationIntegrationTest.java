@@ -17,6 +17,7 @@ import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.outbox.OutboxEvent;
 import healoworld.referral_service.global.outbox.OutboxEventRepository;
@@ -77,7 +78,7 @@ import static org.mockito.Mockito.when;
         ReservationService.class,
         ReferralHistoryService.class,
         SlotCommandOutbox.class,
-        QuerydslConfig.class,
+        QuerydslConfig.class, ClockConfig.class,
         ReservationReconciliationIntegrationTest.JsonConfig.class
 })
 @ActiveProfiles("test")

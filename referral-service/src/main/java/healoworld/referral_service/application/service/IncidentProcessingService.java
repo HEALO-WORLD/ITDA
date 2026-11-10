@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -63,6 +64,8 @@ public class IncidentProcessingService {
     private final NotificationService notificationService;
     private final ExaminationRepository examinationRepository;
     private final ReferralHistoryRepository referralHistoryRepository;
+    // 선점·완료·실패 기록과 재시도 가능 시각(next_retry_at)의 기준 (한국 시간)
+    private final Clock clock;
 
     public IncidentProcessingService(
             IncidentReferralRepository incidentReferralRepository,
@@ -73,7 +76,8 @@ public class IncidentProcessingService {
             ReferralHistoryRepository referralHistoryRepository,
             PlatformTransactionManager transactionManager,
             @Value("${itda.incident-processing.lock-duration:PT5M}") Duration lockDuration,
-            @Value("${itda.incident-processing.retry-delay:PT1M}") Duration retryDelay
+            @Value("${itda.incident-processing.retry-delay:PT1M}") Duration retryDelay,
+            Clock clock
     ) {
         this.incidentReferralRepository = incidentReferralRepository;
         this.incidentAffectedReferralRepository = incidentAffectedReferralRepository;
@@ -89,6 +93,7 @@ public class IncidentProcessingService {
 
         this.lockDuration = lockDuration;
         this.retryDelay = retryDelay;
+        this.clock = clock;
     }
 
     // 트랜잭션: 호출한 쪽 트랜잭션에 참여하지 않는다(NOT_SUPPORTED). DB 작업은 모두 newTransaction 안에서만 한다
@@ -98,7 +103,7 @@ public class IncidentProcessingService {
     //  T3 실패 기록: T2가 롤백된 뒤 새 트랜잭션에서 markFailed(). 내 잠금이 아니면 0이 되어 다른 작업자의 기록을 덮어쓰지 않는다
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Outcome process(UUID incidentReferralId) {
-        return process(incidentReferralId, LocalDateTime.now());
+        return process(incidentReferralId, LocalDateTime.now(clock));
     }
 
     // 선점 기준 시각을 지정할 수 있는 실행 (잠금 만료 상황을 재현하는 테스트에서 사용)
@@ -285,8 +290,8 @@ public class IncidentProcessingService {
         return message.substring(0, message.offsetByCodePoints(0, LAST_ERROR_MAX_LENGTH));
     }
 
-    private static LocalDateTime now() {
-        return LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
+    private LocalDateTime now() {
+        return LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
     }
 
     // 처리할 수 없는 상태. T2를 롤백시키고 원인과 함께 FAILED로 기록된다

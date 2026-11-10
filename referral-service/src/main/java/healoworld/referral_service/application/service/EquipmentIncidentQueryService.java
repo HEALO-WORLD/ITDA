@@ -24,6 +24,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -51,6 +52,7 @@ public class EquipmentIncidentQueryService {
     private final IncidentReferralRepository incidentReferralRepository;
     private final ReferralRepository referralRepository;   // 현황 집계의 재조정 필요 의뢰 수
     private final ExaminationRepository examinationRepository;   // 영향 의뢰의 수동 확인 여부 판단
+    private final Clock clock;   // 현황 집계의 기준 시각 (한국 시간)
 
     public PagedResponse<EquipmentIncidentResponse> getIncidents(RoleType role, UUID institutionId,
                                                                  EquipmentIncidentSearchCondition cond) {
@@ -124,7 +126,8 @@ public class EquipmentIncidentQueryService {
     // - ADMIN은 institutionId가 필수다 (없으면 기관 조건이 null이 되어 오류 없이 0이 나오므로 400으로 막는다)
     // - 세 값을 같은 기관과 같은 기준 시각으로 계산한다
     public EquipmentIncidentSummaryResponse getSummary(RoleType role, UUID institutionId, UUID requestedInstitutionId) {
-        return getSummary(role, institutionId, requestedInstitutionId, LocalDateTime.now());
+        // 중단 구간(한국 시간 LocalDateTime)과 비교하는 기준 시각이므로 한국 시간으로 구한다
+        return getSummary(role, institutionId, requestedInstitutionId, LocalDateTime.now(clock));
     }
 
     // 기준 시각을 지정할 수 있는 집계 (중단 구간 경계를 고정 시각으로 검증하는 테스트에서 사용)
