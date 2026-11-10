@@ -12,11 +12,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.ListenerExecutionFailedException;
 import org.springframework.kafka.listener.MessageListenerContainer;
+import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 import org.springframework.kafka.support.SendResult;
+import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.util.backoff.BackOff;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -36,7 +42,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 운영과 같은 KafkaConfig.kafkaErrorHandler()(재시도 1초×3, 재시도 제외 예외, DLT 전송, 실패 로깅)를
+ * 운영과 같은 KafkaConfig.kafkaErrorHandler()(기본 재시도 1초×3, DB 일시 장애 지수 백오프 5번, 재시도 제외 예외, DLT 전송, 실패 로깅)를
  * 브로커 없이 실행해 재시도 횟수·DLT 전송·DLT 전송 실패 동작을 확인한다.
  * <p>
  * - KafkaTemplate은 Mock이라 실제 DLT 토픽 쓰기·파티션 존재 여부는 확인하지 않는다 (실제 브로커가 필요한 검증)
@@ -58,7 +64,7 @@ class KafkaErrorHandlerPolicyTest {
     void retryableFailureGoesToDltAfterFourAttempts(CapturedOutput output) {
         givenDltSendSucceeds();
         ConsumerRecord<String, String> record = record();
-        Exception failure = listenerFailure(new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
+        Exception failure = listenerFailure(new IllegalStateException("처리 실패"));
 
         List<Boolean> recovered = new ArrayList<>();
         for (int attempt = 0; attempt < 4; attempt++) {
@@ -73,11 +79,11 @@ class KafkaErrorHandlerPolicyTest {
         assertThat(dlt.value()).isEqualTo(record.value());
         assertThat(new String(dlt.headers().lastHeader("eventId").value(), StandardCharsets.UTF_8)).isEqualTo(EVENT_ID);
         assertThat(output).contains("attempt=1", "attempt=2", "attempt=3",
-                "DLT로 이동", "dltTopic=slot-results-dlt", "errorCode=RESERVATION_NOT_FOUND");
+                "DLT로 이동", "dltTopic=slot-results-dlt", "cause=IllegalStateException");
     }
 
     @Test
-    @DisplayName("재시도해도 결과가 같은 예외(형식 오류·JSON 파싱 오류)는 재시도 없이 첫 실패에서 DLT로 보낸다")
+    @DisplayName("재시도해도 결과가 같은 예외(형식 오류·JSON 파싱 오류·업무 예외)는 재시도 없이 첫 실패에서 DLT로 보낸다")
     void notRetryableFailureGoesToDltImmediately(CapturedOutput output) {
         givenDltSendSucceeds();
         Exception parseFailure = catchThrowableOfJson();
@@ -85,9 +91,56 @@ class KafkaErrorHandlerPolicyTest {
         assertThat(errorHandler.handleOne(listenerFailure(new IllegalArgumentException("UUID 형식 오류")),
                 record(), consumer, container)).isTrue();
         assertThat(errorHandler.handleOne(listenerFailure(parseFailure), record(), consumer, container)).isTrue();
+        assertThat(errorHandler.handleOne(listenerFailure(new BaseException(ErrorCode.RESERVATION_NOT_FOUND)),
+                record(), consumer, container)).isTrue();
 
-        verify(kafkaTemplate, times(2)).send(any(ProducerRecord.class));
-        assertThat(output).contains("cause=IllegalArgumentException", "DLT로 이동");
+        verify(kafkaTemplate, times(3)).send(any(ProducerRecord.class));
+        assertThat(output).contains("cause=IllegalArgumentException", "errorCode=RESERVATION_NOT_FOUND", "DLT로 이동");
+    }
+
+    @Test
+    @DisplayName("DB 일시 장애(하위 클래스·감싸진 원인 포함)는 지수 백오프로 5번 재시도한 뒤(최초 포함 6번째 실패) DLT로 보낸다")
+    void transientDbFailureRetriesFiveTimesThenGoesToDlt() {
+        givenDltSendSucceeds();
+        ConsumerRecord<String, String> record = record();
+        // 리스너 예외 → 스프링 래핑 → 실제 원인이 TransientDataAccessException 하위 클래스인 상황
+        Exception failure = listenerFailure(new RuntimeException("wrap", new CannotAcquireLockException("lock timeout")));
+
+        List<Boolean> recovered = new ArrayList<>();
+        for (int attempt = 0; attempt < 6; attempt++) {
+            recovered.add(errorHandler.handleOne(failure, record, consumer, container));
+        }
+
+        assertThat(recovered).containsExactly(false, false, false, false, false, true);
+        verify(kafkaTemplate, times(1)).send(any(ProducerRecord.class));
+    }
+
+    @Test
+    @DisplayName("backOffFor: DB 일시 장애는 1초부터 2배씩, 최대 10초 간격으로 5번 재시도하는 지수 백오프를 고른다")
+    void backOffForTransientDbFailure() {
+        List<Exception> transientFailures = List.of(
+                listenerFailure(new QueryTimeoutException("query timeout")),
+                listenerFailure(new CannotAcquireLockException("lock timeout")),
+                listenerFailure(new CannotCreateTransactionException("connection unavailable")));
+
+        for (Exception failure : transientFailures) {
+            BackOff backOff = KafkaConfig.backOffFor(failure);
+
+            assertThat(backOff).isInstanceOf(ExponentialBackOffWithMaxRetries.class);
+            ExponentialBackOffWithMaxRetries exponential = (ExponentialBackOffWithMaxRetries) backOff;
+            assertThat(exponential.getMaxRetries()).isEqualTo(5);
+            assertThat(exponential.getInitialInterval()).isEqualTo(1000L);
+            assertThat(exponential.getMultiplier()).isEqualTo(2.0);
+            assertThat(exponential.getMaxInterval()).isEqualTo(10000L);
+        }
+    }
+
+    @Test
+    @DisplayName("backOffFor: DB 일시 장애가 아니면 null을 돌려 기본 백오프(1초×3)를 쓰게 한다")
+    void backOffForOtherFailureIsDefault() {
+        assertThat(KafkaConfig.backOffFor(listenerFailure(new IllegalStateException("처리 실패")))).isNull();
+        // DataAccessException이어도 일시 장애가 아니면(무결성 위반 등) 기본값
+        assertThat(KafkaConfig.backOffFor(listenerFailure(new DataIntegrityViolationException("unique")))).isNull();
     }
 
     @Test
@@ -118,7 +171,7 @@ class KafkaErrorHandlerPolicyTest {
         when(kafkaTemplate.send(any(ProducerRecord.class)))
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker down")));
         ConsumerRecord<String, String> record = record();
-        Exception failure = listenerFailure(new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
+        Exception failure = listenerFailure(new IllegalStateException("처리 실패"));
 
         List<Boolean> firstCycle = new ArrayList<>();
         for (int attempt = 0; attempt < 4; attempt++) {

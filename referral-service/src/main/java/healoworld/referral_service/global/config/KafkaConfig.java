@@ -11,11 +11,15 @@ import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.RecordInterceptor;
 import org.springframework.kafka.listener.RetryListener;
+import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
+import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.util.backoff.BackOff;
 import org.springframework.util.backoff.FixedBackOff;
 import tools.jackson.core.JacksonException;
 
@@ -38,13 +42,37 @@ public class KafkaConfig {
         // 다시 해도 결과가 같은 예외는 재시도 없이 바로 DLT로
         errorHandler.addNotRetryableExceptions(
                 IllegalArgumentException.class,
-                JacksonException.class
+                JacksonException.class,
+                BaseException.class
         );
+
+        // DB 일시 장애는 지수 백오프로 5번 (1·2·4·8·10초, 약 25초), 그 외는 위 기본값
+        errorHandler.setBackOffFunction((record, ex) -> backOffFor(ex));
 
         // 기본 설정은 재시도 중 "Record in retry" 한 줄만 남기고 원인 예외를 남기지 않는다. 시도마다·DLT 이동 시 원인을 기록한다
         errorHandler.setRetryListeners(new FailureLoggingRetryListener());
 
         return errorHandler;
+    }
+
+    static BackOff backOffFor(Exception ex) {
+        if (!isTransient(ex)) {
+            return null;
+        }
+        ExponentialBackOffWithMaxRetries backOff = new ExponentialBackOffWithMaxRetries(5);
+        backOff.setInitialInterval(1000L);
+        backOff.setMultiplier(2.0);
+        backOff.setMaxInterval(10000L);
+        return backOff;
+    }
+
+    private static boolean isTransient(Throwable ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof TransientDataAccessException || cause instanceof CannotCreateTransactionException ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // 처리 실패를 시도마다(WARN), DLT로 넘길 때(ERROR) 기록한다. 재시도·DLT 동작 자체는 바꾸지 않는다
