@@ -11,6 +11,9 @@ public enum ErrorCode {
     // institution
     INSTITUTION_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "기관 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요."),
 
+    // slot
+    SLOT_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "슬롯 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요."),
+
     // referral
     REFERRAL_FORBIDDEN(HttpStatus.FORBIDDEN, "본인 소속 기관으로만 의뢰를 생성할 수 있습니다."),
     PARTNERSHIP_NOT_ACTIVE(HttpStatus.FORBIDDEN, "협력 관계가 아닌 검사기관입니다."),
@@ -25,6 +28,8 @@ public enum ErrorCode {
     INVALID_RESERVATION_STATUS(HttpStatus.CONFLICT, "현재 예약상태에서는 처리할 수 없습니다."),
     INVALID_FAILURE_REASON(HttpStatus.BAD_REQUEST, "유효하지 않은 실패 사유입니다."),
     RESERVATION_CANCEL_DEADLINE_PASSED(HttpStatus.CONFLICT, "예약 취소는 검사 시작 2시간 전까지만 가능합니다."),
+    EQUIPMENT_NOT_IN_EXAM_INSTITUTION(HttpStatus.BAD_REQUEST, "선택한 검사기관의 장비가 아닙니다."),
+    SLOT_MISMATCH(HttpStatus.BAD_REQUEST, "선택한 슬롯이 예약 정보(장비·검사 종류·일시)와 일치하지 않습니다."),
 
     // common
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "유효성 검사에 실패했습니다."),

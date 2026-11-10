@@ -21,6 +21,8 @@ import healoworld.referral_service.global.inbox.ConsumedEventId;
 import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.OutboxEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
+import healoworld.referral_service.global.dto.ApiResponse;
+import healoworld.referral_service.infrastructure.client.institution.EquipmentOwnerResponse;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.client.institution.PartnershipCheckResponse;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentLockRepository;
@@ -653,6 +655,13 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
         }
     }
 
+    // 재예약 요청의 장비를 요청한 검사기관 소속으로 응답하게 한다
+    private void givenEquipmentOwnedBy(CreateReservationRequest request) {
+        given(institutionClient.getEquipmentOwner(request.getEquipmentId()))
+                .willReturn(ApiResponse.ok("장비 소속 기관 조회에 성공했습니다.",
+                        new EquipmentOwnerResponse(request.getEquipmentId(), request.getExamInstitutionId())));
+    }
+
     private ReservationResponse reschedule() {
         CreateReservationRequest request = CreateReservationRequest.builder()
                 .slotId(UUID.randomUUID())
@@ -662,6 +671,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
                 .startTime(startsAt.plusDays(1))
                 .endTime(startsAt.plusDays(1).plusHours(1))
                 .build();
+        givenEquipmentOwnedBy(request);
         return referralService.createRescheduledReservation(userId, RoleType.REQUESTER, referralId, request);
     }
 
