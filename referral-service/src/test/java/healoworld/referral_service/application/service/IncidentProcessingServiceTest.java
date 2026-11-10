@@ -271,7 +271,7 @@ class IncidentProcessingServiceTest {
     }
 
     @Test
-    @DisplayName("이미 NEEDS_RESCHEDULE + BLOCKED면 상태를 다시 바꾸지 않고 ALREADY_BLOCKED")
+    @DisplayName("이미 NEEDS_RESCHEDULE + BLOCKED면 상태·이력은 다시 바꾸지 않고 ALREADY_BLOCKED, 누락된 재조정 알림은 보완 요청한다")
     void alreadyBlocked() {
         givenState(ReferralStatus.NEEDS_RESCHEDULE, ReservationStatus.BLOCKED);
         LocalDateTime endedAt = reservation.getEndedAt();
@@ -282,8 +282,9 @@ class IncidentProcessingServiceTest {
         assertThat(reservation.getEndedAt()).isEqualTo(endedAt);
         assertSucceededWith(IncidentProcessingService.ALREADY_BLOCKED);
 
-        // 이미 차단된 예약에는 중복 알림을 생성하지 않음
-        then(notificationService).shouldHaveNoInteractions();
+        // 다른 경로(SlotsBlocked 등)가 알림 없이 먼저 차단했을 수 있으므로 알림 생성을 요청한다
+        // (이미 같은 예약의 알림이 있으면 NotificationService가 만들지 않는다)
+        then(notificationService).should().createRescheduleRequired(any(IncidentReferral.class), eq(referral));
         then(referralHistoryRepository).shouldHaveNoInteractions();
     }
 

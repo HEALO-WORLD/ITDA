@@ -2,9 +2,11 @@ package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.application.event.command.SlotCommandType;
 import healoworld.referral_service.application.event.result.SlotResultType;
+import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
@@ -15,6 +17,8 @@ import healoworld.referral_service.global.inbox.ConsumedEvent;
 import healoworld.referral_service.global.inbox.ConsumedEventId;
 import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
+import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -40,6 +44,9 @@ public class SlotResultService {
     private final SlotCommandOutbox slotCommandOutbox;
     private final ExaminationService examinationService;
     private final EquipmentIncidentService equipmentIncidentService;
+    // SlotsBlocked 처리 시 예약·검사 행 잠금 (의뢰 → 예약 → 검사 순서. 검사 시작·장애 후속 처리와 같은 순서)
+    private final IncidentReservationRepository incidentReservationRepository;
+    private final ExaminationRepository examinationRepository;
 
     public static final String CONSUMER = "referral-service";
 
@@ -183,7 +190,20 @@ public class SlotResultService {
     }
 
     // 예약 진행 중 → BLOCKED(EQUIPMENT_FAILURE), 의뢰 PENDING·CONFIRMED → NEEDS_RESCHEDULE
+    // 검사가 이미 시작·완료됐다면 예약·의뢰·이력을 바꾸지 않는다 (장애 후속 처리 IncidentProcessingService와 같은 정책)
+    // 잠금 순서: 의뢰(handle에서 잠금) → 예약 → 검사. 검사 시작(ExaminationService.lockForStart)·장애 후속 처리와 같은 순서라
+    //           검사 상태를 확인한 뒤 예약을 차단할 때까지 검사 시작이 끼어들지 못하고, 교착도 생기지 않는다
     private void onSlotsBlocked(Referral referral, Reservation reservation, UUID eventId) {
+        incidentReservationRepository.findByIdForUpdate(reservation.getId());
+        ExaminationStatus examinationStatus = examinationRepository.findByReferralIdForUpdate(referral.getId())
+                .map(Examination::getStatus)
+                .orElse(null);
+        if (examinationStatus == ExaminationStatus.IN_PROGRESS || examinationStatus == ExaminationStatus.COMPLETED) {
+            log.warn("검사가 이미 {}라 SlotsBlocked로 예약을 차단하지 않음, 담당자 확인 필요. eventId={}, referralId={}, reservationId={}",
+                    examinationStatus, eventId, referral.getId(), reservation.getId());
+            return;
+        }
+
         ReferralStatus fromStatus = referral.getReferralStatus();
         LocalDateTime now = LocalDateTime.now();
 

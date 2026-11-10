@@ -175,6 +175,10 @@ public class IncidentProcessingService {
             referralHistoryRepository.save(history);
 
             notificationService.createRescheduleRequired(task, referral);
+        } else if (ALREADY_BLOCKED.equals(resultCode)) {
+            // 다른 경로(SlotsBlocked 정합성 복구 등)가 먼저 차단해 알림 없이 재조정 필요가 된 경우를 보완한다
+            // 상태·이력은 다시 바꾸지 않고, 같은 예약의 재조정 알림이 없을 때만 만든다 (중복 확인은 NotificationService)
+            notificationService.createRescheduleRequired(task, referral);
         }
 
         // 반드시 마지막에 호출한다. flushAutomatically로 상태·알림 INSERT가 반영되고,
