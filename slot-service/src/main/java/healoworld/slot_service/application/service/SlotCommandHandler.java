@@ -64,7 +64,7 @@ public class SlotCommandHandler {
             HoldResult result = slotHoldService.hold(event.slotId(), event.reservationId(), event.eventId());
             if (result.isSuccess()) {
                 SlotHeldEvent held = SlotHeldEvent.of(event, result.getHeldUntil(), now);
-                saveOutbox(held.eventId(), event.slotId(), SlotHeldEvent.TYPE, held, now);
+                saveOutbox(held.eventId(), event.slotId(), SlotHeldEvent.TYPE, held, event.occurredAt(), now);
             } else {
                 saveHoldFailed(event, result.getFailureReason(), now);
             }
@@ -86,14 +86,14 @@ public class SlotCommandHandler {
             // 같은 예약으로 이미 확정된 경우도 성공으로 다시 알려 Referral이 확정 처리를 이어갈 수 있게 한다
             case BOOKED, ALREADY_BOOKED -> {
                 SlotBookedEvent booked = SlotBookedEvent.of(event, now);
-                saveOutbox(booked.eventId(), event.slotId(), SlotBookedEvent.TYPE, booked, now);
+                saveOutbox(booked.eventId(), event.slotId(), SlotBookedEvent.TYPE, booked, event.occurredAt(), now);
             }
             // HoldExpired는 SlotHoldExpiryService가 같은 트랜잭션에서 이미 Outbox에 기록했다
             case HOLD_EXPIRED -> log.info("만료된 HOLD에 BookSlot 도착, 확정하지 않고 HoldExpired 발행. slotId={}, reservationId={}",
                     event.slotId(), event.reservationId());
             case FAILED -> {
                 SlotBookFailedEvent failed = SlotBookFailedEvent.of(event, now);
-                saveOutbox(failed.eventId(), event.slotId(), SlotBookFailedEvent.TYPE, failed, now);
+                saveOutbox(failed.eventId(), event.slotId(), SlotBookFailedEvent.TYPE, failed, event.occurredAt(), now);
             }
         }
 
@@ -134,12 +134,14 @@ public class SlotCommandHandler {
 
     private void saveHoldFailed(HoldRequestedEvent event, HoldFailureReason reason, LocalDateTime now) {
         SlotHoldFailedEvent failed = SlotHoldFailedEvent.of(event, reason, now);
-        saveOutbox(failed.eventId(), event.slotId(), SlotHoldFailedEvent.TYPE, failed, now);
+        saveOutbox(failed.eventId(), event.slotId(), SlotHoldFailedEvent.TYPE, failed, event.occurredAt(), now);
     }
 
     // 결과 이벤트는 slot-results에 key = slotId로 발행한다
-    private void saveOutbox(UUID eventId, UUID slotId, String eventType, Object payload, LocalDateTime now) {
+    // sourceOccurredAt(받은 명령의 occurredAt)은 발행 시 체류 시간 측정에 쓴다
+    private void saveOutbox(UUID eventId, UUID slotId, String eventType, Object payload,
+                            LocalDateTime sourceOccurredAt, LocalDateTime now) {
         outboxEventRepository.save(OutboxEvent.create(eventId, AGGREGATE_TYPE, slotId, RESULT_TOPIC,
-                slotId.toString(), eventType, jsonMapper.writeValueAsString(payload), now));
+                slotId.toString(), eventType, jsonMapper.writeValueAsString(payload), sourceOccurredAt, now));
     }
 }
