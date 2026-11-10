@@ -63,7 +63,7 @@ public class IncidentProcessingService {
     private final Duration retryDelay;
     private final NotificationService notificationService;
     private final ExaminationRepository examinationRepository;
-    private final ReferralHistoryRepository referralHistoryRepository;
+    private final ReferralHistoryService referralHistoryService;
     // 선점·완료·실패 기록과 재시도 가능 시각(next_retry_at)의 기준 (한국 시간)
     private final Clock clock;
 
@@ -73,7 +73,7 @@ public class IncidentProcessingService {
             IncidentReservationRepository incidentReservationRepository,
             NotificationService notificationService,
             ExaminationRepository examinationRepository,
-            ReferralHistoryRepository referralHistoryRepository,
+            ReferralHistoryService referralHistoryService,
             PlatformTransactionManager transactionManager,
             @Value("${itda.incident-processing.lock-duration:PT5M}") Duration lockDuration,
             @Value("${itda.incident-processing.retry-delay:PT1M}") Duration retryDelay,
@@ -84,7 +84,7 @@ public class IncidentProcessingService {
         this.incidentReservationRepository = incidentReservationRepository;
         this.notificationService = notificationService;
         this.examinationRepository = examinationRepository;
-        this.referralHistoryRepository = referralHistoryRepository;
+        this.referralHistoryService = referralHistoryService;
 
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(
@@ -162,7 +162,7 @@ public class IncidentProcessingService {
         // 실제 예약이 차단되고 의뢰가 재조정 필요 상태가 됐을 때
         if (RESCHEDULE_REQUIRED.equals(resultCode)) {
 
-            ReferralHistory history = ReferralHistory.create(
+            referralHistoryService.recordHistory(
                     referral,
                     reservation,
                     ReferralStatus.CONFIRMED,
@@ -171,8 +171,6 @@ public class IncidentProcessingService {
                     task.getIncident().getSourceEventId(),
                     null
             );
-
-            referralHistoryRepository.save(history);
 
             notificationService.createRescheduleRequired(task, referral);
         } else if (ALREADY_BLOCKED.equals(resultCode)) {
