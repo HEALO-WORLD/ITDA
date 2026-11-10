@@ -24,13 +24,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +56,11 @@ import static org.mockito.Mockito.times;
 class EquipmentIncidentQueryServiceTest {
 
     private static final LocalDateTime OCCURRED_AT = LocalDateTime.of(2026, 11, 2, 14, 0);
+    // 현황 집계의 기준 시각: 한국 시간 OCCURRED_AT으로 고정한다 (JVM 기본 시간대와 무관)
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+
+    @Spy
+    private Clock clock = Clock.fixed(OCCURRED_AT.atZone(SEOUL).toInstant(), SEOUL);
 
     @Mock
     private EquipmentIncidentRepository equipmentIncidentRepository;
@@ -451,6 +459,17 @@ class EquipmentIncidentQueryServiceTest {
 
         assertThat(summary).isEqualTo(new EquipmentIncidentSummaryResponse(myInstitutionId, OCCURRED_AT, 1, 5, 2));
         then(equipmentIncidentRepository).should(never()).countEquipmentsInDowntime(eq(otherInstitutionId), any());
+    }
+
+    @Test
+    @DisplayName("현황: 기준 시각을 지정하지 않으면 한국 시간 현재 시각으로 진행 중인 중단을 센다")
+    void summaryUsesKoreanClock() {
+        givenCounts(myInstitutionId, OCCURRED_AT, 1, 0, 0);
+
+        EquipmentIncidentSummaryResponse summary = service.getSummary(RoleType.EXAMINER, myInstitutionId, null);
+
+        assertThat(summary.asOf()).isEqualTo(OCCURRED_AT);
+        then(equipmentIncidentRepository).should().countEquipmentsInDowntime(myInstitutionId, OCCURRED_AT);
     }
 
     @Test

@@ -33,8 +33,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +54,9 @@ class IncidentProcessingServiceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 2, 14, 0, 0, 123_456_789);
     private static final LocalDateTime CLAIMED_AT = NOW.truncatedTo(ChronoUnit.MICROS);
     private static final LocalDateTime LOCKED_UNTIL = CLAIMED_AT.plusMinutes(5);
+    // 한국 시간 NOW에 고정한 시계 (시각을 지정하지 않은 process(id)가 쓰는 현재 시각)
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final Clock CLOCK = Clock.fixed(NOW.atZone(SEOUL).toInstant(), SEOUL);
     // 이력의 event_id로 쓰는 장애 원본 이벤트 ID를 가진 장애 (가상 데이터)
     private static final UUID SOURCE_EVENT_ID = UUID.randomUUID();
     private static final EquipmentIncident INCIDENT = EquipmentIncident.occur(SOURCE_EVENT_ID, UUID.randomUUID(),
@@ -96,7 +101,8 @@ class IncidentProcessingServiceTest {
                 referralHistoryRepository,
                 transactionManager,
                 Duration.ofMinutes(5),
-                Duration.ofMinutes(1)
+                Duration.ofMinutes(1),
+                CLOCK
         );
     }
 
@@ -160,6 +166,16 @@ class IncidentProcessingServiceTest {
         given(incidentReferralRepository.claim(any(), any(), any())).willReturn(0);
 
         service.process(taskId, NOW);
+
+        then(incidentReferralRepository).should().claim(taskId, CLAIMED_AT, LOCKED_UNTIL);
+    }
+
+    @Test
+    @DisplayName("시각을 지정하지 않은 처리는 한국 시간 현재 시각으로 선점한다")
+    void processUsesKoreanClock() {
+        given(incidentReferralRepository.claim(any(), any(), any())).willReturn(0);
+
+        service.process(taskId);
 
         then(incidentReferralRepository).should().claim(taskId, CLAIMED_AT, LOCKED_UNTIL);
     }
