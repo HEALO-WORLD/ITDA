@@ -7,6 +7,7 @@ import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -60,7 +61,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
         ReservationService.class,
         ReferralHistoryService.class,
         SlotCommandOutbox.class,
-        QuerydslConfig.class,
+        QuerydslConfig.class, ClockConfig.class,
         ReservationIncidentConcurrencyIntegrationTest.JsonConfig.class
 })
 @ActiveProfiles("test")
