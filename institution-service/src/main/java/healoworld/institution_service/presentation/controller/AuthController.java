@@ -4,6 +4,7 @@ import healoworld.institution_service.application.service.user.AuthService;
 import healoworld.institution_service.application.service.user.UserService;
 import healoworld.institution_service.global.dto.ApiResponse;
 import healoworld.institution_service.presentation.dto.request.LoginRequest;
+import healoworld.institution_service.presentation.dto.request.RefreshTokenRequest;
 import healoworld.institution_service.presentation.dto.request.SignupRequest;
 import healoworld.institution_service.presentation.dto.response.SignupResponse;
 import healoworld.institution_service.presentation.dto.response.TokenResponse;
@@ -34,5 +35,16 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<TokenResponse>> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(ApiResponse.ok("로그인 하였습니다.", authService.login(request)));
+    }
+
+    @PostMapping("/reissue")
+    public ResponseEntity<ApiResponse<TokenResponse>> reissue(@Valid @RequestBody RefreshTokenRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok("토큰을 재발급 하였습니다.", authService.reissue(request)));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(@Valid @RequestBody RefreshTokenRequest request) {
+        authService.logout(request);
+        return ResponseEntity.ok(ApiResponse.ok("로그아웃 하였습니다.", null));
     }
 }
