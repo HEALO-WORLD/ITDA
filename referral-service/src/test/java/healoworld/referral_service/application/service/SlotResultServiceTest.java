@@ -82,6 +82,9 @@ class SlotResultServiceTest {
     void setUp() {
         referral = referralIn(ReferralStatus.PENDING, USER_ID);
         updates = new ConditionalUpdateStubs(reservationRepository, referralRepository);
+        // 이력 기록은 실제 ReferralHistoryService로 위임해 기존처럼 referralHistoryRepository.save로 검증한다
+        ReflectionTestUtils.setField(slotResultService, "referralHistoryService",
+                new ReferralHistoryService(referralHistoryRepository, referralRepository));
     }
 
     @Test

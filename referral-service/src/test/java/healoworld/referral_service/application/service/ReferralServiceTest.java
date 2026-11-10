@@ -87,6 +87,9 @@ class ReferralServiceTest {
     @BeforeEach
     void setUp() {
         updates = new ConditionalUpdateStubs(reservationRepository, referralRepository);
+        // 이력 기록은 실제 ReferralHistoryService로 위임해 기존처럼 referralHistoryRepository.save로 검증한다
+        ReflectionTestUtils.setField(referralService, "referralHistoryService",
+                new ReferralHistoryService(referralHistoryRepository, referralRepository));
         // 기본은 협력 관계가 있는 기관. 검증 실패 케이스는 테스트에서 덮어쓴다
         lenient().when(institutionClient.check(any(), any())).thenReturn(new PartnershipCheckResponse(true));
     }

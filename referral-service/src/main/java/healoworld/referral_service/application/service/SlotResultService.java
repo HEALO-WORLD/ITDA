@@ -35,7 +35,7 @@ import java.util.UUID;
 public class SlotResultService {
     private final ReferralRepository referralRepository;
     private final ReservationRepository reservationRepository;
-    private final ReferralHistoryRepository referralHistoryRepository;
+    private final ReferralHistoryService referralHistoryService;
     private final ConsumedEventRepository consumedEventRepository;
     private final SlotCommandOutbox slotCommandOutbox;
     private final ExaminationService examinationService;
@@ -117,8 +117,7 @@ public class SlotResultService {
 
         ReferralStatus toStatus = failOrRequestReschedule(referral, reservation, now);
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, eventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, eventId, null);
     }
 
     // 예약 HELD → CONFIRMED, 의뢰 PENDING → CONFIRMED, 검사 생성
@@ -134,8 +133,7 @@ public class SlotResultService {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);   // 예약 변경까지 롤백
         }
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, ReferralStatus.CONFIRMED, Reason.RESERVATION_CONFIRMED, eventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, ReferralStatus.CONFIRMED, Reason.RESERVATION_CONFIRMED, eventId, null);
 
         examinationService.syncScheduledExamination(
                 referral.getId(),
@@ -163,8 +161,8 @@ public class SlotResultService {
 
         UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, outboxEventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, outboxEventId, null);
+
     }
 
     // 예약 HELD → FAILED(HOLD_EXPIRED), 의뢰 FAILED 또는 NEEDS_RESCHEDULE, ReleaseHold 발행
@@ -181,8 +179,7 @@ public class SlotResultService {
 
         UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, outboxEventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, outboxEventId, null);
     }
 
     // 예약 진행 중 → BLOCKED(EQUIPMENT_FAILURE), 의뢰 PENDING·CONFIRMED → NEEDS_RESCHEDULE
@@ -198,8 +195,7 @@ public class SlotResultService {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);   // 예약 변경까지 롤백
         }
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, ReferralStatus.NEEDS_RESCHEDULE, Reason.RESERVATION_BLOCKED, eventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, ReferralStatus.NEEDS_RESCHEDULE, Reason.RESERVATION_BLOCKED, eventId, null);
     }
 
     private boolean isExpected(Reservation reservation, UUID eventId, SlotResultType eventType, ReservationStatus... expected) {

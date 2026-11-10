@@ -16,7 +16,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: ${JPA_SHOW_SQL:false}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -47,6 +47,13 @@ itda:
       fixed-delay-ms: 5000
       initial-delay-ms: 5000
       batch-size: 50
+  reservation-reconciliation:
+    scheduler:
+      enabled: ${RESERVATION_RECONCILIATION_SCHEDULER_ENABLED:false}
+      fixed-delay-ms: 60000
+      batch-size: 50
+      stale-threshold-minutes: 10
+      lookback-hours: 24
 
 outbox:
   publish:
