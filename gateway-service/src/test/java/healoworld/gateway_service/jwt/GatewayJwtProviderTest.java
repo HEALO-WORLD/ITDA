@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import javax.crypto.SecretKey;
 import java.sql.Date;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,7 +24,7 @@ public class GatewayJwtProviderTest {
 
     @BeforeEach
     void setUp() {
-        jwtProvider = new GatewayJwtProvider(new JwtProperties(TEST_SECRET, List.of()));
+        jwtProvider = new GatewayJwtProvider(new JwtProperties(TEST_SECRET));
         secretKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(TEST_SECRET));
     }
 
