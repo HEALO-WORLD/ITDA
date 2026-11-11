@@ -46,3 +46,5 @@ Thumbs.db
 ### 로그 ###
 *.log
 logs/
+### 부하 테스트 결과 (k6 --summary-export, 로그인 토큰 포함) ###
+load-test/results/
