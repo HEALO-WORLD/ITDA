@@ -163,33 +163,31 @@ class SlotResultServiceTest {
     }
 
     @Test
-    @DisplayName("SlotBookFailed: 예약 FAILED(CONFIRM_FAILED), ReleaseHold 발행, 이력은 발행 eventId로 남는다")
+    @DisplayName("SlotBookFailed: 예약 FAILED(CONFIRM_FAILED), ReleaseHold 발행, 이력은 받은 eventId로 남는다")
     void slotBookFailed() {
         Reservation reservation = stored(ReservationStatus.HELD, referral);
-        UUID releaseEventId = UUID.randomUUID();
-        given(slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD)).willReturn(releaseEventId);
 
-        handle("SlotBookFailed", reservation);
+        UUID eventId = handle("SlotBookFailed", reservation);
 
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.FAILED);
         assertThat(reservation.getFailureReason()).isEqualTo(FailureReason.CONFIRM_FAILED);
         assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.FAILED);
-        assertHistory(ReferralStatus.PENDING, ReferralStatus.FAILED, Reason.RESERVATION_FAILED, releaseEventId);
+        assertHistory(ReferralStatus.PENDING, ReferralStatus.FAILED, Reason.RESERVATION_FAILED, eventId);
+        verify(slotCommandOutbox).recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
     }
 
     @Test
-    @DisplayName("HoldExpired: 예약 FAILED(HOLD_EXPIRED), ReleaseHold 발행, 이력은 발행 eventId로 남는다")
+    @DisplayName("HoldExpired: 예약 FAILED(HOLD_EXPIRED), ReleaseHold 발행, 이력은 받은 eventId로 남는다")
     void holdExpired() {
         Reservation reservation = stored(ReservationStatus.HELD, referral);
-        UUID releaseEventId = UUID.randomUUID();
-        given(slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD)).willReturn(releaseEventId);
 
-        handle("HoldExpired", reservation);
+        UUID eventId = handle("HoldExpired", reservation);
 
         assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.FAILED);
         assertThat(reservation.getFailureReason()).isEqualTo(FailureReason.HOLD_EXPIRED);
         assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.FAILED);
-        assertHistory(ReferralStatus.PENDING, ReferralStatus.FAILED, Reason.RESERVATION_FAILED, releaseEventId);
+        assertHistory(ReferralStatus.PENDING, ReferralStatus.FAILED, Reason.RESERVATION_FAILED, eventId);
+        verify(slotCommandOutbox).recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
     }
 
     @ParameterizedTest
