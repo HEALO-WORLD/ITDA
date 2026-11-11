@@ -201,18 +201,18 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
                                        @Param("now") LocalDateTime now,
                                        @Param("unavailable") SlotStatus unavailable);
 
-    // HOLD 만료 대상 조회. 오래된 HOLD부터 처리한다
+    // HOLD 만료 대상 조회. 오래된 HOLD부터 처리하고, 만료 처리에 필요한 컬럼만 읽는다
     @Query("""
-        select s
+        select new healoworld.slot_service.infrastructure.repository.ExpiredHold(s.id, s.reservationId, s.heldUntil)
           from Slot s
          where s.status = :held
            and s.heldUntil <= :now
            and s.deletedAt is null
          order by s.heldUntil asc
         """)
-    List<Slot> findExpiredHolds(@Param("held") SlotStatus held,
-                                @Param("now") LocalDateTime now,
-                                Pageable pageable);
+    List<ExpiredHold> findExpiredHolds(@Param("held") SlotStatus held,
+                                       @Param("now") LocalDateTime now,
+                                       Pageable pageable);
 
     // 아직 같은 예약으로 HELD이고 만료 시각이 지난 경우에만 AVAILABLE로 되돌린다.
     // 조회 후 그 사이 확정되거나 다른 예약으로 다시 HOLD된 슬롯은 0행이 반환된다
