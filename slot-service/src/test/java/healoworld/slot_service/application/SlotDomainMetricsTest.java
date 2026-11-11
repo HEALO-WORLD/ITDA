@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.time.LocalTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -87,6 +88,19 @@ class SlotDomainMetricsTest extends PostgresContainerSupport {
         assertThat(count("slot.hold", "idempotent")).isEqualTo(idempotent + 1);
         assertThat(count("slot.hold", "conflict")).isEqualTo(conflict + 1);
         assertThat(count("slot.hold", "not_found")).isEqualTo(notFound + 1);
+    }
+
+    @Test
+    void 시작_시각이_지난_슬롯의_HOLD_실패는_conflict가_아니라_expired로_센다() {
+        Slot passed = slotRepository.saveAndFlush(Slot.create(UUID.randomUUID(), UUID.randomUUID(),
+                FixedClockConfig.NOW.toLocalDate().minusDays(1), LocalTime.of(9, 0), LocalTime.of(9, 30)));
+        double expired = count("slot.hold", "expired");
+        double conflict = count("slot.hold", "conflict");
+
+        slotCommandHandler.handleHoldRequested(holdRequested(passed.getId(), UUID.randomUUID()));
+
+        assertThat(count("slot.hold", "expired")).isEqualTo(expired + 1);
+        assertThat(count("slot.hold", "conflict")).isEqualTo(conflict);
     }
 
     @Test

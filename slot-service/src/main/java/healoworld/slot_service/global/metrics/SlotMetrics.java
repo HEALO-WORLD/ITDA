@@ -1,5 +1,6 @@
 package healoworld.slot_service.global.metrics;
 
+import healoworld.slot_service.domain.enums.HoldFailureReason;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +25,16 @@ public class SlotMetrics {
         SUCCESS,      // AVAILABLE → HELD
         IDEMPOTENT,   // 같은 예약으로 이미 HELD (중복 요청)
         CONFLICT,     // 다른 예약이 잡았거나 BOOKED·UNAVAILABLE
-        NOT_FOUND     // 슬롯 없음
+        EXPIRED,      // 슬롯 시작 시각이 이미 지남 (HoldFailureReason.SLOT_EXPIRED)
+        NOT_FOUND;    // 슬롯 없음
+
+        // HOLD 실패 사유를 결과 태그로 바꾼다
+        public static HoldOutcome from(HoldFailureReason reason) {
+            return switch (reason) {
+                case SLOT_CONFLICT -> CONFLICT;
+                case SLOT_EXPIRED -> EXPIRED;
+            };
+        }
     }
 
     // BookSlot 결과

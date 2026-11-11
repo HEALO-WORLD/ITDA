@@ -73,7 +73,7 @@ public class SlotCommandHandler {
                 slotMetrics.hold(result.isAlreadyHeld() ? HoldOutcome.IDEMPOTENT : HoldOutcome.SUCCESS);
             } else {
                 saveHoldFailed(event, result.getFailureReason(), now);
-                slotMetrics.hold(HoldOutcome.CONFLICT);
+                slotMetrics.hold(HoldOutcome.from(result.getFailureReason()));
             }
         }
 

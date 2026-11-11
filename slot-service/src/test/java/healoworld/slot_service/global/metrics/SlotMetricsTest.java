@@ -1,5 +1,6 @@
 package healoworld.slot_service.global.metrics;
 
+import healoworld.slot_service.domain.enums.HoldFailureReason;
 import healoworld.slot_service.global.metrics.SlotMetrics.HoldOutcome;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -57,6 +58,12 @@ class SlotMetricsTest {
 
         Counter counter = meterRegistry.find(SlotMetrics.HOLD_EXPIRED).counter();
         assertThat(counter == null ? 0 : counter.count()).isZero();
+    }
+
+    @Test
+    void HOLD_실패_사유를_결과_태그로_바꾼다() {
+        assertThat(HoldOutcome.from(HoldFailureReason.SLOT_CONFLICT)).isEqualTo(HoldOutcome.CONFLICT);
+        assertThat(HoldOutcome.from(HoldFailureReason.SLOT_EXPIRED)).isEqualTo(HoldOutcome.EXPIRED);
     }
 
     private double holdCount(String result) {
