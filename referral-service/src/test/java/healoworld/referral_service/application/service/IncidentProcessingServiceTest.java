@@ -16,6 +16,7 @@ import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentAffectedReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
+import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import healoworld.referral_service.support.DomainFixtures;
@@ -33,8 +34,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +55,9 @@ class IncidentProcessingServiceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 2, 14, 0, 0, 123_456_789);
     private static final LocalDateTime CLAIMED_AT = NOW.truncatedTo(ChronoUnit.MICROS);
     private static final LocalDateTime LOCKED_UNTIL = CLAIMED_AT.plusMinutes(5);
+    // 한국 시간 NOW에 고정한 시계 (시각을 지정하지 않은 process(id)가 쓰는 현재 시각)
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final Clock CLOCK = Clock.fixed(NOW.atZone(SEOUL).toInstant(), SEOUL);
     // 이력의 event_id로 쓰는 장애 원본 이벤트 ID를 가진 장애 (가상 데이터)
     private static final UUID SOURCE_EVENT_ID = UUID.randomUUID();
     private static final EquipmentIncident INCIDENT = EquipmentIncident.occur(SOURCE_EVENT_ID, UUID.randomUUID(),
@@ -77,6 +83,9 @@ class IncidentProcessingServiceTest {
     private ReferralHistoryRepository referralHistoryRepository;
 
     @Mock
+    private ReferralRepository referralRepository;
+
+    @Mock
     private NotificationService notificationService;
 
     private IncidentProcessingService service;
@@ -93,10 +102,12 @@ class IncidentProcessingServiceTest {
                 incidentReservationRepository,
                 notificationService,
                 examinationRepository,
-                referralHistoryRepository,
+                // 실제 이력 서비스를 써서 referralHistoryRepository.save()까지 검증한다 (referralRepository는 이력 기록에 쓰이지 않음)
+                new ReferralHistoryService(referralHistoryRepository, referralRepository),
                 transactionManager,
                 Duration.ofMinutes(5),
-                Duration.ofMinutes(1)
+                Duration.ofMinutes(1),
+                CLOCK
         );
     }
 
@@ -160,6 +171,16 @@ class IncidentProcessingServiceTest {
         given(incidentReferralRepository.claim(any(), any(), any())).willReturn(0);
 
         service.process(taskId, NOW);
+
+        then(incidentReferralRepository).should().claim(taskId, CLAIMED_AT, LOCKED_UNTIL);
+    }
+
+    @Test
+    @DisplayName("시각을 지정하지 않은 처리는 한국 시간 현재 시각으로 선점한다")
+    void processUsesKoreanClock() {
+        given(incidentReferralRepository.claim(any(), any(), any())).willReturn(0);
+
+        service.process(taskId);
 
         then(incidentReferralRepository).should().claim(taskId, CLAIMED_AT, LOCKED_UNTIL);
     }
@@ -255,7 +276,7 @@ class IncidentProcessingServiceTest {
     }
 
     @Test
-    @DisplayName("이미 NEEDS_RESCHEDULE + BLOCKED면 상태를 다시 바꾸지 않고 ALREADY_BLOCKED")
+    @DisplayName("이미 NEEDS_RESCHEDULE + BLOCKED면 상태·이력은 다시 바꾸지 않고 ALREADY_BLOCKED, 누락된 재조정 알림은 보완 요청한다")
     void alreadyBlocked() {
         givenState(ReferralStatus.NEEDS_RESCHEDULE, ReservationStatus.BLOCKED);
         LocalDateTime endedAt = reservation.getEndedAt();
@@ -266,8 +287,9 @@ class IncidentProcessingServiceTest {
         assertThat(reservation.getEndedAt()).isEqualTo(endedAt);
         assertSucceededWith(IncidentProcessingService.ALREADY_BLOCKED);
 
-        // 이미 차단된 예약에는 중복 알림을 생성하지 않음
-        then(notificationService).shouldHaveNoInteractions();
+        // 다른 경로(SlotsBlocked 등)가 알림 없이 먼저 차단했을 수 있으므로 알림 생성을 요청한다
+        // (이미 같은 예약의 알림이 있으면 NotificationService가 만들지 않는다)
+        then(notificationService).should().createRescheduleRequired(any(IncidentReferral.class), eq(referral));
         then(referralHistoryRepository).shouldHaveNoInteractions();
     }
 

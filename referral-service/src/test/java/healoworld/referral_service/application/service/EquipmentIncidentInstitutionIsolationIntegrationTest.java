@@ -6,6 +6,7 @@ import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.EquipmentIncidentStatus;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
@@ -43,7 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 // - 목록 조건(장비 필터·페이지·페이지 크기)을 바꿔도 집계가 같은지
 // 테스트 전용 PostgreSQL(Testcontainers)에서 실행하고 테스트마다 롤백한다 (개발 DB를 쓰지 않는다)
 @DataJpaTest
-@Import({EquipmentIncidentQueryService.class, QuerydslConfig.class})
+@Import({EquipmentIncidentQueryService.class, QuerydslConfig.class, ClockConfig.class})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class EquipmentIncidentInstitutionIsolationIntegrationTest extends PostgresContainerSupport {

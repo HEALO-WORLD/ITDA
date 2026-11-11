@@ -1,7 +1,9 @@
 package healoworld.referral_service.infrastructure.repository;
 
+import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.global.config.QuerydslConfig;
@@ -10,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -20,6 +23,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -42,6 +46,9 @@ class IncidentReservationRepositoryTest extends PostgresContainerSupport {
 
     @Autowired
     private ReservationRepository reservationRepository;
+
+    @Autowired
+    private ExaminationRepository examinationRepository;
 
     private final UUID equipmentId = UUID.randomUUID();
 
@@ -131,9 +138,109 @@ class IncidentReservationRepositoryTest extends PostgresContainerSupport {
 
     @ParameterizedTest
     @EnumSource(value = ReservationStatus.class, names = "CONFIRMED", mode = EnumSource.Mode.EXCLUDE)
-    @DisplayName("CONFIRMED가 아닌 예약은 시간이 겹쳐도 제외된다")
+    @DisplayName("CONFIRMED가 아닌 예약은 시간이 겹쳐도 제외된다 (BLOCKED는 의뢰가 재조정 대기 중인 현재 예약일 때만 대상)")
     void nonConfirmedExcluded(ReservationStatus status) {
         reservation(equipmentId, 15, 0, 16, 0, status);
+
+        assertThat(affectedIds()).isEmpty();
+    }
+
+    // 장비 장애로 차단된 예약: 의뢰에 연결 → (확정) → 차단 → 의뢰 재조정 필요. afterBlock으로 이후 의뢰 변화를 더한다
+    private Reservation equipmentBlocked(UUID equipmentId, int startHour, int endHour, boolean confirmedBeforeBlock,
+                                         Consumer<Referral> afterBlock) {
+        Referral referral = referralRepository.save(Referral.create(UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), "가상환자", UUID.randomUUID()));
+        LocalDateTime start = INCIDENT_START.withHour(startHour);
+        Reservation reservation = Reservation.create(referral, 1, UUID.randomUUID(), UUID.randomUUID(), equipmentId,
+                start, start, INCIDENT_START.withHour(endHour));
+        reservation.hold();
+        if (confirmedBeforeBlock) {
+            reservation.confirm();
+        }
+        reservationRepository.saveAndFlush(reservation);
+        referral.assignReservation(reservation.getId());
+        if (confirmedBeforeBlock) {
+            referral.confirm();
+        }
+        reservation.block();
+        referral.requestReschedule();
+        afterBlock.accept(referral);
+        referralRepository.saveAndFlush(referral);
+        return reservationRepository.saveAndFlush(reservation);
+    }
+
+    private Reservation equipmentBlockedAfterConfirm(Consumer<Referral> afterBlock) {
+        return equipmentBlocked(equipmentId, 15, 16, true, afterBlock);
+    }
+
+    private static void noChange(Referral referral) {
+    }
+
+    @Test
+    @DisplayName("확정 뒤 장비 장애로 차단되고 의뢰가 아직 이 예약으로 재조정 대기 중이면 영향 예약이다 (SlotsBlocked가 먼저 처리된 경우)")
+    void equipmentBlockedAfterConfirmIncluded() {
+        Reservation blocked = equipmentBlockedAfterConfirm(IncidentReservationRepositoryTest::noChange);
+        Reservation confirmed = confirmed(14, 0, 15, 0);
+
+        assertThat(incidentReservationRepository.findAffected(equipmentId, INCIDENT_START, INCIDENT_END))
+                .containsExactly(new AffectedReservation(confirmed.getId(), confirmed.getReferral().getId()),
+                        new AffectedReservation(blocked.getId(), blocked.getReferral().getId()));
+    }
+
+    @Test
+    @DisplayName("확정 전(HELD)에 차단된 예약은 확정 예약이 아니었으므로 제외된다")
+    void equipmentBlockedBeforeConfirmExcluded() {
+        equipmentBlocked(equipmentId, 15, 16, false, IncidentReservationRepositoryTest::noChange);
+
+        assertThat(affectedIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("차단된 예약의 의뢰가 이미 새 예약으로 재예약 중이면 제외된다")
+    void equipmentBlockedButRescheduledExcluded() {
+        equipmentBlockedAfterConfirm(referral -> referral.reschedule(UUID.randomUUID()));
+
+        assertThat(affectedIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("차단된 예약의 의뢰가 취소됐으면 제외된다")
+    void equipmentBlockedButCanceledExcluded() {
+        equipmentBlockedAfterConfirm(Referral::cancel);
+
+        assertThat(affectedIds()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"IN_PROGRESS", "COMPLETED"})
+    @DisplayName("차단된 예약이라도 의뢰의 검사가 이미 시작·완료됐으면 제외된다")
+    void equipmentBlockedWithStartedExaminationExcluded(String examinationStatus) {
+        Reservation blocked = equipmentBlockedAfterConfirm(IncidentReservationRepositoryTest::noChange);
+        Examination examination = Examination.schedule(blocked.getReferral().getId(), blocked.getId(),
+                UUID.randomUUID());
+        // 검사 시작·완료는 조건부 UPDATE로만 바뀌어 도메인 메서드가 없으므로 상태 필드를 직접 채운다
+        ReflectionTestUtils.setField(examination, "status", ExaminationStatus.valueOf(examinationStatus));
+        examinationRepository.saveAndFlush(examination);
+
+        assertThat(affectedIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("차단된 예약도 검사가 SCHEDULED면 영향 예약이다")
+    void equipmentBlockedWithScheduledExaminationIncluded() {
+        Reservation blocked = equipmentBlockedAfterConfirm(IncidentReservationRepositoryTest::noChange);
+        examinationRepository.saveAndFlush(Examination.schedule(blocked.getReferral().getId(), blocked.getId(),
+                UUID.randomUUID()));
+
+        assertThat(affectedIds()).containsExactly(blocked.getId());
+    }
+
+    @Test
+    @DisplayName("차단된 예약도 다른 장비이거나 시간이 겹치지 않으면 제외된다")
+    void equipmentBlockedOtherEquipmentOrTimeExcluded() {
+        equipmentBlocked(UUID.randomUUID(), 15, 16, true, IncidentReservationRepositoryTest::noChange);
+        equipmentBlocked(equipmentId, 17, 18, true, IncidentReservationRepositoryTest::noChange);
+        equipmentBlocked(equipmentId, 12, 14, true, IncidentReservationRepositoryTest::noChange);
 
         assertThat(affectedIds()).isEmpty();
     }

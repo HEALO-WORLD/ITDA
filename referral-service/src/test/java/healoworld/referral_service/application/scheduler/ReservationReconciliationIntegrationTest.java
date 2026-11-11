@@ -5,18 +5,22 @@ import healoworld.referral_service.application.event.result.SlotResultType;
 import healoworld.referral_service.application.service.EquipmentIncidentService;
 import healoworld.referral_service.application.service.ExaminationService;
 import healoworld.referral_service.application.service.IncidentProcessingService;
+import healoworld.referral_service.application.service.InstitutionNotificationService;
 import healoworld.referral_service.application.service.NotificationService;
 import healoworld.referral_service.application.service.ReferralHistoryService;
 import healoworld.referral_service.application.service.ReservationReconciliationService;
 import healoworld.referral_service.application.service.ReservationService;
 import healoworld.referral_service.application.service.SlotResultService;
+import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.outbox.OutboxEvent;
 import healoworld.referral_service.global.outbox.OutboxEventRepository;
@@ -33,6 +37,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -42,6 +48,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,6 +76,7 @@ import static org.mockito.Mockito.when;
 @Import({
         ReservationReconciliationService.class,
         SlotResultService.class,
+        InstitutionNotificationService.class,
         EquipmentIncidentService.class,
         EquipmentIncidentLockRepository.class,
         IncidentProcessingService.class,
@@ -77,7 +85,7 @@ import static org.mockito.Mockito.when;
         ReservationService.class,
         ReferralHistoryService.class,
         SlotCommandOutbox.class,
-        QuerydslConfig.class,
+        QuerydslConfig.class, ClockConfig.class,
         ReservationReconciliationIntegrationTest.JsonConfig.class
 })
 @ActiveProfiles("test")
@@ -124,7 +132,7 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
     void setUp() {
         startedAt = LocalDateTime.now();
         scheduler = new ReservationReconciliationScheduler(reconciliationService, reservationRepository, slotClient,
-                BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
+                examinationRepository, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
         // slot-service는 테스트에서 등록한 슬롯만 알려준다. 다른 테스트가 남긴 예약은 "슬롯 없음"으로 건너뛴다
         when(slotClient.getSlotStatuses(any())).thenAnswer(invocation -> List.copyOf(slotResponses));
     }
@@ -227,6 +235,74 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
                 .satisfies(history -> assertThat(history.getReason()).isEqualTo(Reason.RESERVATION_BLOCKED));
     }
 
+    // ---------- SlotsBlocked 사전 확인: 검사가 시작·완료된 확정 예약 ----------
+
+    @ParameterizedTest(name = "검사 {0}")
+    @EnumSource(value = ExaminationStatus.class, names = {"IN_PROGRESS", "COMPLETED"})
+    @DisplayName("F. 검사가 시작·완료된 확정 예약은 회차를 2번 돌려도 상태·이력이 그대로이고 inbox도 남지 않는다")
+    void skipsStartedExaminationAcrossRounds(ExaminationStatus examinationStatus) {
+        Booking booking = confirmedBooking();
+        examination(booking, booking.reservationId(), examinationStatus);
+        slot(booking, "UNAVAILABLE", null, null);
+
+        scheduler.reconcileReservations();
+        scheduler.reconcileReservations();
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(histories(booking)).isEmpty();
+        assertThat(consumedEventsSinceStart()).isZero();
+    }
+
+    @Test
+    @DisplayName("C. 검사가 SCHEDULED인 확정 예약은 기존처럼 SlotsBlocked로 차단한다")
+    void blocksConfirmedWithScheduledExamination() {
+        Booking booking = confirmedBooking();
+        examination(booking, booking.reservationId(), ExaminationStatus.SCHEDULED);
+        slot(booking, "UNAVAILABLE", null, null);
+
+        scheduler.reconcileReservations();
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(histories(booking)).singleElement()
+                .satisfies(history -> assertThat(history.getReason()).isEqualTo(Reason.RESERVATION_BLOCKED));
+    }
+
+    @Test
+    @DisplayName("G. 검사가 다른 예약에 연결돼 있어도 같은 의뢰의 검사가 IN_PROGRESS면 주입하지 않는다 (의뢰 기준 판단)")
+    void protectsByReferralEvenIfExaminationLinkedElsewhere() {
+        Booking booking = confirmedBooking();
+        examination(booking, UUID.randomUUID(), ExaminationStatus.IN_PROGRESS);   // 검사의 reservationId는 이 예약이 아님
+        slot(booking, "UNAVAILABLE", null, null);
+
+        scheduler.reconcileReservations();
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(histories(booking)).isEmpty();
+        assertThat(consumedEventsSinceStart()).isZero();
+    }
+
+    @Test
+    @DisplayName("H. 사전 확인 뒤 검사가 시작돼 주입되더라도 SlotsBlocked 최종 확인(잠금)이 차단을 막는다")
+    void finalLockCheckStillGuardsAfterPreCheck() {
+        // 사전 확인 시점에는 검사가 시작 전이었던 상황: 사전 조회가 아무것도 돌려주지 않는 Repository로 스케줄러를 만든다
+        ReservationReconciliationScheduler staleView = new ReservationReconciliationScheduler(reconciliationService,
+                reservationRepository, slotClient, mock(ExaminationRepository.class),
+                BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
+        Booking booking = confirmedBooking();
+        examination(booking, booking.reservationId(), ExaminationStatus.IN_PROGRESS);
+        slot(booking, "UNAVAILABLE", null, null);
+
+        staleView.reconcileReservations();
+
+        assertThat(consumedEventsSinceStart()).isEqualTo(1);   // 주입은 됐고
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);   // 최종 확인이 건너뛰었다
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(histories(booking)).isEmpty();
+    }
+
     @Test
     @DisplayName("ReleaseSlot 유실: 취소된 예약 + 슬롯이 여전히 이 예약으로 BOOKED → 상태는 그대로, ReleaseSlot 발행")
     void releasesOrphanSlot() {
@@ -243,6 +319,46 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
         scheduler.reconcileReservations();
 
         assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CANCELED);
+        assertThat(outboxTypes(booking)).containsExactly(SlotCommandType.RELEASE_SLOT.value());
+    }
+
+    // ---------- 장비 장애로 확정 뒤 차단된 예약: 정책상 BOOKED 슬롯·예약 연결 유지 ----------
+
+    @Test
+    @DisplayName("확정 뒤 장비 장애로 차단된 예약의 BOOKED 슬롯은 회차를 2번 돌려도 ReleaseSlot·inbox·상태 변경이 없다")
+    void keepsBookedSlotOfEquipmentBlockedAfterConfirm() {
+        Booking booking = booking(reservation -> {
+            reservation.hold();
+            reservation.confirm();
+            reservation.block();   // 장애 후속 처리와 같은 전이 (EQUIPMENT_FAILURE, 확정 시각 유지)
+        }, referral -> {
+            referral.confirm();
+            referral.requestReschedule();
+        });
+        slot(booking, "BOOKED", booking.reservationId(), null);   // slot-service는 장애 중에도 BOOKED·예약 연결을 유지한다
+
+        scheduler.reconcileReservations();
+        scheduler.reconcileReservations();
+
+        assertThat(outboxTypes(booking)).isEmpty();
+        assertThat(consumedEventsSinceStart()).isZero();
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(histories(booking)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("확정 전(HELD)에 장비 장애로 차단된 예약에 슬롯이 BOOKED로 남아 있으면 늦은 확정으로 보고 기존처럼 ReleaseSlot을 발행한다")
+    void releasesSlotOfEquipmentBlockedBeforeConfirm() {
+        Booking booking = booking(reservation -> {
+            reservation.hold();
+            reservation.block();   // 확정 시각 없음
+        }, Referral::requestReschedule);
+        slot(booking, "BOOKED", booking.reservationId(), null);
+
+        scheduler.reconcileReservations();
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
         assertThat(outboxTypes(booking)).containsExactly(SlotCommandType.RELEASE_SLOT.value());
     }
 
@@ -301,6 +417,28 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
         referralIds.add(booking.referralId());
         reservationIds.add(booking.reservationId());
         return booking;
+    }
+
+    // 예약·의뢰가 모두 CONFIRMED인 시작 전 예약
+    private Booking confirmedBooking() {
+        return booking(reservation -> {
+            reservation.hold();
+            reservation.confirm();
+        }, Referral::confirm);
+    }
+
+    // 의뢰의 검사를 지정한 예약 ID·상태로 저장한다 (정리는 cleanUp의 의뢰별 검사 삭제)
+    private void examination(Booking booking, UUID linkedReservationId, ExaminationStatus status) {
+        Examination examination = Examination.schedule(booking.referralId(), linkedReservationId, UUID.randomUUID());
+        ReflectionTestUtils.setField(examination, "status", status);
+        examinationRepository.saveAndFlush(examination);
+    }
+
+    // 이 테스트가 시작된 뒤 기록된 소비 이력(inbox) 수
+    private long consumedEventsSinceStart() {
+        Long count = jdbcTemplate.queryForObject("select count(*) from p_consumed_events where processed_at >= ?",
+                Long.class, startedAt);
+        return count == null ? 0 : count;
     }
 
     // 진행 중 예약이 기준 시간보다 오래 멈춘 상태로 만든다

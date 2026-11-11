@@ -32,11 +32,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -58,6 +61,12 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class ReservationServiceTest {
     private static final UUID USER_ID = UUID.randomUUID();
     private static final UUID OTHER_USER_ID = UUID.randomUUID();
+    // 서비스의 현재 시각: 한국 시간 2026-11-10 10:00으로 고정한다 (JVM 기본 시간대와 무관)
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 10, 10, 0);
+
+    @Spy
+    private Clock clock = Clock.fixed(NOW.atZone(SEOUL).toInstant(), SEOUL);
 
     @Mock
     private ReservationRepository reservationRepository;
@@ -76,6 +85,9 @@ class ReservationServiceTest {
 
     @Mock
     private ExaminationRepository examinationRepository;
+
+    @Mock
+    private InstitutionNotificationService institutionNotificationService;
 
     @InjectMocks
     private ReservationService reservationService;
@@ -196,7 +208,7 @@ class ReservationServiceTest {
         void setUp() {
             confirmedReferral = referralIn(ReferralStatus.CONFIRMED, USER_ID);
             confirmed = reservationIn(ReservationStatus.CONFIRMED, confirmedReferral);
-            startsIn(confirmed, LocalDateTime.now().plusDays(1));
+            startsIn(confirmed, NOW.plusDays(1));
         }
 
         @Test
@@ -217,6 +229,8 @@ class ReservationServiceTest {
             assertThat(history.getReason()).isEqualTo(Reason.CANCELED_BY_REQUESTER);
             assertThat(history.getEventId()).isEqualTo(releaseEventId);
             assertThat(history.getChangedBy()).isEqualTo(USER_ID);
+            // 취소가 모두 성공한 뒤 취소된 예약의 검사기관 알림을 ReleaseSlot eventId로 요청한다
+            verify(institutionNotificationService).notifyReservationCanceled(confirmedReferral.getId(), confirmed, releaseEventId);
         }
 
         @Test
@@ -238,7 +252,7 @@ class ReservationServiceTest {
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_NOT_FOUND);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
@@ -254,7 +268,7 @@ class ReservationServiceTest {
         @Test
         @DisplayName("시작 2시간 전 직전까지는 취소할 수 있다")
         void justBeforeDeadline() {
-            startsIn(confirmed, LocalDateTime.now().plusHours(2).plusMinutes(1));
+            startsIn(confirmed, NOW.plusHours(2).plusMinutes(1));
             stored(confirmed);
 
             reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
@@ -263,21 +277,45 @@ class ReservationServiceTest {
         }
 
         @Test
-        @DisplayName("시작 2시간 전이 지나면 취소할 수 없다")
-        void afterDeadline() {
-            startsIn(confirmed, LocalDateTime.now().plusHours(1).plusMinutes(59));
+        @DisplayName("시작까지 정확히 2시간 남았으면 취소할 수 없다 (2시간 전 '직전'까지만 허용)")
+        void exactlyAtDeadline() {
+            startsIn(confirmed, NOW.plusHours(2));
             stored(confirmed);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
+        }
+
+        @Test
+        @DisplayName("2시간 제한은 서버(JVM) 시간대가 아니라 한국 시간으로 판단한다")
+        void deadlineUsesKoreanTime() {
+            // 한국 시간 10:00 = UTC 01:00. 검사 시작이 한국 시간 11:30이면 남은 시간은 1시간 30분이라 거절해야 한다
+            // (현재 시각을 UTC 01:00으로 잘못 구하면 10시간 30분이 남은 것으로 보여 취소가 통과된다)
+            startsIn(confirmed, LocalDateTime.of(2026, 11, 10, 11, 30));
+            stored(confirmed);
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
+        }
+
+        @Test
+        @DisplayName("시작 2시간 전이 지나면 취소할 수 없다")
+        void afterDeadline() {
+            startsIn(confirmed, NOW.plusHours(1).plusMinutes(59));
+            stored(confirmed);
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
+            assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
         @DisplayName("이미 시작한 예약은 취소할 수 없다")
         void alreadyStarted() {
-            startsIn(confirmed, LocalDateTime.now().minusHours(3));
+            startsIn(confirmed, NOW.minusHours(3));
             stored(confirmed);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
@@ -288,36 +326,36 @@ class ReservationServiceTest {
         @DisplayName("확정되지 않은 예약은 취소할 수 없고 아무것도 기록하지 않는다")
         void notConfirmed() {
             Reservation requested = reservationIn(ReservationStatus.REQUESTED, referral);
-            startsIn(requested, LocalDateTime.now().plusDays(1));
+            startsIn(requested, NOW.plusDays(1));
             stored(requested);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, requested.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
         @DisplayName("이미 취소된 예약을 다시 취소하면 409이고 아무것도 기록하지 않는다")
         void alreadyCanceled() {
             Reservation canceled = reservationIn(ReservationStatus.CANCELED, confirmedReferral);
-            startsIn(canceled, LocalDateTime.now().plusDays(1));
+            startsIn(canceled, NOW.plusDays(1));
             stored(canceled);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, canceled.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
         @DisplayName("예약은 확정인데 의뢰가 취소할 수 없는 상태면 예외로 예약 변경까지 롤백되게 하고 아무것도 기록하지 않는다")
         void referralNotCancelable() {
             Reservation reservation = reservationIn(ReservationStatus.CONFIRMED, referral);   // 의뢰는 PENDING
-            startsIn(reservation, LocalDateTime.now().plusDays(1));
+            startsIn(reservation, NOW.plusDays(1));
             stored(reservation);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, reservation.getId()),
                     ErrorCode.INVALID_REFERRAL_STATUS);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
@@ -414,7 +452,7 @@ class ReservationServiceTest {
             assertThat(confirmedReferral.getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
             verify(reservationRepository, never()).cancelIfConfirmed(any(), any(), any());
             verify(referralRepository, never()).cancelIfCancelable(any(), any(), any());
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         // 실제 예약 확정 흐름처럼 의뢰가 이 예약을 현재 예약으로 가리키고, 이 예약에 연결된 SCHEDULED 검사가 있는 상태로 준비한다

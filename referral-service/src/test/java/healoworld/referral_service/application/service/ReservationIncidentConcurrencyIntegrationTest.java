@@ -1,5 +1,6 @@
 package healoworld.referral_service.application.service;
 
+import healoworld.referral_service.application.event.result.SlotResultType;
 import healoworld.referral_service.application.service.IncidentProcessingService.Outcome;
 import healoworld.referral_service.domain.entity.*;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
@@ -7,9 +8,12 @@ import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
 import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.global.inbox.ConsumedEventId;
+import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.OutboxEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.*;
@@ -60,7 +64,11 @@ import static org.assertj.core.api.Assertions.catchThrowable;
         ReservationService.class,
         ReferralHistoryService.class,
         SlotCommandOutbox.class,
-        QuerydslConfig.class,
+        SlotResultService.class,
+        InstitutionNotificationService.class,
+        EquipmentIncidentService.class,
+        EquipmentIncidentLockRepository.class,
+        QuerydslConfig.class, ClockConfig.class,
         ReservationIncidentConcurrencyIntegrationTest.JsonConfig.class
 })
 @ActiveProfiles("test")
@@ -118,7 +126,17 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private SlotResultService slotResultService;
+
+    @Autowired
+    private ConsumedEventRepository consumedEventRepository;
+
+    @Autowired
+    private EquipmentIncidentService equipmentIncidentService;
+
     private final List<UUID> referralIds = new ArrayList<>();
+    private final List<UUID> consumedEventIds = new ArrayList<>();
     private final List<UUID> reservationIds = new ArrayList<>();
     private final List<UUID> incidentIds = new ArrayList<>();
     private final List<UUID> taskIds = new ArrayList<>();
@@ -799,6 +817,377 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
         assertCancelHadNoEffect(booking, historyCount);
     }
 
+    // ---------- 검사 시작 ↔ SlotsBlocked (정합성 복구 등으로 들어오는 슬롯 차단 결과) ----------
+
+    private void slotsBlocked(Booking booking) {
+        UUID eventId = UUID.randomUUID();
+        consumedEventIds.add(eventId);
+        slotResultService.handle(eventId, SlotResultType.SLOTS_BLOCKED, booking.reservationId());
+    }
+
+    private long blockedHistoryCount(Booking booking) {
+        return histories(booking).stream().filter(h -> h.getReason() == Reason.RESERVATION_BLOCKED).count();
+    }
+
+    // 검사가 시작된 예약은 SlotsBlocked로 바뀌지 않는다: 예약·의뢰 확정 그대로, 차단 이력 없음
+    private void assertNotBlockedAfterStart(Booking booking) {
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.IN_PROGRESS);
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(blockedHistoryCount(booking)).isZero();
+    }
+
+    // 차단이 먼저 반영된 예약: 예약 BLOCKED, 의뢰 NEEDS_RESCHEDULE, 검사는 시작되지 않고 차단 이력 1건
+    private void assertBlockedBeforeStart(Booking booking) {
+        assertThat(examinationStatus(booking)).isEqualTo(ExaminationStatus.SCHEDULED);
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(blockedHistoryCount(booking)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("[결정적] 검사 시작이 잠금을 쥔 동안 SlotsBlocked는 기다렸다가, 시작 커밋 후 예약·의뢰를 바꾸지 않는다")
+    void slotsBlockedWaitsForStartThenSkips() throws Exception {
+        Booking booking = confirmedBooking();
+        CountDownLatch startDone = new CountDownLatch(1);
+        CountDownLatch releaseStart = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> startTx = executor.submit(() -> tx().executeWithoutResult(status -> {
+                startExamination(booking);
+                startDone.countDown();
+                await(releaseStart);
+            }));
+            assertThat(startDone.await(10, TimeUnit.SECONDS)).isTrue();
+
+            Future<Throwable> blocked = executor.submit(() -> catchThrowable(() -> slotsBlocked(booking)));
+            waitUntilSomeSessionWaitsForLock();
+            assertThat(blocked.isDone()).as("SlotsBlocked는 검사 시작의 잠금이 풀릴 때까지 기다려야 한다").isFalse();
+
+            releaseStart.countDown();
+            startTx.get(30, TimeUnit.SECONDS);
+            assertThat(blocked.get(30, TimeUnit.SECONDS)).as("트랜잭션 오류 없이 끝나야 한다").isNull();
+        } finally {
+            releaseStart.countDown();
+            executor.shutdownNow();
+        }
+
+        assertNotBlockedAfterStart(booking);
+    }
+
+    @Test
+    @DisplayName("[결정적] SlotsBlocked가 잠금을 쥔 동안 검사 시작은 기다렸다가, 차단 커밋 후 시작이 거부된다")
+    void startWaitsForSlotsBlockedThenRejected() throws Exception {
+        Booking booking = confirmedBooking();
+        CountDownLatch blockDone = new CountDownLatch(1);
+        CountDownLatch releaseBlock = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> blockTx = executor.submit(() -> tx().executeWithoutResult(status -> {
+                slotsBlocked(booking);
+                blockDone.countDown();
+                await(releaseBlock);
+            }));
+            assertThat(blockDone.await(10, TimeUnit.SECONDS)).isTrue();
+
+            Future<Throwable> start = executor.submit(() -> catchThrowable(() -> startExamination(booking)));
+            waitUntilSomeSessionWaitsForLock();
+            assertThat(start.isDone()).as("검사 시작은 SlotsBlocked의 잠금이 풀릴 때까지 기다려야 한다").isFalse();
+
+            releaseBlock.countDown();
+            blockTx.get(30, TimeUnit.SECONDS);
+            assertErrorCode(start.get(30, TimeUnit.SECONDS), ErrorCode.EXAMINATION_START_NOT_ALLOWED);
+        } finally {
+            releaseBlock.countDown();
+            executor.shutdownNow();
+        }
+
+        assertBlockedBeforeStart(booking);
+    }
+
+    @RepeatedTest(5)
+    @DisplayName("[동시] 검사 시작과 SlotsBlocked를 같은 순간에 실행해도 한쪽만 반영되고, 다시 받아도 이력이 늘지 않는다")
+    void concurrentStartAndSlotsBlocked() throws Exception {
+        Booking booking = confirmedBooking();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(1);
+        Throwable blockError;
+        Throwable startError;
+        try {
+            Future<Throwable> blockFuture = executor.submit(() -> {
+                ready.await();
+                return catchThrowable(() -> slotsBlocked(booking));
+            });
+            Future<Throwable> startFuture = executor.submit(() -> {
+                ready.await();
+                return catchThrowable(() -> startExamination(booking));
+            });
+            ready.countDown();
+            blockError = blockFuture.get(30, TimeUnit.SECONDS);
+            startError = startFuture.get(30, TimeUnit.SECONDS);
+        } finally {
+            ready.countDown();
+            executor.shutdownNow();
+        }
+
+        String state = "blockError=" + blockError + ", startError=" + startError + ", reservation="
+                + reservationStatus(booking) + ", examination=" + examinationStatus(booking);
+        assertThat(blockError).as("SlotsBlocked는 트랜잭션 오류 없이 끝나야 한다: " + state).isNull();
+        if (startError == null) {
+            assertNotBlockedAfterStart(booking);
+        } else {
+            assertErrorCode(startError, ErrorCode.EXAMINATION_START_NOT_ALLOWED);
+            assertBlockedBeforeStart(booking);
+        }
+
+        // 같은 예약에 SlotsBlocked가 다시 와도(재전달·복구 회차) 상태·이력이 바뀌지 않는다
+        long historyCount = histories(booking).size();
+        ReservationStatus reservationBefore = reservationStatus(booking);
+        slotsBlocked(booking);
+        assertThat(histories(booking)).as(state).hasSize((int) historyCount);
+        assertThat(reservationStatus(booking)).as(state).isEqualTo(reservationBefore);
+    }
+
+    // ---------- SlotsBlocked ↔ 장애 후속 처리 순서와 재조정 알림 (ALREADY_BLOCKED 알림 보완) ----------
+
+    @Test
+    @DisplayName("A. SlotsBlocked가 먼저 차단하면 장애 작업은 ALREADY_BLOCKED이고, 재조정 알림은 정확히 1건 생긴다")
+    void slotsBlockedFirstThenIncidentCreatesOneNotification() {
+        Booking booking = confirmedBooking();
+        UUID taskId = pendingTask(booking);
+
+        slotsBlocked(booking);
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(notificationsFor(booking)).isEmpty();   // SlotsBlocked는 알림을 만들지 않는다
+
+        assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.SUCCEEDED);
+
+        assertThat(incidentResult(taskId)).isEqualTo(IncidentProcessingService.ALREADY_BLOCKED);
+        assertThat(notificationsFor(booking)).hasSize(1);
+        assertThat(notificationsFor(booking).getFirst().getReservationId()).isEqualTo(booking.reservationId());
+        assertThat(blockedHistoryCount(booking)).isEqualTo(1);   // 이력은 SlotsBlocked가 남긴 1건뿐
+    }
+
+    @Test
+    @DisplayName("B. 장애 작업이 먼저 차단하면 알림 1건, 이후 SlotsBlocked가 와도 알림·이력은 그대로다")
+    void incidentFirstThenSlotsBlockedKeepsOneNotification() {
+        Booking booking = confirmedBooking();
+        UUID taskId = pendingTask(booking);
+
+        assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.SUCCEEDED);
+        assertThat(incidentResult(taskId)).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
+        assertThat(notificationsFor(booking)).hasSize(1);
+
+        slotsBlocked(booking);
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(notificationsFor(booking)).hasSize(1);
+        assertThat(blockedHistoryCount(booking)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("C. SlotsBlocked 뒤 서로 다른 장애 작업 2건이 같은 예약을 처리해도 알림은 1건이다")
+    void differentTasksOfSameReservationCreateOneNotification() {
+        Booking booking = confirmedBooking();
+        UUID first = pendingTask(booking);
+        UUID second = pendingTask(booking);
+
+        slotsBlocked(booking);
+        incidentProcessingService.process(first);
+        incidentProcessingService.process(second);
+
+        assertThat(List.of(incidentResult(first), incidentResult(second)))
+                .containsOnly(IncidentProcessingService.ALREADY_BLOCKED);
+        assertThat(notificationsFor(booking)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("C. (동시) SlotsBlocked 뒤 서로 다른 장애 작업 2건을 동시에 처리해도 알림은 1건이다")
+    void concurrentDifferentTasksCreateOneNotification() throws Exception {
+        Booking booking = confirmedBooking();
+        UUID first = pendingTask(booking);
+        UUID second = pendingTask(booking);
+        slotsBlocked(booking);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(1);
+        try {
+            Future<Outcome> a = executor.submit(() -> {
+                ready.await();
+                return incidentProcessingService.process(first);
+            });
+            Future<Outcome> b = executor.submit(() -> {
+                ready.await();
+                return incidentProcessingService.process(second);
+            });
+            ready.countDown();
+            assertThat(a.get(30, TimeUnit.SECONDS)).isEqualTo(Outcome.SUCCEEDED);
+            assertThat(b.get(30, TimeUnit.SECONDS)).isEqualTo(Outcome.SUCCEEDED);
+        } finally {
+            ready.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(notificationsFor(booking)).hasSize(1);
+        assertThat(blockedHistoryCount(booking)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("D. 같은 예약의 재조정 알림이 이미 있으면 ALREADY_BLOCKED 작업은 새 알림을 만들지 않는다")
+    void alreadyBlockedWithExistingNotificationCreatesNone() {
+        Booking booking = confirmedBooking();
+        UUID first = pendingTask(booking);
+        incidentProcessingService.process(first);   // RESCHEDULE_REQUIRED, 알림 1건
+        UUID existingNotificationId = notificationsFor(booking).getFirst().getId();
+        UUID second = pendingTask(booking);
+
+        incidentProcessingService.process(second);
+
+        assertThat(incidentResult(second)).isEqualTo(IncidentProcessingService.ALREADY_BLOCKED);
+        assertThat(notificationsFor(booking)).extracting(Notification::getId).containsExactly(existingNotificationId);
+    }
+
+    @Test
+    @DisplayName("E. 검사가 IN_PROGRESS면 SlotsBlocked·장애 작업 모두 예약·의뢰를 바꾸지 않고 재조정 알림이 없다")
+    void startedExaminationGetsNoNotification() {
+        Booking booking = confirmedBooking();
+        UUID taskId = pendingTask(booking);
+        startExamination(booking);
+
+        slotsBlocked(booking);
+        incidentProcessingService.process(taskId);
+
+        assertThat(incidentResult(taskId)).isEqualTo(IncidentProcessingService.SKIPPED_IN_PROGRESS);
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(notificationsFor(booking)).isEmpty();
+        assertThat(blockedHistoryCount(booking)).isZero();
+    }
+
+    @Test
+    @DisplayName("E. 검사가 COMPLETED면 SlotsBlocked·장애 작업 모두 예약·의뢰를 바꾸지 않고 재조정 알림이 없다")
+    void completedExaminationGetsNoNotification() {
+        Booking booking = confirmedBooking();
+        UUID taskId = pendingTask(booking);
+        startExamination(booking);
+        completeExamination(booking);
+
+        slotsBlocked(booking);
+        incidentProcessingService.process(taskId);
+
+        assertThat(incidentResult(taskId)).isEqualTo(IncidentProcessingService.SKIPPED_COMPLETED);
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(notificationsFor(booking)).isEmpty();
+        assertThat(blockedHistoryCount(booking)).isZero();
+    }
+
+    @Test
+    @DisplayName("F. 같은 장애 작업을 다시 처리해도(이미 성공) 선점되지 않아 알림이 늘지 않는다")
+    void reprocessingSameTaskCreatesNoDuplicate() {
+        Booking booking = confirmedBooking();
+        UUID taskId = pendingTask(booking);
+        slotsBlocked(booking);
+
+        assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.SUCCEEDED);
+        assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.NOT_CLAIMED);
+
+        assertThat(incidentResult(taskId)).isEqualTo(IncidentProcessingService.ALREADY_BLOCKED);
+        assertThat(notificationsFor(booking)).hasSize(1);
+    }
+
+    // ---------- SlotsBlocked 처리 뒤에 장비 장애 이벤트가 도착하는 순서 (후속 작업 생성 누락 보완) ----------
+
+    // 장애 이벤트 수신(EquipmentDowntimeStartedConsumer)과 같은 순서로 장애를 등록하고 후속 작업을 만든다. 새로 만든 작업 수를 돌려준다
+    private int incidentEventArrives(Booking booking, UUID sourceEventId, UUID equipmentId,
+                                     LocalDateTime startAt, LocalDateTime endAt) {
+        UUID incidentId = equipmentIncidentService.register(sourceEventId, equipmentId, booking.examInstitutionId(),
+                "가상 장비 장애", startAt, startAt, endAt);
+        if (!incidentIds.contains(incidentId)) {
+            incidentIds.add(incidentId);
+        }
+        int created = equipmentIncidentService.createPendingReferrals(incidentId);
+        taskIds.addAll(jdbcTemplate.queryForList("select id from p_incident_referrals where incident_id = ?",
+                UUID.class, incidentId).stream().filter(id -> !taskIds.contains(id)).toList());
+        return created;
+    }
+
+    private int incidentEventArrives(Booking booking, UUID sourceEventId) {
+        return incidentEventArrives(booking, sourceEventId, booking.equipmentId(), booking.startsAt(),
+                booking.startsAt().plusHours(2));
+    }
+
+    private List<UUID> tasksOf(Booking booking) {
+        return jdbcTemplate.queryForList("select id from p_incident_referrals where reservation_id = ?",
+                UUID.class, booking.reservationId());
+    }
+
+    @Test
+    @DisplayName("G. SlotsBlocked가 먼저 차단한 뒤 장애 이벤트가 오면 후속 작업이 생기고, ALREADY_BLOCKED로 재조정 알림 1건을 만든다")
+    void incidentEventAfterSlotsBlockedCreatesTaskAndOneNotification() {
+        Booking booking = confirmedBooking();
+        slotsBlocked(booking);
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(notificationsFor(booking)).isEmpty();
+
+        assertThat(incidentEventArrives(booking, UUID.randomUUID())).isEqualTo(1);
+
+        List<UUID> tasks = tasksOf(booking);
+        assertThat(tasks).hasSize(1);
+        assertThat(incidentProcessingService.process(tasks.getFirst())).isEqualTo(Outcome.SUCCEEDED);
+        assertThat(incidentResult(tasks.getFirst())).isEqualTo(IncidentProcessingService.ALREADY_BLOCKED);
+        assertThat(notificationsFor(booking)).hasSize(1);
+        assertThat(notificationsFor(booking).getFirst().getReservationId()).isEqualTo(booking.reservationId());
+        // 상태·이력은 다시 바꾸지 않는다 (SlotsBlocked가 남긴 차단 이력 1건뿐)
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.BLOCKED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        assertThat(histories(booking)).hasSize(1);
+        assertThat(blockedHistoryCount(booking)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("G. 같은 장애 이벤트가 다시 와도 작업·알림이 늘지 않고, 겹치는 다른 장애가 와도 알림은 1건이다")
+    void redeliveredOrOtherIncidentAfterSlotsBlockedKeepsOneNotification() {
+        Booking booking = confirmedBooking();
+        slotsBlocked(booking);
+        UUID sourceEventId = UUID.randomUUID();
+        incidentEventArrives(booking, sourceEventId);
+        incidentProcessingService.process(tasksOf(booking).getFirst());
+
+        // Kafka 재전달: 같은 장애로 처리되고 이미 있는 작업은 건너뛴다
+        assertThat(incidentEventArrives(booking, sourceEventId)).isZero();
+        assertThat(tasksOf(booking)).hasSize(1);
+
+        // 같은 장비·시간의 다른 장애: 작업은 새로 생기지만 같은 예약의 재조정 알림은 이미 있어 만들지 않는다
+        assertThat(incidentEventArrives(booking, UUID.randomUUID())).isEqualTo(1);
+        List<UUID> tasks = tasksOf(booking);
+        assertThat(tasks).hasSize(2);
+        tasks.forEach(incidentProcessingService::process);
+
+        assertThat(tasks).extracting(this::incidentResult).containsOnly(IncidentProcessingService.ALREADY_BLOCKED);
+        assertThat(notificationsFor(booking)).hasSize(1);
+        assertThat(blockedHistoryCount(booking)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("G. SlotsBlocked로 차단된 예약이라도 다른 장비이거나 시간이 겹치지 않는 장애는 작업·알림을 만들지 않는다")
+    void unrelatedIncidentAfterSlotsBlockedCreatesNothing() {
+        Booking booking = confirmedBooking();
+        slotsBlocked(booking);
+
+        // 다른 장비
+        assertThat(incidentEventArrives(booking, UUID.randomUUID(), UUID.randomUUID(), booking.startsAt(),
+                booking.startsAt().plusHours(2))).isZero();
+        // 같은 장비지만 예약 종료(startsAt + 1h) 시각부터 시작하는 장애 (경계만 닿음)
+        assertThat(incidentEventArrives(booking, UUID.randomUUID(), booking.equipmentId(),
+                booking.startsAt().plusHours(1), booking.startsAt().plusHours(3))).isZero();
+
+        assertThat(tasksOf(booking)).isEmpty();
+        assertThat(notificationsFor(booking)).isEmpty();
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             if (!latch.await(30, TimeUnit.SECONDS)) {
@@ -831,6 +1220,10 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
      */
     @AfterEach
     void cleanUp() {
+
+        consumedEventRepository.deleteAllById(consumedEventIds.stream()
+                .map(eventId -> new ConsumedEventId(eventId, SlotResultService.CONSUMER))
+                .toList());
 
         notificationRepository.deleteAll(
                 notificationRepository.findAll()

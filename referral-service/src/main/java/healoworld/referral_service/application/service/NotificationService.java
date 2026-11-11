@@ -67,6 +67,9 @@ public class NotificationService {
 
 
     // 장비 장애로 재예약이 필요한 경우 의뢰 담당자에게 알림 생성
+    // 중복 방지: 같은 장애 작업 또는 같은 예약으로 이미 만든 재조정 알림이 있으면 만들지 않는다
+    // - 호출하는 장애 후속 처리(IncidentProcessingService)가 의뢰 행을 잠근 트랜잭션에서 부르므로
+    //   같은 의뢰(예약)의 알림 생성은 순서대로 실행되고, 뒤 요청은 앞 요청이 커밋한 알림을 보고 건너뛴다
     @Transactional
     public void createRescheduleRequired(
             IncidentReferral task,
@@ -78,6 +81,16 @@ public class NotificationService {
         if (notificationRepository
                 .existsByIncidentReferralIdAndRecipientUserIdAndType(
                         task.getId(),
+                        recipientUserId,
+                        RESCHEDULE_REQUIRED
+                )) {
+            return;
+        }
+
+        // 서로 다른 장애 작업이 같은 예약을 처리해도 같은 예약의 재조정 알림은 1건만 만든다
+        if (notificationRepository
+                .existsByReservationIdAndRecipientUserIdAndType(
+                        task.getReservationId(),
                         recipientUserId,
                         RESCHEDULE_REQUIRED
                 )) {

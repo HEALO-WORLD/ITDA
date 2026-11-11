@@ -2,6 +2,7 @@ package healoworld.referral_service.application.scheduler;
 
 import healoworld.referral_service.application.service.IncidentProcessingService;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
+import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +37,7 @@ class IncidentProcessingSchedulerActivationTest { // Spring의 스케줄링 기�
 
     @Configuration
     @EnableScheduling
-    @Import(IncidentProcessingScheduler.class)
+    @Import({IncidentProcessingScheduler.class, ClockConfig.class})
     static class TestConfig {
     }
 
