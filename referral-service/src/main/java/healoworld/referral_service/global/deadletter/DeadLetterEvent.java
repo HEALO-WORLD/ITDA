@@ -73,4 +73,22 @@ public class DeadLetterEvent {
 
         return e;
     }
+
+    public boolean isPending() {
+        return deadLetterStatus == DeadLetterStatus.PENDING;
+    }
+
+    public void markIgnored(UUID adminId) {
+        resolve(DeadLetterStatus.IGNORED, adminId);
+    }
+
+    public void markReprocessed(UUID adminId) {
+        resolve(DeadLetterStatus.REPROCESSED, adminId);
+    }
+
+    private void resolve(DeadLetterStatus status, UUID adminId) {
+        this.resolvedAt = LocalDateTime.now();
+        this.resolvedBy = adminId;
+        this.deadLetterStatus = status;
+    }
 }

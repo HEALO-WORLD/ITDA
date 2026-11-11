@@ -60,7 +60,13 @@ public enum ErrorCode {
     EQUIPMENT_INCIDENT_NOT_FOUND(HttpStatus.NOT_FOUND, "장비 장애를 찾을 수 없습니다."),
     EQUIPMENT_INCIDENT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "장비 장애를 조회할 권한이 없습니다."),
     INVALID_EQUIPMENT_INCIDENT_PERIOD(HttpStatus.BAD_REQUEST, "장비 장애의 발생 시각 또는 영향 시간 구간이 올바르지 않습니다."),
-    EQUIPMENT_INCIDENT_EVENT_CONFLICT(HttpStatus.CONFLICT, "같은 이벤트 ID로 내용이 다른 장비 장애가 이미 등록되어 있습니다.");
+    EQUIPMENT_INCIDENT_EVENT_CONFLICT(HttpStatus.CONFLICT, "같은 이벤트 ID로 내용이 다른 장비 장애가 이미 등록되어 있습니다."),
+
+    // dead letter
+    DEAD_LETTER_ACCESS_DENIED(HttpStatus.FORBIDDEN, "관리자만 실패 메시지를 조회·처리할 수 있습니다."),
+    DEAD_LETTER_NOT_FOUND(HttpStatus.NOT_FOUND, "실패 메시지를 찾을 수 없습니다."),
+    DEAD_LETTER_ALREADY_RESOLVED(HttpStatus.CONFLICT, "이미 재처리되었거나 무시된 실패 메시지입니다."),
+    DEAD_LETTER_REPUBLISH_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "메시지를 다시 발행하지 못했습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String message;
