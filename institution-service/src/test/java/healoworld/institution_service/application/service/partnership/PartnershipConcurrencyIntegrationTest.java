@@ -55,7 +55,6 @@ public class PartnershipConcurrencyIntegrationTest extends PostgresContainerSupp
         institutionRepository.deleteAllInBatch();
     }
 
-    @Disabled("동시 요청 시 제약 위반 후 같은 트랜잭션에서 재조회해 500 발생 - #212에서 수정")
     @Test
     @DisplayName("같은 두 기관이 동시에 협약을 요청하면 하나만 생성되고, 나머지는 PARTNERSHIP_ALREADY_IN_PROGRESS로 거절된다.")
     void request_concurrent() throws Exception {
