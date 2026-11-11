@@ -1,5 +1,13 @@
-### 문서###
-/docs/
+# docs 폴더의 다른 파일은 제외
+/docs/*
+
+# Swagger UI
+!/docs/index.html
+
+# OpenAPI 명세서
+!/docs/openapi/
+/docs/openapi/*
+!/docs/openapi/*.json
 
 ### 환경변수 (비밀번호) ###
 .env
