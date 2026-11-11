@@ -5,6 +5,8 @@ import healoworld.slot_service.application.event.command.HoldRequestedEvent;
 import healoworld.slot_service.application.event.command.ReleaseHoldEvent;
 import healoworld.slot_service.application.event.command.ReleaseSlotEvent;
 import healoworld.slot_service.application.service.SlotCommandHandler;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -33,6 +36,8 @@ class SlotCommandConsumerTest {
 
     private SlotCommandConsumer consumer;
 
+    private SimpleMeterRegistry meterRegistry;
+
     private final UUID eventId = UUID.randomUUID();
     private final UUID slotId = UUID.randomUUID();
     private final UUID reservationId = UUID.randomUUID();
@@ -40,7 +45,42 @@ class SlotCommandConsumerTest {
 
     @BeforeEach
     void setUp() {
-        consumer = new SlotCommandConsumer(slotCommandHandler, JsonMapper.builder().build());
+        meterRegistry = new SimpleMeterRegistry();
+        consumer = new SlotCommandConsumer(slotCommandHandler, JsonMapper.builder().build(), meterRegistry);
+    }
+
+    @Test
+    void 핸들러가_끝나면_eventType별_처리_시간을_success로_기록한다() {
+        consumer.consume(record(slotId.toString(), "HoldRequested", holdRequestedJson(slotId)));
+        consumer.consume(record(slotId.toString(), "BookSlot", bookSlotJson(slotId)));
+
+        assertThat(commandTimer("HoldRequested", "success").count()).isEqualTo(1);
+        assertThat(commandTimer("BookSlot", "success").count()).isEqualTo(1);
+    }
+
+    @Test
+    void 핸들러가_예외를_던지면_error로_기록하고_예외는_그대로_던진다() {
+        doThrow(new IllegalStateException("DB 오류")).when(slotCommandHandler).handleReleaseHold(any());
+
+        assertThatThrownBy(() -> consumer.consume(record(slotId.toString(), "ReleaseHold", commandJson("ReleaseHold", slotId))))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(commandTimer("ReleaseHold", "error").count()).isEqualTo(1);
+        assertThat(meterRegistry.find(SlotCommandConsumer.COMMAND_DURATION).tag("outcome", "success").timer()).isNull();
+    }
+
+    @Test
+    void 메시지_검증에_실패하면_처리_시간을_기록하지_않는다() {
+        assertThatThrownBy(() -> consumer.consume(record(slotId.toString(), "HoldRequested", "{not-json")));
+
+        assertThat(meterRegistry.find(SlotCommandConsumer.COMMAND_DURATION).timer()).isNull();
+    }
+
+    private Timer commandTimer(String type, String outcome) {
+        Timer timer = meterRegistry.find(SlotCommandConsumer.COMMAND_DURATION)
+                .tag("type", type).tag("outcome", outcome).timer();
+        assertThat(timer).isNotNull();
+        return timer;
     }
 
     @Test

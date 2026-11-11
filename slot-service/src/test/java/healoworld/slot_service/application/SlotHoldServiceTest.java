@@ -9,8 +9,6 @@ import healoworld.slot_service.domain.entity.SlotStatusHistory;
 import healoworld.slot_service.domain.enums.HoldFailureReason;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
-import healoworld.slot_service.global.exception.BaseException;
-import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
 import healoworld.slot_service.support.FixedClockConfig;
@@ -33,7 +31,6 @@ import java.util.UUID;
 
 import static healoworld.slot_service.support.SlotStatusHistoryTestSupport.singleHistory;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -102,6 +99,7 @@ class SlotHoldServiceTest extends PostgresContainerSupport {
 
         Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
         assertThat(result.isSuccess()).isTrue();
+        assertThat(result.isAlreadyHeld()).isTrue();   // 메트릭에서 idempotent로 구분
         assertThat(result.getHeldUntil()).isEqualTo(originalHeldUntil);
         assertThat(saved.getHeldUntil()).isEqualTo(originalHeldUntil);
         assertThat(saved.getReservationId()).isEqualTo(reservationId);
@@ -121,11 +119,12 @@ class SlotHoldServiceTest extends PostgresContainerSupport {
     }
 
     @Test
-    void 없는_슬롯은_SLOT_NOT_FOUND_예외가_발생한다() {
-        assertThatThrownBy(() -> slotHoldService.hold(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()))
-                .isInstanceOf(BaseException.class)
-                .extracting("errorCode")
-                .isEqualTo(ErrorCode.SLOT_NOT_FOUND);
+    void 없는_슬롯은_예외_없이_notFound_결과를_SLOT_CONFLICT로_돌려준다() {
+        HoldResult result = slotHoldService.hold(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.isNotFound()).isTrue();
+        assertThat(result.getFailureReason()).isEqualTo(HoldFailureReason.SLOT_CONFLICT);
     }
 
     // ---------- 이미 시작한 슬롯 (NOW = 2026-10-30 10:00) ----------
