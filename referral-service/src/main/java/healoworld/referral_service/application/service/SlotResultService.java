@@ -47,6 +47,8 @@ public class SlotResultService {
     // SlotsBlocked 처리 시 예약·검사 행 잠금 (의뢰 → 예약 → 검사 순서. 검사 시작·장애 후속 처리와 같은 순서)
     private final IncidentReservationRepository incidentReservationRepository;
     private final ExaminationRepository examinationRepository;
+    // 예약 확정 성공 시 검사기관 공통 알림 (같은 트랜잭션)
+    private final InstitutionNotificationService institutionNotificationService;
 
     public static final String CONSUMER = "referral-service";
 
@@ -147,6 +149,10 @@ public class SlotResultService {
                 reservation.getId(),
                 reservation.getExamInstitutionId()
         );
+
+        // 예약·의뢰 확정이 모두 성공한 뒤에만 검사기관 알림을 만든다 (첫 예약 확정 / 같은 기관 일정 변경 / 다른 기관 변경)
+        // 이 트랜잭션이 롤백되면 알림도 남지 않고, 같은 SlotBooked가 다시 와도 inbox·confirmIfHeld에서 걸러져 여기까지 오지 않는다
+        institutionNotificationService.notifyReservationConfirmed(referral.getId(), reservation, eventId);
 
         // 장비 장애 이벤트가 이 확정보다 먼저 처리됐다면 영향 예약 조회에서 빠졌으므로, 여기서 후속 처리 작업을 만든다
         // 예약 차단·의뢰 재조정은 장애 후속 처리 스케줄러가 기존 흐름대로 처리한다 (겹치는 장애가 없으면 변경 없음)
