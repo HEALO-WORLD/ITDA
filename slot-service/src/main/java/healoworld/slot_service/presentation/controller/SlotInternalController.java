@@ -2,17 +2,21 @@ package healoworld.slot_service.presentation.controller;
 
 import healoworld.slot_service.application.service.SlotStatusQueryService;
 import healoworld.slot_service.presentation.dto.request.SlotStatusQueryRequest;
+import healoworld.slot_service.presentation.dto.response.SlotReservationContextResponse;
 import healoworld.slot_service.presentation.dto.response.SlotStatusResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.UUID;
 
 // 서비스 간 내부 API (외부 요청은 Gateway의 block-internal 경로 규칙이 /api/v1/internal/**를 막는다)
 // Referral의 예약-슬롯 정합성 점검(SlotClient.getSlotStatuses)이 호출한다
@@ -31,5 +35,12 @@ public class SlotInternalController {
     @PostMapping("/statuses")
     public ResponseEntity<List<SlotStatusResponse>> getStatuses(@Valid @RequestBody SlotStatusQueryRequest request) {
         return ResponseEntity.ok(slotStatusQueryService.getStatuses(request.slotIds()));
+    }
+
+    @Operation(summary = "예약용 슬롯 정보 조회 (내부)",
+            description = "의뢰 생성과 재예약에 필요한 장비, 검사 유형, 슬롯 일시를 조회한다.")
+    @GetMapping("/{slotId}")
+    public SlotReservationContextResponse getReservationContext(@PathVariable("slotId") UUID slotId) {
+        return slotStatusQueryService.getReservationContext(slotId);
     }
 }
