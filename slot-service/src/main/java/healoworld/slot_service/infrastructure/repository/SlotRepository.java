@@ -81,6 +81,8 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
             Pageable pageable
     );
 
+    // AVAILABLE이고 아직 시작 전인 슬롯만 HOLD한다.
+    // 시작 시각이 지났거나 지금 시작하는 슬롯(date·startTime <= today·nowTime)은 0행이 된다 (슬롯 검색의 onlyFuture와 같은 기준)
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
         update Slot s
@@ -91,11 +93,14 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
          where s.id = :slotId
            and s.status = :available
            and s.deletedAt is null
+           and (s.date > :today or (s.date = :today and s.startTime > :nowTime))
         """)
     int holdIfAvailable(@Param("slotId") UUID slotId,
                         @Param("reservationId") UUID reservationId,
                         @Param("heldUntil") LocalDateTime heldUntil,
                         @Param("now") LocalDateTime now,
+                        @Param("today") LocalDate today,
+                        @Param("nowTime") LocalTime nowTime,
                         @Param("held") SlotStatus held,
                         @Param("available") SlotStatus available);
 
