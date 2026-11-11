@@ -520,7 +520,7 @@ class IncidentProcessingServiceIntegrationTest extends PostgresContainerSupport 
         assertThatThrownBy(() -> examinationService.changeStatus(
                 examinationId,
                 booking.examInstitutionId(),
-                RoleType.EXAMINER,
+                Role.EXAMINER,
                 ExaminationStatus.IN_PROGRESS
         ))
                 .isInstanceOf(BaseException.class)

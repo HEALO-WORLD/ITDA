@@ -9,7 +9,7 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.presentation.dto.request.ReservationSearchCondition;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -28,7 +28,7 @@ public class ReservationRepositoryCustomImpl implements ReservationRepositoryCus
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public Page<Reservation> search(ReservationSearchCondition cond, UUID institutionId, RoleType role, Pageable pageable) {
+    public Page<Reservation> search(ReservationSearchCondition cond, UUID institutionId, Role role, Pageable pageable) {
         BooleanExpression[] conditions = {
                 institutionScope(institutionId, role),
                 referrerIdEq(cond.referrerId()),
@@ -58,8 +58,8 @@ public class ReservationRepositoryCustomImpl implements ReservationRepositoryCus
     }
 
     // 관리자가 아니면 의뢰기관 또는 검사기관이 본인 기관인 예약만 조회
-    private BooleanExpression institutionScope(UUID institutionId, RoleType role) {
-        return role == RoleType.ADMIN ? null : reservation.referral.referringInstitutionId.eq(institutionId)
+    private BooleanExpression institutionScope(UUID institutionId, Role role) {
+        return role == Role.ADMIN ? null : reservation.referral.referringInstitutionId.eq(institutionId)
                 .or(reservation.examInstitutionId.eq(institutionId));
     }
 

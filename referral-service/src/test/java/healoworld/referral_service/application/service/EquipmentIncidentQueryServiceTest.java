@@ -5,7 +5,7 @@ import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.domain.enums.EquipmentIncidentStatus;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
@@ -109,8 +109,8 @@ class EquipmentIncidentQueryServiceTest {
     void adminListUsesRequestedInstitution() {
         givenSearchReturnsEmpty();
 
-        service.getIncidents(RoleType.ADMIN, myInstitutionId, searchFor(otherInstitutionId));
-        service.getIncidents(RoleType.ADMIN, myInstitutionId, searchFor(null));
+        service.getIncidents(Role.ADMIN, myInstitutionId, searchFor(otherInstitutionId));
+        service.getIncidents(Role.ADMIN, myInstitutionId, searchFor(null));
 
         then(equipmentIncidentRepository).should().search(eq(otherInstitutionId), eq(equipmentId),
                 eq(EquipmentIncidentStatus.OCCURRED), any());
@@ -123,7 +123,7 @@ class EquipmentIncidentQueryServiceTest {
     void examinerListIsScopedToOwnInstitution() {
         givenSearchReturnsEmpty();
 
-        service.getIncidents(RoleType.EXAMINER, myInstitutionId, searchFor(otherInstitutionId));
+        service.getIncidents(Role.EXAMINER, myInstitutionId, searchFor(otherInstitutionId));
 
         then(equipmentIncidentRepository).should().search(eq(myInstitutionId), eq(equipmentId),
                 eq(EquipmentIncidentStatus.OCCURRED), any());
@@ -132,7 +132,7 @@ class EquipmentIncidentQueryServiceTest {
     @Test
     @DisplayName("REQUESTER는 목록을 조회할 수 없다 (403, DB 조회 없음)")
     void requesterCannotList() {
-        assertErrorCode(() -> service.getIncidents(RoleType.REQUESTER, myInstitutionId, searchFor(null)),
+        assertErrorCode(() -> service.getIncidents(Role.REQUESTER, myInstitutionId, searchFor(null)),
                 ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED);
         then(equipmentIncidentRepository).shouldHaveNoInteractions();
     }
@@ -146,7 +146,7 @@ class EquipmentIncidentQueryServiceTest {
         given(equipmentIncidentRepository.search(any(), any(), any(), any()))
                 .willReturn(new PageImpl<>(List.of(incident), PageRequest.of(0, 10), 1));
 
-        var response = service.getIncidents(RoleType.EXAMINER, myInstitutionId, searchFor(null));
+        var response = service.getIncidents(Role.EXAMINER, myInstitutionId, searchFor(null));
 
         assertThat(response.totalElements()).isEqualTo(1);
         assertThat(response.contents()).singleElement().satisfies(item -> {
@@ -173,7 +173,7 @@ class EquipmentIncidentQueryServiceTest {
         given(incidentReferralRepository.countByIncident_IdAndProcessingStatus(id, IncidentProcessingStatus.FAILED))
                 .willReturn(4L);
 
-        EquipmentIncidentDetailResponse response = service.getIncident(RoleType.EXAMINER, myInstitutionId, id);
+        EquipmentIncidentDetailResponse response = service.getIncident(Role.EXAMINER, myInstitutionId, id);
 
         assertThat(response.incidentId()).isEqualTo(id);
         assertThat(response.pendingCount()).isEqualTo(1);
@@ -188,7 +188,7 @@ class EquipmentIncidentQueryServiceTest {
     void adminCanReadAnyInstitution() {
         EquipmentIncident incident = incidentOf(otherInstitutionId);
 
-        assertThat(service.getIncident(RoleType.ADMIN, myInstitutionId, incident.getId()).institutionId())
+        assertThat(service.getIncident(Role.ADMIN, myInstitutionId, incident.getId()).institutionId())
                 .isEqualTo(otherInstitutionId);
     }
 
@@ -197,7 +197,7 @@ class EquipmentIncidentQueryServiceTest {
     void examinerCannotReadOtherInstitution() {
         EquipmentIncident incident = incidentOf(otherInstitutionId);
 
-        assertErrorCode(() -> service.getIncident(RoleType.EXAMINER, myInstitutionId, incident.getId()),
+        assertErrorCode(() -> service.getIncident(Role.EXAMINER, myInstitutionId, incident.getId()),
                 ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
         then(incidentReferralRepository).shouldHaveNoInteractions();
     }
@@ -205,7 +205,7 @@ class EquipmentIncidentQueryServiceTest {
     @Test
     @DisplayName("상세: REQUESTER는 403이고 장애를 조회하지 않는다")
     void requesterCannotReadDetail() {
-        assertErrorCode(() -> service.getIncident(RoleType.REQUESTER, myInstitutionId, UUID.randomUUID()),
+        assertErrorCode(() -> service.getIncident(Role.REQUESTER, myInstitutionId, UUID.randomUUID()),
                 ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED);
         then(equipmentIncidentRepository).shouldHaveNoInteractions();
     }
@@ -216,7 +216,7 @@ class EquipmentIncidentQueryServiceTest {
         UUID unknown = UUID.randomUUID();
         given(equipmentIncidentRepository.findById(unknown)).willReturn(Optional.empty());
 
-        assertErrorCode(() -> service.getIncident(RoleType.ADMIN, myInstitutionId, unknown),
+        assertErrorCode(() -> service.getIncident(Role.ADMIN, myInstitutionId, unknown),
                 ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
     }
 
@@ -233,9 +233,9 @@ class EquipmentIncidentQueryServiceTest {
         given(incidentReferralRepository.findByIncident_IdAndProcessingStatus(eq(id),
                 eq(IncidentProcessingStatus.FAILED), any())).willReturn(Page.empty());
 
-        var all = service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId, id,
+        var all = service.getIncidentReferrals(Role.EXAMINER, myInstitutionId, id,
                 new IncidentReferralSearchCondition(null, 0, 10));
-        var failed = service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId, id,
+        var failed = service.getIncidentReferrals(Role.EXAMINER, myInstitutionId, id,
                 new IncidentReferralSearchCondition(IncidentProcessingStatus.FAILED, 0, 10));
 
         assertThat(all.contents()).singleElement().satisfies(item -> {
@@ -259,9 +259,9 @@ class EquipmentIncidentQueryServiceTest {
         given(incidentReferralRepository.findByIncident_Id(eq(id), any())).willReturn(new PageImpl<>(List.of(failed)));
         IncidentReferralSearchCondition cond = new IncidentReferralSearchCondition(null, 0, 10);
 
-        var forExaminer = service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId, id, cond)
+        var forExaminer = service.getIncidentReferrals(Role.EXAMINER, myInstitutionId, id, cond)
                 .contents().getFirst();
-        var forAdmin = service.getIncidentReferrals(RoleType.ADMIN, otherInstitutionId, id, cond)
+        var forAdmin = service.getIncidentReferrals(Role.ADMIN, otherInstitutionId, id, cond)
                 .contents().getFirst();
 
         assertThat(forExaminer.lastError()).isNull();
@@ -276,7 +276,7 @@ class EquipmentIncidentQueryServiceTest {
     void examinerCannotReadOtherInstitutionReferrals() {
         EquipmentIncident incident = incidentOf(otherInstitutionId);
 
-        assertErrorCode(() -> service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId, incident.getId(),
+        assertErrorCode(() -> service.getIncidentReferrals(Role.EXAMINER, myInstitutionId, incident.getId(),
                 new IncidentReferralSearchCondition(null, 0, 10)), ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
         then(incidentReferralRepository).should(never()).findByIncident_Id(any(), any());
         then(examinationRepository).should(never()).findProgressByReferralIds(any());
@@ -310,7 +310,7 @@ class EquipmentIncidentQueryServiceTest {
         if (examinations != null) {
             given(examinationRepository.findProgressByReferralIds(any())).willReturn(examinations);
         }
-        return service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId, incident.getId(),
+        return service.getIncidentReferrals(Role.EXAMINER, myInstitutionId, incident.getId(),
                         new IncidentReferralSearchCondition(null, 0, 10)).contents().stream()
                 .collect(Collectors.toMap(item -> item.id(), item -> item.manualReviewRequired()));
     }
@@ -419,7 +419,7 @@ class EquipmentIncidentQueryServiceTest {
         given(examinationRepository.findProgressByReferralIds(any())).willReturn(
                 List.of(examinationOf(task, task.getReservationId(), ExaminationStatus.IN_PROGRESS)));
 
-        var item = service.getIncidentReferrals(RoleType.ADMIN, otherInstitutionId, incident.getId(),
+        var item = service.getIncidentReferrals(Role.ADMIN, otherInstitutionId, incident.getId(),
                 new IncidentReferralSearchCondition(null, 0, 10)).contents().getFirst();
 
         assertThat(item.manualReviewRequired()).isTrue();
@@ -429,7 +429,7 @@ class EquipmentIncidentQueryServiceTest {
     @DisplayName("수동 확인: REQUESTER는 기존처럼 403이고 작업·검사를 조회하지 않는다")
     void requesterCannotReadReferrals() {
         // 역할 확인에서 먼저 거절되므로 장애도 조회하지 않는다
-        assertErrorCode(() -> service.getIncidentReferrals(RoleType.REQUESTER, myInstitutionId, UUID.randomUUID(),
+        assertErrorCode(() -> service.getIncidentReferrals(Role.REQUESTER, myInstitutionId, UUID.randomUUID(),
                 new IncidentReferralSearchCondition(null, 0, 10)), ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED);
         then(incidentReferralRepository).should(never()).findByIncident_Id(any(), any());
         then(examinationRepository).should(never()).findProgressByReferralIds(any());
@@ -454,7 +454,7 @@ class EquipmentIncidentQueryServiceTest {
     void examinerSummaryUsesOwnInstitution() {
         givenCounts(myInstitutionId, OCCURRED_AT, 1, 5, 2);
 
-        EquipmentIncidentSummaryResponse summary = service.getSummary(RoleType.EXAMINER, myInstitutionId,
+        EquipmentIncidentSummaryResponse summary = service.getSummary(Role.EXAMINER, myInstitutionId,
                 otherInstitutionId, OCCURRED_AT);
 
         assertThat(summary).isEqualTo(new EquipmentIncidentSummaryResponse(myInstitutionId, OCCURRED_AT, 1, 5, 2));
@@ -466,7 +466,7 @@ class EquipmentIncidentQueryServiceTest {
     void summaryUsesKoreanClock() {
         givenCounts(myInstitutionId, OCCURRED_AT, 1, 0, 0);
 
-        EquipmentIncidentSummaryResponse summary = service.getSummary(RoleType.EXAMINER, myInstitutionId, null);
+        EquipmentIncidentSummaryResponse summary = service.getSummary(Role.EXAMINER, myInstitutionId, null);
 
         assertThat(summary.asOf()).isEqualTo(OCCURRED_AT);
         then(equipmentIncidentRepository).should().countEquipmentsInDowntime(myInstitutionId, OCCURRED_AT);
@@ -477,7 +477,7 @@ class EquipmentIncidentQueryServiceTest {
     void adminSummaryUsesRequestedInstitution() {
         givenCounts(otherInstitutionId, OCCURRED_AT, 0, 3, 1);
 
-        EquipmentIncidentSummaryResponse summary = service.getSummary(RoleType.ADMIN, myInstitutionId,
+        EquipmentIncidentSummaryResponse summary = service.getSummary(Role.ADMIN, myInstitutionId,
                 otherInstitutionId, OCCURRED_AT);
 
         assertThat(summary).isEqualTo(new EquipmentIncidentSummaryResponse(otherInstitutionId, OCCURRED_AT, 0, 3, 1));
@@ -486,7 +486,7 @@ class EquipmentIncidentQueryServiceTest {
     @Test
     @DisplayName("현황: ADMIN이 institutionId 없이 요청하면 400 VALIDATION_FAILED이고 집계하지 않는다")
     void adminSummaryRequiresInstitutionId() {
-        assertErrorCode(() -> service.getSummary(RoleType.ADMIN, myInstitutionId, null, OCCURRED_AT),
+        assertErrorCode(() -> service.getSummary(Role.ADMIN, myInstitutionId, null, OCCURRED_AT),
                 ErrorCode.VALIDATION_FAILED);
         thenNoCountQueries();
     }
@@ -494,7 +494,7 @@ class EquipmentIncidentQueryServiceTest {
     @Test
     @DisplayName("현황: REQUESTER는 403이고 집계하지 않는다")
     void requesterCannotReadSummary() {
-        assertErrorCode(() -> service.getSummary(RoleType.REQUESTER, myInstitutionId, myInstitutionId, OCCURRED_AT),
+        assertErrorCode(() -> service.getSummary(Role.REQUESTER, myInstitutionId, myInstitutionId, OCCURRED_AT),
                 ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED);
         thenNoCountQueries();
     }

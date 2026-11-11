@@ -5,7 +5,7 @@ import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
@@ -26,11 +26,11 @@ public class ReferralHistoryService {
     private final ReferralRepository referralRepository;
 
     @Transactional(readOnly = true)
-    public List<ReferralHistoryResponse> getReferralHistories(UUID institutionId, UUID referralId, RoleType role) {
+    public List<ReferralHistoryResponse> getReferralHistories(UUID institutionId, UUID referralId, Role role) {
         Referral referral = referralRepository.findById(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
 
-        if (!(institutionId.equals(referral.getReferringInstitutionId()) || role == RoleType.ADMIN)) {
+        if (!(institutionId.equals(referral.getReferringInstitutionId()) || role == Role.ADMIN)) {
             throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
         }
 

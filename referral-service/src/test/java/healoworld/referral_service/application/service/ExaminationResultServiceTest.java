@@ -4,7 +4,7 @@ import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.ExaminationResult;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
@@ -287,7 +287,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByReferralId(
                             referralId,
                             referringInstitutionId,
-                            RoleType.REQUESTER
+                            Role.REQUESTER
                     );
 
             // then
@@ -319,7 +319,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByReferralId(
                             referralId,
                             otherInstitutionId,
-                            RoleType.REQUESTER
+                            Role.REQUESTER
                     )
             )
                     .isInstanceOf(BaseException.class)
@@ -332,11 +332,11 @@ class ExaminationResultServiceTest {
 
         @ParameterizedTest
         @EnumSource(
-                value = RoleType.class,
+                value = Role.class,
                 names = {"EXAMINER", "ADMIN"}
         )
         @DisplayName("REQUESTER가 아닌 역할은 의뢰 ID 기반 결과를 조회할 수 없다")
-        void nonRequesterCannotReadResult(RoleType role) {
+        void nonRequesterCannotReadResult(Role role) {
             // given
             UUID referralId = UUID.randomUUID();
 
@@ -371,7 +371,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByReferralId(
                             referralId,
                             UUID.randomUUID(),
-                            RoleType.REQUESTER
+                            Role.REQUESTER
                     )
             )
                     .isInstanceOf(BaseException.class)
@@ -402,7 +402,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByReferralId(
                             referralId,
                             referringInstitutionId,
-                            RoleType.REQUESTER
+                            Role.REQUESTER
                     )
             )
                     .isInstanceOf(BaseException.class)
@@ -442,7 +442,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByReferralId(
                             referralId,
                             referringInstitutionId,
-                            RoleType.REQUESTER
+                            Role.REQUESTER
                     )
             )
                     .isInstanceOf(BaseException.class)
@@ -489,7 +489,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByExaminationId(
                             examinationId,
                             examInstitutionId,
-                            RoleType.EXAMINER
+                            Role.EXAMINER
                     );
 
             // then
@@ -523,7 +523,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByExaminationId(
                             examinationId,
                             otherInstitutionId,
-                            RoleType.EXAMINER
+                            Role.EXAMINER
                     )
             )
                     .isInstanceOf(BaseException.class)
@@ -545,7 +545,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByExaminationId(
                             examinationId,
                             UUID.randomUUID(),
-                            RoleType.REQUESTER
+                            Role.REQUESTER
                     )
             )
                     .isInstanceOf(BaseException.class)
@@ -571,7 +571,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByExaminationId(
                             examinationId,
                             examInstitutionId,
-                            RoleType.EXAMINER
+                            Role.EXAMINER
                     )
             )
                     .isInstanceOf(BaseException.class)
@@ -602,7 +602,7 @@ class ExaminationResultServiceTest {
                     examinationResultService.getResultByExaminationId(
                             examinationId,
                             examInstitutionId,
-                            RoleType.EXAMINER
+                            Role.EXAMINER
                     )
             )
                     .isInstanceOf(BaseException.class)

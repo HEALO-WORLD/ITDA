@@ -5,7 +5,7 @@ import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -199,7 +199,7 @@ class ExaminationQueryServiceTest {
             PagedResponse<ExaminationListResponse> response =
                     examinationQueryService.getExaminations(
                             institutionId,
-                            RoleType.EXAMINER,
+                            Role.EXAMINER,
                             pageable
                     );
 
@@ -275,7 +275,7 @@ class ExaminationQueryServiceTest {
             assertThatThrownBy(() ->
                     examinationQueryService.getExaminations(
                             institutionId,
-                            RoleType.REQUESTER,
+                            Role.REQUESTER,
                             pageable
                     )
             )
@@ -308,7 +308,7 @@ class ExaminationQueryServiceTest {
             PagedResponse<ExaminationListResponse> response =
                     examinationQueryService.getExaminations(
                             institutionId,
-                            RoleType.EXAMINER,
+                            Role.EXAMINER,
                             pageable
                     );
 
@@ -357,7 +357,7 @@ class ExaminationQueryServiceTest {
             PagedResponse<ExaminationListResponse> response =
                     examinationQueryService.getExaminations(
                             institutionId,
-                            RoleType.EXAMINER,
+                            Role.EXAMINER,
                             pageable
                     );
 
@@ -406,7 +406,7 @@ class ExaminationQueryServiceTest {
             PagedResponse<ExaminationListResponse> response =
                     examinationQueryService.getExaminations(
                             institutionId,
-                            RoleType.EXAMINER,
+                            Role.EXAMINER,
                             pageable
                     );
 
@@ -463,7 +463,7 @@ class ExaminationQueryServiceTest {
             PagedResponse<ExaminationListResponse> response =
                     examinationQueryService.getExaminations(
                             institutionId,
-                            RoleType.EXAMINER,
+                            Role.EXAMINER,
                             pageable
                     );
 
@@ -519,7 +519,7 @@ class ExaminationQueryServiceTest {
             assertThatThrownBy(() ->
                     examinationQueryService.getExaminations(
                             institutionId,
-                            RoleType.EXAMINER,
+                            Role.EXAMINER,
                             pageable
                     )
             )
@@ -573,7 +573,7 @@ class ExaminationQueryServiceTest {
             assertThatThrownBy(() ->
                     examinationQueryService.getExaminations(
                             institutionId,
-                            RoleType.EXAMINER,
+                            Role.EXAMINER,
                             pageable
                     )
             )

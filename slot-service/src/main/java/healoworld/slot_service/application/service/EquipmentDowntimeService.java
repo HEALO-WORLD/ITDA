@@ -1,5 +1,6 @@
 package healoworld.slot_service.application.service;
 
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.infrastructure.repository.EquipmentDowntimeRepository;
 import healoworld.slot_service.presentation.dto.response.EquipmentDowntimeLifecycleResponse;
@@ -43,7 +44,7 @@ public class EquipmentDowntimeService {
             EquipmentDowntimeCreateRequest request,
             UUID userId,
             UUID userInstitutionId,
-            String userRole
+            Role userRole
     ) {
         validateActor(userId, userInstitutionId, userRole);
 
@@ -72,7 +73,7 @@ public class EquipmentDowntimeService {
     }
 
     public EquipmentDowntimeLifecycleResponse recover(UUID id, String reason,
-                                                      UUID userId, UUID userInstitutionId, String userRole) {
+                                                      UUID userId, UUID userInstitutionId, Role userRole) {
         validateActor(userId, userInstitutionId, userRole);
         var d = downtimes.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -81,7 +82,7 @@ public class EquipmentDowntimeService {
     }
 
     public EquipmentDowntimeLifecycleResponse extend(UUID id, OffsetDateTime endedAt,
-                                                     UUID userId, UUID userInstitutionId, String userRole) {
+                                                     UUID userId, UUID userInstitutionId, Role userRole) {
         validateActor(userId, userInstitutionId, userRole);
         var d = downtimes.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -89,12 +90,12 @@ public class EquipmentDowntimeService {
         return lifecycleWriter.extend(id, d.getEquipmentId(), owner, userId, toBusinessTime(endedAt.toInstant()));
     }
 
-    private void validateActor(UUID userId, UUID institutionId, String role) {
+    private void validateActor(UUID userId, UUID institutionId, Role role) {
         if (userId == null || institutionId == null || role == null) {
             throw new BaseException(ErrorCode.INVALID_INPUT);
         }
 
-        if (!"EXAMINER".equals(role) && !"ADMIN".equals(role)) {
+        if (role != Role.EXAMINER && role != Role.ADMIN) {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
     }
@@ -103,8 +104,8 @@ public class EquipmentDowntimeService {
     //  - EXAMINER: 기존 조회 권한 확인(자기 기관의 활성 검사기관 장비인지)을 거친 뒤, 실제 소속 기관이 요청자 기관과 같은지 다시 확인한다
     //  - ADMIN: 장비의 실제 소속 기관을 그대로 쓴다. 장비가 없으면 404
     // 조회가 실패하면 예외로 끝나므로 트랜잭션이 시작되지 않고 Outbox에도 아무것도 저장되지 않는다
-    private UUID resolveOwnerInstitution(UUID equipmentId, UUID institutionId, String role) {
-        if ("ADMIN".equals(role)) {
+    private UUID resolveOwnerInstitution(UUID equipmentId, UUID institutionId, Role role) {
+        if (role == Role.ADMIN) {
             return equipmentOwnerClient.getOwnerInstitutionId(equipmentId);
         }
 

@@ -1,5 +1,6 @@
 package healoworld.slot_service.global.deadletter;
 
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.dto.PagedResponse;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
@@ -33,7 +34,7 @@ public class DeadLetterService {
 
     // 최신 저장순 목록. status를 생략하면 전체 상태를 조회한다
     @Transactional(readOnly = true)
-    public PagedResponse<DeadLetterResponse> getDeadLetters(String role, DeadLetterSearchCondition cond) {
+    public PagedResponse<DeadLetterResponse> getDeadLetters(Role role, DeadLetterSearchCondition cond) {
         verifyAdmin(role);
 
         Pageable pageable = cond.toPageable();
@@ -44,7 +45,7 @@ public class DeadLetterService {
     }
 
     @Transactional(readOnly = true)
-    public DeadLetterDetailResponse getDeadLetter(String role, UUID deadLetterId) {
+    public DeadLetterDetailResponse getDeadLetter(Role role, UUID deadLetterId) {
         verifyAdmin(role);
 
         DeadLetterEvent event = deadLetterEventRepository.findById(deadLetterId)
@@ -52,7 +53,7 @@ public class DeadLetterService {
         return DeadLetterDetailResponse.from(event);
     }
 
-    public DeadLetterDetailResponse reprocess(UUID userId, String role, UUID deadLetterId) {
+    public DeadLetterDetailResponse reprocess(UUID userId, Role role, UUID deadLetterId) {
         verifyAdmin(role);
 
         DeadLetterEvent event = getPendingForUpdate(deadLetterId);
@@ -75,7 +76,7 @@ public class DeadLetterService {
         return DeadLetterDetailResponse.from(event);
     }
 
-    public DeadLetterDetailResponse ignore(UUID userId, String role, UUID deadLetterId) {
+    public DeadLetterDetailResponse ignore(UUID userId, Role role, UUID deadLetterId) {
         verifyAdmin(role);
 
         DeadLetterEvent event = getPendingForUpdate(deadLetterId);
@@ -83,8 +84,8 @@ public class DeadLetterService {
         return DeadLetterDetailResponse.from(event);
     }
 
-    private void verifyAdmin(String role) {
-        if (!"ADMIN".equals(role)) {
+    private void verifyAdmin(Role role) {
+        if (role != Role.ADMIN) {
             throw new BaseException(ErrorCode.ADMIN_ONLY);
         }
     }

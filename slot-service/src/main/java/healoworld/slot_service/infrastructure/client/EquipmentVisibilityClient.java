@@ -1,6 +1,7 @@
 package healoworld.slot_service.infrastructure.client;
 
 import feign.FeignException;
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.dto.ApiResponse;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
@@ -18,12 +19,11 @@ public class EquipmentVisibilityClient {
 
     public Set<UUID> getVisibleEquipmentIds(
             UUID callerInstitutionId,
-            String role,
+            Role role,
             UUID institutionId,
             boolean onlyOperational
     ) {
-        if (callerInstitutionId == null || role == null
-                || !Set.of("REQUESTER", "EXAMINER", "ADMIN").contains(role)) {
+        if (callerInstitutionId == null || role == null) {
             throw new BaseException(ErrorCode.INVALID_INPUT);
         }
 
@@ -32,7 +32,7 @@ public class EquipmentVisibilityClient {
         try {
             response = institutionClient.getVisibleEquipmentIds(
                     callerInstitutionId,
-                    role,
+                    role.name(),
                     institutionId,
                     onlyOperational
             );

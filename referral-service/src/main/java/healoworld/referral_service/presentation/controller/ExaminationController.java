@@ -3,7 +3,7 @@ package healoworld.referral_service.presentation.controller;
 import healoworld.referral_service.application.service.ExaminationQueryService;
 import healoworld.referral_service.application.service.ExaminationService;
 import healoworld.referral_service.application.service.ExaminationResultService;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.presentation.dto.request.ExaminationResultCreateRequest;
@@ -71,7 +71,7 @@ public class ExaminationController {
             @RequestHeader("X-Institution-Id") UUID institutionId,
 
             @Parameter(description = "요청자 역할")
-            @RequestHeader("X-Role") RoleType role,
+            @RequestHeader("X-Role") Role role,
 
             @Parameter(description = "페이지 번호 (0부터 시작)")
             @RequestParam(defaultValue = "0")
@@ -183,7 +183,7 @@ public class ExaminationController {
             @RequestHeader("X-Institution-Id") UUID institutionId,
 
             @Parameter(description = "요청자 역할")
-            @RequestHeader("X-Role") RoleType role,
+            @RequestHeader("X-Role") Role role,
 
             @Parameter(description = "검사 ID")
             @PathVariable("examinationId") UUID examinationId
@@ -233,7 +233,7 @@ public class ExaminationController {
             @RequestHeader("X-Institution-Id") UUID institutionId,
 
             @Parameter(description = "요청자 역할")
-            @RequestHeader("X-Role") RoleType role,
+            @RequestHeader("X-Role") Role role,
 
             @Parameter(description = "검사 ID")
             @PathVariable("examinationId") UUID examinationId,

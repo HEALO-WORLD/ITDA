@@ -1,5 +1,6 @@
 package healoworld.slot_service.global.deadletter;
 
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.dto.ApiResponse;
 import healoworld.slot_service.global.dto.ErrorResponse;
 import healoworld.slot_service.global.dto.PagedResponse;
@@ -39,7 +40,7 @@ public class DeadLetterAdminController {
     })
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<DeadLetterResponse>>> getDeadLetters(
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") String role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @ParameterObject @ModelAttribute DeadLetterSearchCondition cond
     ) {
         PagedResponse<DeadLetterResponse> response = deadLetterService.getDeadLetters(role, cond);
@@ -63,7 +64,7 @@ public class DeadLetterAdminController {
     })
     @GetMapping("/{deadLetterId}")
     public ResponseEntity<ApiResponse<DeadLetterDetailResponse>> getDeadLetter(
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") String role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "실패 메시지 ID") @PathVariable UUID deadLetterId
     ) {
         DeadLetterDetailResponse response = deadLetterService.getDeadLetter(role, deadLetterId);
@@ -92,7 +93,7 @@ public class DeadLetterAdminController {
     @PostMapping("/{deadLetterId}/reprocess")
     public ResponseEntity<ApiResponse<DeadLetterDetailResponse>> reprocess(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") String role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "실패 메시지 ID") @PathVariable UUID deadLetterId
     ) {
         DeadLetterDetailResponse response = deadLetterService.reprocess(userId, role, deadLetterId);
@@ -119,7 +120,7 @@ public class DeadLetterAdminController {
     @PostMapping("/{deadLetterId}/ignore")
     public ResponseEntity<ApiResponse<DeadLetterDetailResponse>> ignore(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") String role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "실패 메시지 ID") @PathVariable UUID deadLetterId
     ) {
         DeadLetterDetailResponse response = deadLetterService.ignore(userId, role, deadLetterId);
