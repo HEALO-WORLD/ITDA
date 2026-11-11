@@ -23,3 +23,6 @@ outbox:
 
 hold-expiry:
   enabled: false
+
+event-cleanup:
+  enabled: false
