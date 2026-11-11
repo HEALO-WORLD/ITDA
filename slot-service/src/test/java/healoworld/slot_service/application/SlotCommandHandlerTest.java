@@ -87,6 +87,7 @@ class SlotCommandHandlerTest extends PostgresContainerSupport {
         assertThat(outbox.getMessageKey()).isEqualTo(slot.getId().toString());
         assertThat(outbox.getEventType()).isEqualTo("SlotHeld");
         assertThat(outbox.getId()).isNotEqualTo(request.eventId());
+        assertThat(outbox.getSourceOccurredAt()).isEqualTo(request.occurredAt());   // 체류 시간 측정 기준
         assertThat(outbox.getCreatedAt()).isEqualTo(FixedClockConfig.NOW);
 
         JsonNode payload = jsonMapper.readTree(outbox.getPayload());
@@ -162,6 +163,7 @@ class SlotCommandHandlerTest extends PostgresContainerSupport {
         assertThat(outbox.getMessageKey()).isEqualTo(slot.getId().toString());
         assertThat(outbox.getEventType()).isEqualTo("SlotBooked");
         assertThat(outbox.getId()).isNotEqualTo(request.eventId());
+        assertThat(outbox.getSourceOccurredAt()).isEqualTo(request.occurredAt());
 
         JsonNode payload = jsonMapper.readTree(outbox.getPayload());
         assertThat(payload.get("eventId").asText()).isEqualTo(outbox.getId().toString());

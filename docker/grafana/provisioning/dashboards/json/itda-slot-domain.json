@@ -1,0 +1,1221 @@
+{
+  "uid": "itda-slot-domain",
+  "title": "ITDA · Slot 도메인",
+  "description": "slot-service 이벤트 처리 지연과 결과 (#193)",
+  "tags": [
+    "itda",
+    "slot-service",
+    "domain"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "데이터소스",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "요약 (선택한 시간 범위 전체)",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "체류 시간 p50",
+      "description": "받은 명령의 occurredAt → 결과 이벤트 발행 완료. 선택한 시간 범위 전체 기준",
+      "id": 2,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (increase(slot_event_dwell_seconds_bucket{application=\"slot-service\"}[$__range])))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "체류 시간 p95",
+      "description": "받은 명령의 occurredAt → 결과 이벤트 발행 완료. 선택한 시간 범위 전체 기준",
+      "id": 3,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(slot_event_dwell_seconds_bucket{application=\"slot-service\"}[$__range])))",
+          "legendFormat": "p95",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Outbox 대기 p95",
+      "description": "slot Outbox created_at → 발행 완료 (결과 이벤트만)",
+      "id": 4,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(outbox_publish_wait_seconds_bucket{application=\"slot-service\",type=~\"SlotHeld|SlotHoldFailed|SlotBooked|SlotBookFailed\"}[$__range])))",
+          "legendFormat": "p95",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "체류 시간 중 Outbox 대기 비율",
+      "description": "평균 slot Outbox 대기 / 평균 체류 시간 (결과 이벤트만). 즉시 발행 개선 전후 비교 지표",
+      "id": 5,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sum(increase(outbox_publish_wait_seconds_sum{application=\"slot-service\",type=~\"SlotHeld|SlotHoldFailed|SlotBooked|SlotBookFailed\"}[$__range])) / sum(increase(outbox_publish_wait_seconds_count{application=\"slot-service\",type=~\"SlotHeld|SlotHoldFailed|SlotBooked|SlotBookFailed\"}[$__range]))) / (sum(increase(slot_event_dwell_seconds_sum{application=\"slot-service\"}[$__range])) / sum(increase(slot_event_dwell_seconds_count{application=\"slot-service\"}[$__range])))",
+          "legendFormat": "비율",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "HOLD 성공 / 충돌",
+      "description": "선택한 시간 범위 동안 처리한 HOLD 결과 건수",
+      "id": 6,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(slot_hold_total{application=\"slot-service\",result=~\"success|idempotent\"}[$__range]))",
+          "legendFormat": "성공",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(slot_hold_total{application=\"slot-service\",result=\"conflict\"}[$__range]))",
+          "legendFormat": "충돌",
+          "refId": "B",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "HOLD 만료",
+      "description": "선택한 시간 범위 동안 만료 처리한 HOLD 건수 (스케줄러 + 만료 후 도착한 BookSlot)",
+      "id": 7,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(slot_hold_expired_total{application=\"slot-service\"}[$__range]))",
+          "legendFormat": "만료",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "체류 시간 (referral occurredAt → slot 결과 발행)",
+      "id": 8,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "체류 시간 p50·p95",
+      "description": "referral Outbox 대기 + Kafka 전달 + slot 처리 + slot Outbox 대기를 모두 포함",
+      "id": 9,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(slot_event_dwell_seconds_bucket{application=\"slot-service\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(slot_event_dwell_seconds_bucket{application=\"slot-service\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "B",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "결과 이벤트별 체류 시간 p95",
+      "description": "SlotHeld·SlotHoldFailed·SlotBooked·SlotBookFailed",
+      "id": 10,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (type, le) (rate(slot_event_dwell_seconds_bucket{application=\"slot-service\"}[$__rate_interval])))",
+          "legendFormat": "{{type}}",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "구간별 시간",
+      "id": 11,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "체류 시간 구간별 평균 (누적)",
+      "description": "평균 체류 시간을 구간으로 나눔. '그 외' = 체류 - slot 처리 - slot Outbox 대기 (referral Outbox 대기 + Kafka 전달). 쌓인 높이가 평균 체류 시간",
+      "id": 12,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(outbox_publish_wait_seconds_sum{application=\"slot-service\",type=~\"SlotHeld|SlotHoldFailed|SlotBooked|SlotBookFailed\"}[$__rate_interval])) / sum(rate(outbox_publish_wait_seconds_count{application=\"slot-service\",type=~\"SlotHeld|SlotHoldFailed|SlotBooked|SlotBookFailed\"}[$__rate_interval]))",
+          "legendFormat": "slot Outbox 대기",
+          "refId": "A",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(slot_command_duration_seconds_sum{application=\"slot-service\",type=~\"HoldRequested|BookSlot\",outcome=\"success\"}[$__rate_interval])) / sum(rate(slot_command_duration_seconds_count{application=\"slot-service\",type=~\"HoldRequested|BookSlot\",outcome=\"success\"}[$__rate_interval]))",
+          "legendFormat": "slot 처리",
+          "refId": "B",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "clamp_min((sum(rate(slot_event_dwell_seconds_sum{application=\"slot-service\"}[$__rate_interval])) / sum(rate(slot_event_dwell_seconds_count{application=\"slot-service\"}[$__rate_interval]))) - (sum(rate(outbox_publish_wait_seconds_sum{application=\"slot-service\",type=~\"SlotHeld|SlotHoldFailed|SlotBooked|SlotBookFailed\"}[$__rate_interval])) / sum(rate(outbox_publish_wait_seconds_count{application=\"slot-service\",type=~\"SlotHeld|SlotHoldFailed|SlotBooked|SlotBookFailed\"}[$__rate_interval]))) - (sum(rate(slot_command_duration_seconds_sum{application=\"slot-service\",type=~\"HoldRequested|BookSlot\",outcome=\"success\"}[$__rate_interval])) / sum(rate(slot_command_duration_seconds_count{application=\"slot-service\",type=~\"HoldRequested|BookSlot\",outcome=\"success\"}[$__rate_interval]))), 0)",
+          "legendFormat": "그 외 (referral Outbox 대기 + Kafka 전달)",
+          "refId": "C",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "구간별 p95",
+      "description": "체류 시간, slot Outbox 대기(결과 이벤트), slot 처리(HoldRequested·BookSlot)",
+      "id": 13,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(slot_event_dwell_seconds_bucket{application=\"slot-service\"}[$__rate_interval])))",
+          "legendFormat": "체류 시간",
+          "refId": "A",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(outbox_publish_wait_seconds_bucket{application=\"slot-service\",type=~\"SlotHeld|SlotHoldFailed|SlotBooked|SlotBookFailed\"}[$__rate_interval])))",
+          "legendFormat": "slot Outbox 대기",
+          "refId": "B",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(slot_command_duration_seconds_bucket{application=\"slot-service\",type=~\"HoldRequested|BookSlot\",outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "slot 처리",
+          "refId": "C",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "명령별 처리 시간 p95",
+      "description": "slot-commands 핸들러 처리 + 트랜잭션 커밋",
+      "id": 14,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (type, le) (rate(slot_command_duration_seconds_bucket{application=\"slot-service\",outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "{{type}}",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "이벤트별 Outbox 대기 p95",
+      "description": "slot Outbox created_at → 발행 완료. HoldExpired 등 원인 명령이 없는 이벤트 포함",
+      "id": 15,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (type, le) (rate(outbox_publish_wait_seconds_bucket{application=\"slot-service\"}[$__rate_interval])))",
+          "legendFormat": "{{type}}",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "결과별 카운트",
+      "id": 16,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "HOLD 결과 (건/s)",
+      "description": "success: 선점 / idempotent: 같은 예약 중복 요청 / conflict: 다른 예약·상태 충돌 / not_found: 슬롯 없음",
+      "id": 17,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (result) (rate(slot_hold_total{application=\"slot-service\"}[$__rate_interval]))",
+          "legendFormat": "{{result}}",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "BookSlot 결과 (건/s)",
+      "description": "success: 확정 / idempotent: 이미 확정 / hold_expired: 만료 후 도착 / failed: 확정 불가",
+      "id": 18,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (result) (rate(slot_book_total{application=\"slot-service\"}[$__rate_interval]))",
+          "legendFormat": "{{result}}",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HOLD 만료 (건/s)",
+      "description": "스케줄러 만료 + 만료 후 도착한 BookSlot",
+      "id": 19,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(slot_hold_expired_total{application=\"slot-service\"}[$__rate_interval]))",
+          "legendFormat": "만료",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Kafka consumer (slot-service)",
+      "id": 20,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Consumer lag (토픽별)",
+      "description": "아직 처리하지 않은 메시지 수. 부하 중 계속 오르면 slot-service 처리가 병목",
+      "id": 21,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (topic) (kafka_consumer_fetch_manager_records_lag{application=\"slot-service\"})",
+          "legendFormat": "{{topic}}",
+          "refId": "A",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (topic) (kafka_consumer_fetch_manager_records_lag{application=\"slot-service\"})",
+          "legendFormat": "{{topic}} 최대 파티션",
+          "refId": "B",
+          "range": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "명령 처리 실패 (건/s)",
+      "description": "핸들러 예외로 끝난 시도. 1초 간격 재시도마다 따로 센다",
+      "id": 22,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (type) (rate(slot_command_duration_seconds_count{application=\"slot-service\",outcome=\"error\"}[$__rate_interval]))",
+          "legendFormat": "{{type}}",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    }
+  ]
+}
