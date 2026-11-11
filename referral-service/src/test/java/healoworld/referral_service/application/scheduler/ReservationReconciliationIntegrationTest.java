@@ -1,5 +1,22 @@
 package healoworld.referral_service.application.scheduler;
 
+import healoworld.referral_service.domain.entity.ReconciliationFailure;
+import healoworld.referral_service.domain.enums.ReconciliationFailureStatus;
+import healoworld.referral_service.global.exception.BaseException;
+import healoworld.referral_service.global.exception.ErrorCode;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.dao.QueryTimeoutException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
 import healoworld.referral_service.application.event.command.SlotCommandType;
 import healoworld.referral_service.application.event.result.SlotResultType;
 import healoworld.referral_service.application.service.EquipmentIncidentService;
@@ -8,7 +25,11 @@ import healoworld.referral_service.application.service.IncidentProcessingService
 import healoworld.referral_service.application.service.InstitutionNotificationService;
 import healoworld.referral_service.application.service.NotificationService;
 import healoworld.referral_service.application.service.ReferralHistoryService;
+import healoworld.referral_service.application.service.ReconciliationFailureRecorder;
 import healoworld.referral_service.application.service.ReservationReconciliationService;
+import healoworld.referral_service.infrastructure.repository.ReconciliationFailureRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import healoworld.referral_service.application.service.ReservationService;
 import healoworld.referral_service.application.service.SlotResultService;
 import healoworld.referral_service.domain.entity.Examination;
@@ -75,6 +96,7 @@ import static org.mockito.Mockito.when;
 @DataJpaTest
 @Import({
         ReservationReconciliationService.class,
+        ReconciliationFailureRecorder.class,
         SlotResultService.class,
         InstitutionNotificationService.class,
         EquipmentIncidentService.class,
@@ -101,6 +123,12 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
         JsonMapper jsonMapper() {
             return JsonMapper.builder().build();
         }
+
+        // 복구 결과 메트릭 확인용 (DataJpaTest에는 MeterRegistry가 없다)
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
     }
 
     // 공유 DB에 다른 테스트가 남긴 예약이 있어도 이번 대상이 한 회차에 다 들어오도록 넉넉하게 잡는다
@@ -109,6 +137,9 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
     private static final int LOOKBACK_HOURS = 24;
 
     @Autowired private ReservationReconciliationService reconciliationService;
+    @Autowired private ReconciliationFailureRecorder failureRecorder;
+    @Autowired private ReconciliationFailureRepository failureRepository;
+    @Autowired private MeterRegistry meterRegistry;
     @Autowired private SlotResultService slotResultService;
     @Autowired private ReferralRepository referralRepository;
     @Autowired private ReservationRepository reservationRepository;
@@ -132,7 +163,7 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
     void setUp() {
         startedAt = LocalDateTime.now();
         scheduler = new ReservationReconciliationScheduler(reconciliationService, reservationRepository, slotClient,
-                examinationRepository, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
+                examinationRepository, failureRecorder, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
         // slot-service는 테스트에서 등록한 슬롯만 알려준다. 다른 테스트가 남긴 예약은 "슬롯 없음"으로 건너뛴다
         when(slotClient.getSlotStatuses(any())).thenAnswer(invocation -> List.copyOf(slotResponses));
     }
@@ -146,6 +177,8 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
         // 복구 이벤트의 eventId는 서비스 안에서 만들어지므로, 이 테스트가 시작된 뒤 기록된 소비 이력을 지운다
         jdbcTemplate.update("delete from p_consumed_events where processed_at >= ?", startedAt);
         referralIds.forEach(id -> examinationRepository.findByReferralId(id).ifPresent(examinationRepository::delete));
+        referralIds.forEach(id -> jdbcTemplate.update("delete from p_institution_notifications where referral_id = ?", id));
+        reservationIds.forEach(id -> failureRepository.findByReservationId(id).ifPresent(failureRepository::delete));
         reservationRepository.deleteAllById(reservationIds);
         referralRepository.deleteAllById(referralIds);
     }
@@ -289,7 +322,7 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
     void finalLockCheckStillGuardsAfterPreCheck() {
         // 사전 확인 시점에는 검사가 시작 전이었던 상황: 사전 조회가 아무것도 돌려주지 않는 Repository로 스케줄러를 만든다
         ReservationReconciliationScheduler staleView = new ReservationReconciliationScheduler(reconciliationService,
-                reservationRepository, slotClient, mock(ExaminationRepository.class),
+                reservationRepository, slotClient, mock(ExaminationRepository.class), failureRecorder,
                 BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
         Booking booking = confirmedBooking();
         examination(booking, booking.reservationId(), ExaminationStatus.IN_PROGRESS);
@@ -396,6 +429,278 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
         assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(histories(booking)).hasSize(1);
         assertThat(outboxTypes(booking)).isEmpty();
+    }
+
+    // ---------- SlotBooked 복구 가드·실패 기록 (E2E S1·S2a·S2b) ----------
+
+    @Test
+    @DisplayName("S1. 멈춘 HELD + 슬롯 BOOKED + 다른 예약에 연결된 SCHEDULED 검사 → 예약·의뢰 CONFIRMED, 검사는 현재 예약으로 재연결, 실패 기록 없음")
+    void s1RecoversHeldWithScheduledExamination() {
+        Booking booking = booking(Reservation::hold, referral -> {
+        });
+        examination(booking, UUID.randomUUID(), ExaminationStatus.SCHEDULED);   // 이전 예약에 연결된 검사 (재예약 상황)
+        markStale(booking);
+        slot(booking, "BOOKED", booking.reservationId(), null);
+        double recoveredBefore = metric("recovered");
+
+        scheduler.reconcileReservations();
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(examinationRepository.findByReferralId(booking.referralId())).get()
+                .satisfies(e -> {
+                    assertThat(e.getStatus()).isEqualTo(ExaminationStatus.SCHEDULED);
+                    assertThat(e.getReservationId()).isEqualTo(booking.reservationId());
+                });
+        assertThat(histories(booking)).singleElement()
+                .satisfies(history -> assertThat(history.getReason()).isEqualTo(Reason.RESERVATION_CONFIRMED));
+        assertThat(outboxTypes(booking)).isEmpty();   // 슬롯 해제 명령 없음 (BOOKED 유지)
+        assertThat(failureRepository.findByReservationId(booking.reservationId())).isEmpty();
+        assertThat(metric("recovered") - recoveredBefore).isEqualTo(1);
+    }
+
+    @ParameterizedTest(name = "검사 {0}, 검사 연결 = {1}")
+    @CsvSource({"COMPLETED, CURRENT", "COMPLETED, PREVIOUS", "IN_PROGRESS, CURRENT", "IN_PROGRESS, PREVIOUS"})
+    @DisplayName("S2a·S2b. 멈춘 HELD + 슬롯 BOOKED + 시작·완료된 검사 → 사전 확인에서 자동 확정하지 않고 수동 확인 대상 1건, 상태·이력·알림·Outbox·inbox 변화 없음")
+    void s2SkipsHeldWithStartedExamination(ExaminationStatus examinationStatus, String link) {
+        Booking booking = booking(Reservation::hold, referral -> {
+        });
+        UUID linked = "CURRENT".equals(link) ? booking.reservationId() : UUID.randomUUID();
+        examination(booking, linked, examinationStatus);
+        markStale(booking);
+        slot(booking, "BOOKED", booking.reservationId(), null);
+        double manualBefore = metric("manual_review");
+
+        scheduler.reconcileReservations();
+        scheduler.reconcileReservations();   // 다음 회차에는 대상에서 빠진다
+
+        assertUnchangedHeld(booking, examinationStatus, linked);
+        assertThat(consumedEventsSinceStart()).isZero();
+        assertThat(failureRepository.findByReservationId(booking.reservationId())).get()
+                .satisfies(f -> {
+                    assertThat(f.getStatus()).isEqualTo(ReconciliationFailureStatus.MANUAL_REVIEW);
+                    assertThat(f.getFailureCount()).isEqualTo(1);
+                    assertThat(f.getErrorCode()).isEqualTo(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE.name());
+                    assertThat(f.getResultType()).isEqualTo(SlotResultType.SLOT_BOOKED.name());
+                });
+        assertThat(metric("manual_review") - manualBefore).isEqualTo(1);
+    }
+
+    @ParameterizedTest(name = "검사 {0}, 검사 연결 = {1}")
+    @CsvSource({"COMPLETED, CURRENT", "COMPLETED, PREVIOUS", "IN_PROGRESS, CURRENT", "IN_PROGRESS, PREVIOUS"})
+    @DisplayName("사전 확인을 통과해도(검사가 그 뒤 시작된 경우) SlotBooked 최종 확인(잠금)이 확정을 막고, 업무 예외라 즉시 수동 확인 대상이 되며 다음 회차에 재시도하지 않는다")
+    void finalLockCheckStopsSlotBookedAndStopsRetry(ExaminationStatus examinationStatus, String link) {
+        ReservationReconciliationScheduler staleView = new ReservationReconciliationScheduler(reconciliationService,
+                reservationRepository, slotClient, mock(ExaminationRepository.class), failureRecorder,
+                BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
+        Booking booking = booking(Reservation::hold, referral -> {
+        });
+        UUID linked = "CURRENT".equals(link) ? booking.reservationId() : UUID.randomUUID();
+        examination(booking, linked, examinationStatus);
+        markStale(booking);
+        slot(booking, "BOOKED", booking.reservationId(), null);
+
+        staleView.reconcileReservations();
+        staleView.reconcileReservations();
+        staleView.reconcileReservations();
+
+        assertUnchangedHeld(booking, examinationStatus, linked);
+        assertThat(consumedEventsSinceStart()).isZero();   // 복구 트랜잭션 롤백으로 inbox도 남지 않는다
+        assertThat(failureRepository.findByReservationId(booking.reservationId())).get()
+                .satisfies(f -> {
+                    assertThat(f.getStatus()).isEqualTo(ReconciliationFailureStatus.MANUAL_REVIEW);
+                    assertThat(f.getFailureCount()).isEqualTo(1);   // 2·3회차는 대상 조회에서 빠져 다시 시도하지 않음
+                    assertThat(f.getErrorCode()).isEqualTo(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE.name());
+                });
+    }
+
+    @Test
+    @DisplayName("일시 오류는 최초 실행 포함 3회까지 시도(RETRYING 1·2 → MANUAL_REVIEW 3)하고, 4회차부터 대상에서 빠진다")
+    void transientFailureRetriesUpToThreeTimes() {
+        ReservationReconciliationService failing = mock(ReservationReconciliationService.class);
+        doThrow(new QueryTimeoutException("timeout")).when(failing).reconcile(any(), any(), any());
+        ReservationReconciliationScheduler flaky = new ReservationReconciliationScheduler(failing, reservationRepository,
+                slotClient, examinationRepository, failureRecorder, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
+        Booking booking = booking(Reservation::hold, referral -> {
+        });
+        markStale(booking);
+        slot(booking, "BOOKED", booking.reservationId(), null);
+        double retryBefore = metric("retry_scheduled");
+        double manualBefore = metric("manual_review");
+
+        flaky.reconcileReservations();
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.RETRYING);
+        assertThat(failure(booking).getFailureCount()).isEqualTo(1);
+        flaky.reconcileReservations();
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.RETRYING);
+        assertThat(failure(booking).getFailureCount()).isEqualTo(2);
+        flaky.reconcileReservations();
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.MANUAL_REVIEW);
+        assertThat(failure(booking).getFailureCount()).isEqualTo(3);
+        flaky.reconcileReservations();
+
+        verify(failing, times(3)).reconcile(argThat(t -> t.reservationId().equals(booking.reservationId())), any(), any());
+        assertThat(failure(booking).getFailureCount()).isEqualTo(3);
+        assertThat(failure(booking).getErrorCode()).isEqualTo("QueryTimeoutException");
+        assertThat(metric("retry_scheduled") - retryBefore).isEqualTo(2);
+        assertThat(metric("manual_review") - manualBefore).isEqualTo(1);
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.HELD);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.PENDING);
+        assertThat(outboxTypes(booking)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("일시 오류 뒤 다음 회차에 복구되면 RETRYING 기록을 지운다")
+    void transientFailureThenRecoveryClearsRecord() {
+        ReservationReconciliationService flakyOnce = mock(ReservationReconciliationService.class);
+        doThrow(new QueryTimeoutException("timeout"))
+                .doAnswer(inv -> {
+                    reconciliationService.reconcile(inv.getArgument(0), inv.getArgument(1), inv.getArgument(2));
+                    return null;
+                })
+                .when(flakyOnce).reconcile(any(), any(), any());
+        ReservationReconciliationScheduler flaky = new ReservationReconciliationScheduler(flakyOnce, reservationRepository,
+                slotClient, examinationRepository, failureRecorder, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
+        Booking booking = booking(Reservation::hold, referral -> {
+        });
+        markStale(booking);
+        slot(booking, "BOOKED", booking.reservationId(), null);
+
+        flaky.reconcileReservations();
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.RETRYING);
+        flaky.reconcileReservations();
+
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(failureRepository.findByReservationId(booking.reservationId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("같은 예약의 실패를 동시에 기록해도 행은 1건이고 횟수는 모두 반영된다 (UNIQUE + ON CONFLICT)")
+    void concurrentFailureRecordsAreDeduplicated() throws Exception {
+        Booking booking = booking(Reservation::hold, referral -> {
+        });
+        int threads = 5;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                futures.add(executor.submit(() -> {
+                    start.await();
+                    return failureRecorder.recordFailure(booking.reservationId(), SlotResultType.SLOT_BOOKED,
+                            new BaseException(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE));
+                }));
+            }
+            start.countDown();
+            for (Future<?> future : futures) {
+                future.get(30, TimeUnit.SECONDS);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        Long rows = jdbcTemplate.queryForObject("select count(*) from p_reconciliation_failures where reservation_id = ?",
+                Long.class, booking.reservationId());
+        assertThat(rows).isEqualTo(1);
+        assertThat(failure(booking).getFailureCount()).isEqualTo(threads);
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.MANUAL_REVIEW);
+    }
+
+    @Test
+    @DisplayName("Kafka 경로: 검사가 완료된 의뢰의 HELD 예약에 SlotBooked가 오면 BaseException(재시도 없이 DLT)으로 롤백되고 상태·이력·알림·inbox가 그대로다")
+    void kafkaSlotBookedWithCompletedExaminationRollsBack() {
+        Booking booking = booking(Reservation::hold, referral -> {
+        });
+        examination(booking, booking.reservationId(), ExaminationStatus.COMPLETED);
+
+        assertThatThrownBy(() -> slotResultService.handle(UUID.randomUUID(), SlotResultType.SLOT_BOOKED, booking.reservationId()))
+                .isInstanceOf(BaseException.class)
+                .satisfies(e -> assertThat(((BaseException) e).getErrorCode()).isEqualTo(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE));
+
+        assertUnchangedHeld(booking, ExaminationStatus.COMPLETED, booking.reservationId());
+        assertThat(consumedEventsSinceStart()).isZero();
+    }
+
+    @Test
+    @DisplayName("복구 가능 업무 오류(INVALID_REFERRAL_STATUS)는 즉시 수동 확인으로 보내지 않고 최초 실행 포함 3회까지 시도한 뒤 MANUAL_REVIEW로 전환한다")
+    void recoverableBusinessErrorRetriesUpToThreeTimes() {
+        // 예약은 HELD인데 의뢰가 이미 PENDING이 아니다 → SlotBooked 복구의 의뢰 조건부 확정이 0건이라 INVALID_REFERRAL_STATUS
+        Booking booking = booking(Reservation::hold, Referral::confirm);
+        markStale(booking);
+        slot(booking, "BOOKED", booking.reservationId(), null);
+        double retryBefore = metric("retry_scheduled");
+        double manualBefore = metric("manual_review");
+
+        scheduler.reconcileReservations();
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.RETRYING);
+        assertThat(failure(booking).getFailureCount()).isEqualTo(1);
+        assertThat(failure(booking).getErrorCode()).isEqualTo(ErrorCode.INVALID_REFERRAL_STATUS.name());
+        scheduler.reconcileReservations();
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.RETRYING);
+        scheduler.reconcileReservations();
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.MANUAL_REVIEW);
+        scheduler.reconcileReservations();   // 4회차는 대상에서 빠진다
+
+        assertThat(failure(booking).getFailureCount()).isEqualTo(3);
+        assertThat(metric("retry_scheduled") - retryBefore).isEqualTo(2);
+        assertThat(metric("manual_review") - manualBefore).isEqualTo(1);
+        // 매 시도가 롤백돼 예약·의뢰·이력·Outbox·inbox가 그대로다
+        assertThat(reservationStatus(booking)).isEqualTo(ReservationStatus.HELD);
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.CONFIRMED);
+        assertThat(histories(booking)).isEmpty();
+        assertThat(outboxTypes(booking)).isEmpty();
+        assertThat(consumedEventsSinceStart()).isZero();
+    }
+
+    @Test
+    @DisplayName("같은 예약에 복구 가능 오류 뒤 복구 불가 오류가 오면 즉시 MANUAL_REVIEW, 이후 복구 가능 오류가 와도 RETRYING으로 내려가지 않는다")
+    void manualReviewIsSticky() {
+        Booking booking = booking(Reservation::hold, referral -> {
+        });
+        failureRecorder.recordFailure(booking.reservationId(), SlotResultType.SLOT_BOOKED, new QueryTimeoutException("timeout"));
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.RETRYING);
+
+        failureRecorder.recordFailure(booking.reservationId(), SlotResultType.SLOT_BOOKED,
+                new BaseException(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE));
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.MANUAL_REVIEW);
+        assertThat(failure(booking).getFailureCount()).isEqualTo(2);
+
+        failureRecorder.recordFailure(booking.reservationId(), SlotResultType.SLOT_BOOKED,
+                new BaseException(ErrorCode.INVALID_REFERRAL_STATUS));
+        assertThat(failure(booking).getStatus()).isEqualTo(ReconciliationFailureStatus.MANUAL_REVIEW);
+        Long rows = jdbcTemplate.queryForObject("select count(*) from p_reconciliation_failures where reservation_id = ?",
+                Long.class, booking.reservationId());
+        assertThat(rows).isEqualTo(1);
+    }
+
+    // 자동 복구하지 않은 HELD 예약: 예약·의뢰·검사 그대로, 확정 이력·검사기관 알림·슬롯 명령 Outbox 없음
+    private void assertUnchangedHeld(Booking booking, ExaminationStatus examinationStatus, UUID linkedReservationId) {
+        Reservation reservation = reservationRepository.findById(booking.reservationId()).orElseThrow();
+        assertThat(reservation.getReservationStatus()).isEqualTo(ReservationStatus.HELD);
+        assertThat(reservation.getConfirmedAt()).isNull();
+        assertThat(referralStatus(booking)).isEqualTo(ReferralStatus.PENDING);
+        assertThat(examinationRepository.findByReferralId(booking.referralId())).get()
+                .satisfies(e -> {
+                    assertThat(e.getStatus()).isEqualTo(examinationStatus);
+                    assertThat(e.getReservationId()).isEqualTo(linkedReservationId);
+                });
+        assertThat(histories(booking)).isEmpty();
+        assertThat(institutionNotifications(booking)).isZero();
+        assertThat(outboxTypes(booking)).isEmpty();
+    }
+
+    private ReconciliationFailure failure(Booking booking) {
+        return failureRepository.findByReservationId(booking.reservationId()).orElseThrow();
+    }
+
+    private long institutionNotifications(Booking booking) {
+        Long count = jdbcTemplate.queryForObject("select count(*) from p_institution_notifications where referral_id = ?",
+                Long.class, booking.referralId());
+        return count == null ? 0 : count;
+    }
+
+    private double metric(String outcome) {
+        return meterRegistry.counter("reservation.reconciliation.recovery", "outcome", outcome).count();
     }
 
     // ---------- 픽스처 ----------

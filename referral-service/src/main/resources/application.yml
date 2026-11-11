@@ -54,6 +54,7 @@ itda:
       batch-size: 50
       stale-threshold-minutes: 10
       lookback-hours: 24
+      max-attempts: 3            # 일시 오류 시 최초 실행 포함 최대 시도 횟수 (넘으면 수동 확인 대상)
 
 outbox:
   publish:

@@ -295,6 +295,38 @@ class SlotResultServiceTest {
         verifyNoInteractions(institutionNotificationService);
     }
 
+    @ParameterizedTest(name = "검사 {0}")
+    @EnumSource(value = ExaminationStatus.class, names = {"IN_PROGRESS", "COMPLETED"})
+    @DisplayName("SlotBooked: 의뢰의 검사가 이미 시작·완료됐으면 EXAMINATION_RESERVATION_NOT_CHANGEABLE로 롤백되게 하고 의뢰 확정·이력·검사·알림·inbox를 남기지 않는다")
+    void slotBookedRejectsStartedExamination(ExaminationStatus examinationStatus) {
+        Reservation reservation = stored(ReservationStatus.HELD, referral);
+        givenExamination(referral, reservation, examinationStatus);   // 같은 예약에 연결된 검사 (S2a)
+
+        assertErrorCode(() -> handle("SlotBooked", reservation), ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE);
+
+        assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.PENDING);
+        verify(referralRepository, never()).confirmIfPending(any(), any());
+        verifyNoInteractions(referralHistoryRepository, examinationService, institutionNotificationService,
+                equipmentIncidentService, slotCommandOutbox);
+        verify(consumedEventRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("SlotBooked: 예약 조건부 확정(예약 행 잠금) 뒤에 검사를 잠가 확인한다 (의뢰 → 예약 → 검사 순서)")
+    void slotBookedLocksExaminationAfterReservation() {
+        Reservation reservation = stored(ReservationStatus.HELD, referral);
+        givenExamination(referral, reservation, ExaminationStatus.SCHEDULED);
+
+        handle("SlotBooked", reservation);
+
+        InOrder inOrder = inOrder(referralRepository, reservationRepository, examinationRepository);
+        inOrder.verify(referralRepository).findByIdForUpdate(referral.getId());
+        inOrder.verify(reservationRepository).confirmIfHeld(eq(reservation.getId()), any());
+        inOrder.verify(examinationRepository).findByReferralIdForUpdate(referral.getId());
+        inOrder.verify(referralRepository).confirmIfPending(eq(referral.getId()), any());
+        assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
+    }
+
     @ParameterizedTest(name = "{0}: 예약이 {1}이면 무시")
     @CsvSource({
             "SlotHeld, HELD", "SlotHeld, CONFIRMED", "SlotHeld, FAILED", "SlotHeld, BLOCKED", "SlotHeld, CANCELED",
