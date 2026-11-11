@@ -101,6 +101,14 @@ public class Slot extends BaseEntity {
         }
     }
 
+    public void reopenAfterRecovery() {
+        if (status != SlotStatus.UNAVAILABLE || reservationId != null || equipmentDowntimeId == null) {
+            throw new IllegalStateException("중단으로 닫힌 빈 슬롯만 재개방할 수 있습니다.");
+        }
+        equipmentDowntimeId = null;
+        status = SlotStatus.AVAILABLE;
+    }
+
     public boolean isHeldBy(UUID reservationId) {
         return this.status == SlotStatus.HELD && reservationId.equals(this.reservationId);
     }
