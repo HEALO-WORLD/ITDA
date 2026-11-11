@@ -3,7 +3,7 @@ package healoworld.referral_service.presentation.controller;
 import healoworld.referral_service.application.service.EquipmentIncidentQueryService;
 import healoworld.referral_service.domain.enums.EquipmentIncidentStatus;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -68,7 +68,7 @@ class EquipmentIncidentControllerTest {
         UUID otherInstitutionId = UUID.randomUUID();
         EquipmentIncidentSearchCondition expected = new EquipmentIncidentSearchCondition(otherInstitutionId,
                 equipmentId, EquipmentIncidentStatus.OCCURRED, 1, 30);
-        given(equipmentIncidentQueryService.getIncidents(RoleType.ADMIN, institutionId, expected)).willReturn(
+        given(equipmentIncidentQueryService.getIncidents(Role.ADMIN, institutionId, expected)).willReturn(
                 new PagedResponse<>(List.of(new EquipmentIncidentResponse(incidentId, equipmentId, otherInstitutionId,
                         "가상 장애 사유", EquipmentIncidentStatus.OCCURRED, OCCURRED_AT, OCCURRED_AT,
                         OCCURRED_AT.plusHours(3), OCCURRED_AT)), 31, 2, 30, 1));
@@ -91,7 +91,7 @@ class EquipmentIncidentControllerTest {
     @Test
     @DisplayName("상세: 명세 필드와 영향 구간·처리 건수를 200으로 돌려준다")
     void detail() throws Exception {
-        given(equipmentIncidentQueryService.getIncident(RoleType.EXAMINER, institutionId, incidentId)).willReturn(
+        given(equipmentIncidentQueryService.getIncident(Role.EXAMINER, institutionId, incidentId)).willReturn(
                 new EquipmentIncidentDetailResponse(incidentId, equipmentId, institutionId, "가상 장애 사유",
                         EquipmentIncidentStatus.OCCURRED, OCCURRED_AT, OCCURRED_AT, OCCURRED_AT.plusHours(3),
                         10, 3, 4, 1, 2, OCCURRED_AT, OCCURRED_AT));
@@ -115,7 +115,7 @@ class EquipmentIncidentControllerTest {
     void referrals() throws Exception {
         UUID referralId = UUID.randomUUID();
         UUID reservationId = UUID.randomUUID();
-        given(equipmentIncidentQueryService.getIncidentReferrals(RoleType.EXAMINER, institutionId, incidentId,
+        given(equipmentIncidentQueryService.getIncidentReferrals(Role.EXAMINER, institutionId, incidentId,
                 new IncidentReferralSearchCondition(IncidentProcessingStatus.FAILED, 0, 10))).willReturn(
                 new PagedResponse<>(List.of(new IncidentReferralResponse(UUID.randomUUID(), incidentId, referralId,
                         reservationId, IncidentProcessingStatus.FAILED, 1, OCCURRED_AT, null, "[RETRYABLE] 가상 오류",
@@ -137,7 +137,7 @@ class EquipmentIncidentControllerTest {
     @Test
     @DisplayName("영향 의뢰: 수동 확인 대상은 processingStatus SUCCEEDED와 manualReviewRequired true가 함께 내려간다")
     void referralManualReviewRequired() throws Exception {
-        given(equipmentIncidentQueryService.getIncidentReferrals(RoleType.EXAMINER, institutionId, incidentId,
+        given(equipmentIncidentQueryService.getIncidentReferrals(Role.EXAMINER, institutionId, incidentId,
                 new IncidentReferralSearchCondition(null, 0, 10))).willReturn(
                 new PagedResponse<>(List.of(new IncidentReferralResponse(UUID.randomUUID(), incidentId,
                         UUID.randomUUID(), UUID.randomUUID(), IncidentProcessingStatus.SUCCEEDED, 0, null, null,
@@ -198,7 +198,7 @@ class EquipmentIncidentControllerTest {
     @Test
     @DisplayName("REQUESTER 조회는 403 EQUIPMENT_INCIDENT_ACCESS_DENIED")
     void requesterIsForbidden() throws Exception {
-        given(equipmentIncidentQueryService.getIncidents(eq(RoleType.REQUESTER), eq(institutionId), any()))
+        given(equipmentIncidentQueryService.getIncidents(eq(Role.REQUESTER), eq(institutionId), any()))
                 .willThrow(new BaseException(ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED));
 
         mockMvc.perform(withAuth(get(BASE), "REQUESTER"))
@@ -209,7 +209,7 @@ class EquipmentIncidentControllerTest {
     @Test
     @DisplayName("없는 장애이거나 다른 기관의 장애면 404 EQUIPMENT_INCIDENT_NOT_FOUND")
     void notFound() throws Exception {
-        given(equipmentIncidentQueryService.getIncident(RoleType.EXAMINER, institutionId, incidentId))
+        given(equipmentIncidentQueryService.getIncident(Role.EXAMINER, institutionId, incidentId))
                 .willThrow(new BaseException(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND));
 
         mockMvc.perform(withAuth(get(BASE + "/{incidentId}", incidentId), "EXAMINER"))
@@ -222,7 +222,7 @@ class EquipmentIncidentControllerTest {
     @Test
     @DisplayName("현황: /summary는 장애 상세(/{incidentId})로 가지 않고, 헤더를 Service로 넘겨 세 값을 200으로 돌려준다")
     void summary() throws Exception {
-        given(equipmentIncidentQueryService.getSummary(RoleType.EXAMINER, institutionId, null))
+        given(equipmentIncidentQueryService.getSummary(Role.EXAMINER, institutionId, null))
                 .willReturn(new EquipmentIncidentSummaryResponse(institutionId, OCCURRED_AT, 1, 7, 2));
 
         mockMvc.perform(withAuth(get(BASE + "/summary"), "EXAMINER"))
@@ -240,7 +240,7 @@ class EquipmentIncidentControllerTest {
     @DisplayName("현황: ADMIN의 institutionId 쿼리 파라미터가 Service로 전달된다")
     void summaryAdminInstitutionParam() throws Exception {
         UUID targetInstitutionId = UUID.randomUUID();
-        given(equipmentIncidentQueryService.getSummary(RoleType.ADMIN, institutionId, targetInstitutionId))
+        given(equipmentIncidentQueryService.getSummary(Role.ADMIN, institutionId, targetInstitutionId))
                 .willReturn(new EquipmentIncidentSummaryResponse(targetInstitutionId, OCCURRED_AT, 0, 0, 0));
 
         mockMvc.perform(withAuth(get(BASE + "/summary"), "ADMIN")
@@ -253,7 +253,7 @@ class EquipmentIncidentControllerTest {
     @Test
     @DisplayName("현황: ADMIN이 institutionId 없이 요청하면 400 VALIDATION_FAILED")
     void summaryAdminWithoutInstitution() throws Exception {
-        given(equipmentIncidentQueryService.getSummary(RoleType.ADMIN, institutionId, null))
+        given(equipmentIncidentQueryService.getSummary(Role.ADMIN, institutionId, null))
                 .willThrow(new BaseException(ErrorCode.VALIDATION_FAILED));
 
         mockMvc.perform(withAuth(get(BASE + "/summary"), "ADMIN"))
@@ -264,7 +264,7 @@ class EquipmentIncidentControllerTest {
     @Test
     @DisplayName("현황: REQUESTER는 403, 헤더 누락은 400 MISSING_HEADER, institutionId 형식 오류는 400 INVALID_INPUT")
     void summaryErrors() throws Exception {
-        given(equipmentIncidentQueryService.getSummary(eq(RoleType.REQUESTER), eq(institutionId), any()))
+        given(equipmentIncidentQueryService.getSummary(eq(Role.REQUESTER), eq(institutionId), any()))
                 .willThrow(new BaseException(ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED));
 
         mockMvc.perform(withAuth(get(BASE + "/summary"), "REQUESTER"))

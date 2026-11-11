@@ -1,6 +1,6 @@
 package healoworld.referral_service.global.deadletter;
 
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -61,9 +61,9 @@ class DeadLetterServiceTest {
     // ── 권한 ──
 
     @ParameterizedTest
-    @EnumSource(value = RoleType.class, names = {"REQUESTER", "EXAMINER"})
+    @EnumSource(value = Role.class, names = {"REQUESTER", "EXAMINER"})
     @DisplayName("ADMIN이 아니면 조회·재처리·무시 모두 403이고 저장소·Kafka를 건드리지 않는다")
-    void rejectsNonAdmin(RoleType role) {
+    void rejectsNonAdmin(Role role) {
         UUID id = UUID.randomUUID();
 
         assertErrorCode(() -> deadLetterService.getDeadLetters(role, new DeadLetterSearchCondition(null, null, null)),
@@ -84,7 +84,7 @@ class DeadLetterServiceTest {
         given(deadLetterEventRepository.findAll(any(Pageable.class))).willReturn(new PageImpl<>(List.of(event)));
 
         PagedResponse<DeadLetterResponse> response =
-                deadLetterService.getDeadLetters(RoleType.ADMIN, new DeadLetterSearchCondition(null, 2, 999));
+                deadLetterService.getDeadLetters(Role.ADMIN, new DeadLetterSearchCondition(null, 2, 999));
 
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
         verify(deadLetterEventRepository).findAll(captor.capture());
@@ -106,7 +106,7 @@ class DeadLetterServiceTest {
         given(deadLetterEventRepository.findByDeadLetterStatus(eq(DeadLetterStatus.PENDING), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of()));
 
-        deadLetterService.getDeadLetters(RoleType.ADMIN, new DeadLetterSearchCondition(DeadLetterStatus.PENDING, 0, 30));
+        deadLetterService.getDeadLetters(Role.ADMIN, new DeadLetterSearchCondition(DeadLetterStatus.PENDING, 0, 30));
 
         verify(deadLetterEventRepository, never()).findAll(any(Pageable.class));
     }
@@ -117,7 +117,7 @@ class DeadLetterServiceTest {
         DeadLetterEvent event = pendingEvent("evt-1", "SlotHeld");
         given(deadLetterEventRepository.findById(event.getId())).willReturn(Optional.of(event));
 
-        DeadLetterDetailResponse response = deadLetterService.getDeadLetter(RoleType.ADMIN, event.getId());
+        DeadLetterDetailResponse response = deadLetterService.getDeadLetter(Role.ADMIN, event.getId());
 
         assertThat(response.messageKey()).isEqualTo(KEY);
         assertThat(response.payload()).isEqualTo(PAYLOAD);
@@ -130,7 +130,7 @@ class DeadLetterServiceTest {
         UUID id = UUID.randomUUID();
         given(deadLetterEventRepository.findById(id)).willReturn(Optional.empty());
 
-        assertErrorCode(() -> deadLetterService.getDeadLetter(RoleType.ADMIN, id), ErrorCode.DEAD_LETTER_NOT_FOUND);
+        assertErrorCode(() -> deadLetterService.getDeadLetter(Role.ADMIN, id), ErrorCode.DEAD_LETTER_NOT_FOUND);
     }
 
     // ── 재처리 ──
@@ -141,7 +141,7 @@ class DeadLetterServiceTest {
         DeadLetterEvent event = givenLocked(pendingEvent("evt-1", "SlotHeld"));
         given(kafkaTemplate.send(any(ProducerRecord.class))).willReturn(CompletableFuture.completedFuture(null));
 
-        DeadLetterDetailResponse response = deadLetterService.reprocess(ADMIN_ID, RoleType.ADMIN, event.getId());
+        DeadLetterDetailResponse response = deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, event.getId());
 
         ProducerRecord<String, String> sent = captureSent();
         assertThat(sent.topic()).isEqualTo(ORIGINAL_TOPIC);
@@ -162,7 +162,7 @@ class DeadLetterServiceTest {
         DeadLetterEvent event = givenLocked(pendingEvent(null, null));
         given(kafkaTemplate.send(any(ProducerRecord.class))).willReturn(CompletableFuture.completedFuture(null));
 
-        deadLetterService.reprocess(ADMIN_ID, RoleType.ADMIN, event.getId());
+        deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, event.getId());
 
         assertThat(headerNames(captureSent())).isEmpty();
     }
@@ -174,7 +174,7 @@ class DeadLetterServiceTest {
         given(kafkaTemplate.send(any(ProducerRecord.class)))
                 .willReturn(CompletableFuture.failedFuture(new KafkaException("broker down")));
 
-        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, RoleType.ADMIN, event.getId()),
+        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, event.getId()),
                 ErrorCode.DEAD_LETTER_REPUBLISH_FAILED);
 
         assertThat(event.getDeadLetterStatus()).isEqualTo(DeadLetterStatus.PENDING);
@@ -190,7 +190,7 @@ class DeadLetterServiceTest {
         given(future.get(anyLong(), any(TimeUnit.class))).willThrow(new TimeoutException());
         given(kafkaTemplate.send(any(ProducerRecord.class))).willReturn(future);
 
-        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, RoleType.ADMIN, event.getId()),
+        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, event.getId()),
                 ErrorCode.DEAD_LETTER_REPUBLISH_FAILED);
 
         assertThat(event.getDeadLetterStatus()).isEqualTo(DeadLetterStatus.PENDING);
@@ -206,7 +206,7 @@ class DeadLetterServiceTest {
         given(kafkaTemplate.send(any(ProducerRecord.class))).willReturn(future);
 
         try {
-            assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, RoleType.ADMIN, event.getId()),
+            assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, event.getId()),
                     ErrorCode.DEAD_LETTER_REPUBLISH_FAILED);
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
         } finally {
@@ -222,7 +222,7 @@ class DeadLetterServiceTest {
         event.markIgnored(UUID.randomUUID());
         givenLocked(event);
 
-        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, RoleType.ADMIN, event.getId()),
+        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, event.getId()),
                 ErrorCode.DEAD_LETTER_ALREADY_RESOLVED);
 
         verifyNoInteractions(kafkaTemplate);
@@ -235,7 +235,7 @@ class DeadLetterServiceTest {
         UUID id = UUID.randomUUID();
         given(deadLetterEventRepository.findByIdForUpdate(id)).willReturn(Optional.empty());
 
-        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, RoleType.ADMIN, id), ErrorCode.DEAD_LETTER_NOT_FOUND);
+        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, id), ErrorCode.DEAD_LETTER_NOT_FOUND);
         verifyNoInteractions(kafkaTemplate);
     }
 
@@ -246,7 +246,7 @@ class DeadLetterServiceTest {
     void ignoreMarksIgnored() {
         DeadLetterEvent event = givenLocked(pendingEvent("evt-1", "SlotHeld"));
 
-        DeadLetterDetailResponse response = deadLetterService.ignore(ADMIN_ID, RoleType.ADMIN, event.getId());
+        DeadLetterDetailResponse response = deadLetterService.ignore(ADMIN_ID, Role.ADMIN, event.getId());
 
         assertThat(response.status()).isEqualTo(DeadLetterStatus.IGNORED);
         assertThat(response.resolvedBy()).isEqualTo(ADMIN_ID);
@@ -262,7 +262,7 @@ class DeadLetterServiceTest {
         event.markReprocessed(firstAdmin);
         givenLocked(event);
 
-        assertErrorCode(() -> deadLetterService.ignore(ADMIN_ID, RoleType.ADMIN, event.getId()),
+        assertErrorCode(() -> deadLetterService.ignore(ADMIN_ID, Role.ADMIN, event.getId()),
                 ErrorCode.DEAD_LETTER_ALREADY_RESOLVED);
 
         assertThat(event.getDeadLetterStatus()).isEqualTo(DeadLetterStatus.REPROCESSED);
@@ -275,7 +275,7 @@ class DeadLetterServiceTest {
         UUID id = UUID.randomUUID();
         given(deadLetterEventRepository.findByIdForUpdate(id)).willReturn(Optional.empty());
 
-        assertErrorCode(() -> deadLetterService.ignore(ADMIN_ID, RoleType.ADMIN, id), ErrorCode.DEAD_LETTER_NOT_FOUND);
+        assertErrorCode(() -> deadLetterService.ignore(ADMIN_ID, Role.ADMIN, id), ErrorCode.DEAD_LETTER_NOT_FOUND);
     }
 
     // ── 도우미 ──

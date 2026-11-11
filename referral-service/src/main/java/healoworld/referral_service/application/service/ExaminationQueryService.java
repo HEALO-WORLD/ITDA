@@ -3,7 +3,7 @@ package healoworld.referral_service.application.service;
 import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -46,12 +46,12 @@ public class ExaminationQueryService {
     // 검사기관별 검사 목록 조회
     public PagedResponse<ExaminationListResponse> getExaminations(
             UUID institutionId,
-            RoleType role,
+            Role role,
             Pageable pageable
     ) {
 
         // 1. EXAMINER 역할 검증
-        if (role != RoleType.EXAMINER) {
+        if (role != Role.EXAMINER) {
             throw new BaseException(ErrorCode.EXAMINATION_ACCESS_DENIED);
         }
 

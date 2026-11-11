@@ -3,7 +3,7 @@ package healoworld.referral_service.presentation.controller;
 import healoworld.referral_service.application.service.ExaminationResultService;
 import healoworld.referral_service.application.service.ReferralHistoryService;
 import healoworld.referral_service.application.service.ReferralService;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.ErrorResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
@@ -93,7 +93,7 @@ public class ReferralController {
     @PostMapping("/{referralId}/reschedule")
     public ResponseEntity<ApiResponse<ReservationResponse>> createRescheduledReservation(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "의뢰 ID") @PathVariable("referralId") UUID referralId,
             @RequestBody @Valid CreateReservationRequest request
     ) {
@@ -116,7 +116,7 @@ public class ReferralController {
     @GetMapping("/{referralId}")
     public ResponseEntity<ApiResponse<ReferralResponse>> getReferral(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "의뢰 ID") @PathVariable("referralId") UUID referralId
     ) {
         ReferralResponse response = referralService.getReferral(institutionId, referralId, role);
@@ -138,7 +138,7 @@ public class ReferralController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<ReferralResponse>>> getReferrals(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @ParameterObject @ModelAttribute ReferralSearchCondition cond
     ) {
         PagedResponse<ReferralResponse> response = referralService.getReferrals(institutionId, cond, role);
@@ -159,7 +159,7 @@ public class ReferralController {
     @GetMapping("/{referralId}/histories")
     public ResponseEntity<ApiResponse<List<ReferralHistoryResponse>>> getReferralHistories(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "의뢰 ID") @PathVariable("referralId") UUID referralId
     ) {
         List<ReferralHistoryResponse> response = referralHistoryService.getReferralHistories(institutionId, referralId, role);
@@ -182,7 +182,7 @@ public class ReferralController {
     @DeleteMapping("/{referralId}")
     public ResponseEntity<ApiResponse<Void>> deleteReferral(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "의뢰 ID") @PathVariable("referralId") UUID referralId
     ) {
         referralService.deleteReferral(userId, referralId, role);
@@ -210,7 +210,7 @@ public class ReferralController {
             @RequestHeader("X-Institution-Id") UUID institutionId,
 
             @Parameter(description = "요청자 역할")
-            @RequestHeader("X-Role") RoleType role,
+            @RequestHeader("X-Role") Role role,
 
             @Parameter(description = "의뢰 ID")
             @PathVariable("referralId") UUID referralId

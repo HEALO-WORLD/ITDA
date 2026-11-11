@@ -4,7 +4,7 @@ import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.ExaminationResult;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
@@ -111,10 +111,10 @@ public class ExaminationResultService {
     public ExaminationResultResponse getResultByReferralId(
             UUID referralId,
             UUID institutionId,
-            RoleType role
+            Role role
     ) {
         // REQUESTER 역할만 허용
-        if (role != RoleType.REQUESTER) {
+        if (role != Role.REQUESTER) {
             throw new BaseException(
                     ErrorCode.EXAMINATION_RESULT_READ_ACCESS_DENIED
             );
@@ -151,10 +151,10 @@ public class ExaminationResultService {
     public ExaminationResultResponse getResultByExaminationId(
             UUID examinationId,
             UUID institutionId,
-            RoleType role
+            Role role
     ) {
         // EXAMINER 역할만 허용
-        if (role != RoleType.EXAMINER) {
+        if (role != Role.EXAMINER) {
             throw new BaseException(
                     ErrorCode.EXAMINATION_RESULT_READ_ACCESS_DENIED
             );

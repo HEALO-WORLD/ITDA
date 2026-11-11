@@ -2,7 +2,7 @@ package healoworld.referral_service.infrastructure.repository;
 
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.presentation.dto.request.ReservationSearchCondition;
 import healoworld.referral_service.support.RepositoryTestSupport;
 import jakarta.persistence.EntityManager;
@@ -59,25 +59,25 @@ class ReservationRepositorySearchTest extends RepositoryTestSupport {
     @Test
     @DisplayName("의뢰기관은 자기 기관 의뢰의 예약을 조회한다")
     void referringInstitution() {
-        assertThat(ids(search(condition(), REFERRING_A, RoleType.REQUESTER)))
+        assertThat(ids(search(condition(), REFERRING_A, Role.REQUESTER)))
                 .containsExactlyInAnyOrder(a1AtX.getId(), a2AtY.getId());
-        assertThat(ids(search(condition(), REFERRING_B, RoleType.REQUESTER)))
+        assertThat(ids(search(condition(), REFERRING_B, Role.REQUESTER)))
                 .containsExactly(b1AtX.getId());
     }
 
     @Test
     @DisplayName("검사기관은 자기 기관에서 진행하는 예약을 조회한다")
     void examInstitution() {
-        assertThat(ids(search(condition(), EXAM_X, RoleType.EXAMINER)))
+        assertThat(ids(search(condition(), EXAM_X, Role.EXAMINER)))
                 .containsExactlyInAnyOrder(a1AtX.getId(), b1AtX.getId());
-        assertThat(ids(search(condition(), EXAM_Y, RoleType.EXAMINER)))
+        assertThat(ids(search(condition(), EXAM_Y, Role.EXAMINER)))
                 .containsExactly(a2AtY.getId());
     }
 
     @Test
     @DisplayName("관계없는 기관은 아무 예약도 조회되지 않는다")
     void unrelatedInstitution() {
-        Page<Reservation> result = search(condition(), UUID.randomUUID(), RoleType.REQUESTER);
+        Page<Reservation> result = search(condition(), UUID.randomUUID(), Role.REQUESTER);
 
         assertThat(result.getContent()).isEmpty();
         assertThat(result.getTotalElements()).isZero();
@@ -89,15 +89,15 @@ class ReservationRepositorySearchTest extends RepositoryTestSupport {
         ReservationSearchCondition byA1 = condition(null, USER_A1, null, null);
         ReservationSearchCondition byB1 = condition(null, USER_B1, null, null);
 
-        assertThat(ids(search(byA1, REFERRING_A, RoleType.REQUESTER))).containsExactly(a1AtX.getId());
-        assertThat(ids(search(byB1, REFERRING_A, RoleType.REQUESTER))).isEmpty();
-        assertThat(ids(search(byB1, EXAM_X, RoleType.EXAMINER))).containsExactly(b1AtX.getId());
+        assertThat(ids(search(byA1, REFERRING_A, Role.REQUESTER))).containsExactly(a1AtX.getId());
+        assertThat(ids(search(byB1, REFERRING_A, Role.REQUESTER))).isEmpty();
+        assertThat(ids(search(byB1, EXAM_X, Role.EXAMINER))).containsExactly(b1AtX.getId());
     }
 
     @Test
     @DisplayName("관리자는 모든 예약을 조회한다")
     void admin() {
-        Page<Reservation> result = search(condition(), UUID.randomUUID(), RoleType.ADMIN);
+        Page<Reservation> result = search(condition(), UUID.randomUUID(), Role.ADMIN);
 
         assertThat(ids(result)).containsExactlyInAnyOrder(a1AtX.getId(), a2AtY.getId(), b1AtX.getId());
         assertThat(result.getTotalElements()).isEqualTo(3);
@@ -110,7 +110,7 @@ class ReservationRepositorySearchTest extends RepositoryTestSupport {
         em.flush();
         em.clear();
 
-        Page<Reservation> result = search(condition(a1Referral.getId(), null, null, null), REFERRING_A, RoleType.REQUESTER);
+        Page<Reservation> result = search(condition(a1Referral.getId(), null, null, null), REFERRING_A, Role.REQUESTER);
 
         assertThat(ids(result)).containsExactlyInAnyOrder(a1AtX.getId(), retry.getId());
     }
@@ -118,7 +118,7 @@ class ReservationRepositorySearchTest extends RepositoryTestSupport {
     @Test
     @DisplayName("검사일 기간으로 검색된다 (양 끝 포함)")
     void examDateRange() {
-        Page<Reservation> result = search(condition(null, null, DAY_1, DAY_2), UUID.randomUUID(), RoleType.ADMIN);
+        Page<Reservation> result = search(condition(null, null, DAY_1, DAY_2), UUID.randomUUID(), Role.ADMIN);
 
         assertThat(ids(result)).containsExactlyInAnyOrder(a1AtX.getId(), a2AtY.getId());
     }
@@ -133,7 +133,7 @@ class ReservationRepositorySearchTest extends RepositoryTestSupport {
                 UUID.randomUUID(), examDate, examDate, examDate.plusHours(1)));
     }
 
-    private Page<Reservation> search(ReservationSearchCondition cond, UUID institutionId, RoleType role) {
+    private Page<Reservation> search(ReservationSearchCondition cond, UUID institutionId, Role role) {
         return reservationRepository.search(cond, institutionId, role, cond.toPageable());
     }
 

@@ -5,7 +5,7 @@ import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
@@ -55,7 +55,7 @@ class ReferralHistoryServiceTest {
                 .willReturn(List.of(created, confirmed));
 
         List<ReferralHistoryResponse> result =
-                referralHistoryService.getReferralHistories(referral.getReferringInstitutionId(), referral.getId(), RoleType.REQUESTER);
+                referralHistoryService.getReferralHistories(referral.getReferringInstitutionId(), referral.getId(), Role.REQUESTER);
 
         assertThat(result).extracting(ReferralHistoryResponse::getToStatus)
                 .containsExactly(ReferralStatus.PENDING, ReferralStatus.CONFIRMED);
@@ -74,7 +74,7 @@ class ReferralHistoryServiceTest {
         given(referralHistoryRepository.findAllByReferralIdOrderByOccurredAtAsc(referral.getId())).willReturn(List.of());
 
         List<ReferralHistoryResponse> result =
-                referralHistoryService.getReferralHistories(UUID.randomUUID(), referral.getId(), RoleType.ADMIN);
+                referralHistoryService.getReferralHistories(UUID.randomUUID(), referral.getId(), Role.ADMIN);
 
         assertThat(result).isEmpty();
     }
@@ -85,7 +85,7 @@ class ReferralHistoryServiceTest {
         Referral referral = referral(USER_ID);
         given(referralRepository.findById(referral.getId())).willReturn(Optional.of(referral));
 
-        assertThatThrownBy(() -> referralHistoryService.getReferralHistories(UUID.randomUUID(), referral.getId(), RoleType.REQUESTER))
+        assertThatThrownBy(() -> referralHistoryService.getReferralHistories(UUID.randomUUID(), referral.getId(), Role.REQUESTER))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.REFERRAL_NOT_FOUND);
         verifyNoInteractions(referralHistoryRepository);
@@ -97,7 +97,7 @@ class ReferralHistoryServiceTest {
         UUID referralId = UUID.randomUUID();
         given(referralRepository.findById(referralId)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> referralHistoryService.getReferralHistories(UUID.randomUUID(), referralId, RoleType.ADMIN))
+        assertThatThrownBy(() -> referralHistoryService.getReferralHistories(UUID.randomUUID(), referralId, Role.ADMIN))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.REFERRAL_NOT_FOUND);
         verifyNoInteractions(referralHistoryRepository);

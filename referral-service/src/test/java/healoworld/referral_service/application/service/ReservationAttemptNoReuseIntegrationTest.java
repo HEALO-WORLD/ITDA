@@ -6,7 +6,7 @@ import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
@@ -378,7 +378,7 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
     @Test
     @DisplayName("예약 취소는 그대로 동작하고 예약 행을 삭제하지 않는다 (예약·의뢰 CANCELED, deleted_at 없음)")
     void cancelKeepsReservationRow() {
-        reservationService.cancelReservation(userId, institutionId, RoleType.REQUESTER, firstReservationId);
+        reservationService.cancelReservation(userId, institutionId, Role.REQUESTER, firstReservationId);
 
         assertThat(reservationStatus(firstReservationId)).isEqualTo(ReservationStatus.CANCELED);
         assertThat(referralStatus()).isEqualTo(ReferralStatus.CANCELED);
@@ -517,7 +517,7 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
     void step4ConfirmedAndCanceledExcluded() {
         assertRescheduleCounts(0, 0);   // CONFIRMED
 
-        reservationService.cancelReservation(userId, institutionId, RoleType.REQUESTER, firstReservationId);
+        reservationService.cancelReservation(userId, institutionId, Role.REQUESTER, firstReservationId);
         assertThat(referralStatus()).isEqualTo(ReferralStatus.CANCELED);
         assertRescheduleCounts(0, 0);
     }
@@ -547,7 +547,7 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
                 .endTime(retryStartsAt().plusHours(1))
                 .build();
         givenEquipmentOwnedBy(request);
-        return referralService.createRescheduledReservation(userId, RoleType.REQUESTER, referralId, request).getId();
+        return referralService.createRescheduledReservation(userId, Role.REQUESTER, referralId, request).getId();
     }
 
     // Slot의 HOLD 성공 → 확정 결과를 차례로 받는다: 예약 CONFIRMED, 의뢰 CONFIRMED
@@ -629,7 +629,7 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
 
     // stubbing 없이 재예약만 호출한다 (여러 스레드에서 동시에 불러도 안전)
     private UUID reschedule(CreateReservationRequest request) {
-        return referralService.createRescheduledReservation(userId, RoleType.REQUESTER, referralId, request).getId();
+        return referralService.createRescheduledReservation(userId, Role.REQUESTER, referralId, request).getId();
     }
 
     private void slotResult(SlotResultType type, UUID reservationId) {

@@ -1,7 +1,7 @@
 package healoworld.referral_service.presentation.controller;
 
 import healoworld.referral_service.application.service.ReservationService;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.ErrorResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
@@ -41,7 +41,7 @@ public class ReservationController {
     @GetMapping("/{reservationId}")
     public ResponseEntity<ApiResponse<ReservationResponse>> getReservation(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "예약 ID") @PathVariable("reservationId") UUID reservationId
     ) {
         ReservationResponse response = reservationService.getReservation(institutionId, reservationId, role);
@@ -63,7 +63,7 @@ public class ReservationController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<ReservationResponse>>> getReservations(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @ParameterObject @ModelAttribute ReservationSearchCondition cond
     ) {
         PagedResponse<ReservationResponse> response = reservationService.getReservations(institutionId, cond, role);
@@ -98,7 +98,7 @@ public class ReservationController {
     public ResponseEntity<ApiResponse<Void>> cancelReservation(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "예약 ID") @PathVariable("reservationId") UUID reservationId
     ) {
         reservationService.cancelReservation(userId, institutionId, role, reservationId);

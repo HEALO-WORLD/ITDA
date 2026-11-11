@@ -1,6 +1,6 @@
 package healoworld.referral_service.global.deadletter;
 
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -72,7 +72,7 @@ class DeadLetterAdminControllerTest {
         @Test
         @DisplayName("status·page·size가 검색 조건으로 바인딩되고, 역할을 Service에 넘겨 PagedResponse로 200을 돌려준다")
         void bindsConditionAndPages() throws Exception {
-            given(deadLetterService.getDeadLetters(eq(RoleType.ADMIN), any(DeadLetterSearchCondition.class)))
+            given(deadLetterService.getDeadLetters(eq(Role.ADMIN), any(DeadLetterSearchCondition.class)))
                     .willReturn(new PagedResponse<>(List.of(summary(DeadLetterStatus.PENDING)), 31, 2, 30, 1));
 
             mockMvc.perform(get(BASE)
@@ -142,7 +142,7 @@ class DeadLetterAdminControllerTest {
         @Test
         @DisplayName("ADMIN이 아니어서 Service가 거부하면 403 ADMIN_ONLY")
         void notAdmin() throws Exception {
-            given(deadLetterService.getDeadLetters(eq(RoleType.EXAMINER), any()))
+            given(deadLetterService.getDeadLetters(eq(Role.EXAMINER), any()))
                     .willThrow(new BaseException(ErrorCode.ADMIN_ONLY));
 
             mockMvc.perform(get(BASE).header("X-Role", "EXAMINER"))
@@ -152,7 +152,7 @@ class DeadLetterAdminControllerTest {
 
         private DeadLetterSearchCondition capturedCondition() {
             ArgumentCaptor<DeadLetterSearchCondition> captor = ArgumentCaptor.forClass(DeadLetterSearchCondition.class);
-            then(deadLetterService).should().getDeadLetters(eq(RoleType.ADMIN), captor.capture());
+            then(deadLetterService).should().getDeadLetters(eq(Role.ADMIN), captor.capture());
             return captor.getValue();
         }
     }
@@ -168,7 +168,7 @@ class DeadLetterAdminControllerTest {
         @Test
         @DisplayName("200과 key·payload 원문을 포함한 상세를 돌려준다")
         void ok() throws Exception {
-            given(deadLetterService.getDeadLetter(RoleType.ADMIN, deadLetterId))
+            given(deadLetterService.getDeadLetter(Role.ADMIN, deadLetterId))
                     .willReturn(detail(DeadLetterStatus.PENDING, null));
 
             mockMvc.perform(get(BASE + "/{deadLetterId}", deadLetterId).header("X-Role", "ADMIN"))
@@ -216,7 +216,7 @@ class DeadLetterAdminControllerTest {
         @Test
         @DisplayName("재처리: 200과 REPROCESSED 상세를 돌려주고, 관리자 ID·역할·메시지 ID를 Service에 넘긴다")
         void reprocess() throws Exception {
-            given(deadLetterService.reprocess(adminId, RoleType.ADMIN, deadLetterId))
+            given(deadLetterService.reprocess(adminId, Role.ADMIN, deadLetterId))
                     .willReturn(detail(DeadLetterStatus.REPROCESSED, adminId));
 
             mockMvc.perform(resolveRequest("reprocess"))
@@ -230,7 +230,7 @@ class DeadLetterAdminControllerTest {
         @Test
         @DisplayName("무시: 200과 IGNORED 상세를 돌려주고, 관리자 ID·역할·메시지 ID를 Service에 넘긴다")
         void ignore() throws Exception {
-            given(deadLetterService.ignore(adminId, RoleType.ADMIN, deadLetterId))
+            given(deadLetterService.ignore(adminId, Role.ADMIN, deadLetterId))
                     .willReturn(detail(DeadLetterStatus.IGNORED, adminId));
 
             mockMvc.perform(resolveRequest("ignore"))

@@ -9,7 +9,7 @@ import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.outbox.OutboxEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
@@ -127,9 +127,9 @@ class AuthHeaderContractTest {
     // ===== 헤더 계약 =====
 
     @ParameterizedTest
-    @EnumSource(RoleType.class)
+    @EnumSource(Role.class)
     @DisplayName("X-Role의 세 역할 값이 모두 받아들여지고 자기 기관 의뢰를 조회한다")
-    void allRolesAreAccepted(RoleType role) throws Exception {
+    void allRolesAreAccepted(Role role) throws Exception {
         mockMvc.perform(get("/api/v1/referrals/{id}", othersReferral.getId())
                         .header(INSTITUTION_ID, othersReferral.getReferringInstitutionId().toString())
                         .header(ROLE, role.name()))
@@ -137,9 +137,9 @@ class AuthHeaderContractTest {
     }
 
     @Test
-    @DisplayName("RoleType은 Auth의 역할 값과 일치한다")
+    @DisplayName("Role은 Auth의 역할 값과 일치한다")
     void roleValuesMatchAuth() {
-        assertThat(RoleType.values()).extracting(Enum::name)
+        assertThat(Role.values()).extracting(Enum::name)
                 .containsExactlyInAnyOrder("REQUESTER", "EXAMINER", "ADMIN");
     }
 
@@ -211,7 +211,7 @@ class AuthHeaderContractTest {
                         .header(FORGED_ROLE, "ADMIN"))
                 .andExpect(status().isOk());
 
-        then(referralRepository).should().search(any(), eq(requesterInstitutionId), eq(RoleType.REQUESTER), any());
+        then(referralRepository).should().search(any(), eq(requesterInstitutionId), eq(Role.REQUESTER), any());
     }
 
     @Test
@@ -261,15 +261,15 @@ class AuthHeaderContractTest {
                         .header(FORGED_ROLE, "ADMIN"))
                 .andExpect(status().isOk());
 
-        then(reservationRepository).should().search(any(), eq(requesterInstitutionId), eq(RoleType.EXAMINER), any());
+        then(reservationRepository).should().search(any(), eq(requesterInstitutionId), eq(Role.EXAMINER), any());
     }
 
     // 예약 삭제 API는 제공하지 않는다. Gateway를 거치지 않고 직접 호출해도 어떤 역할이든 405이고 예약을 읽거나 바꾸지 않는다
     // (취소된 예약 = 예전 정책에서 삭제할 수 있던 상태로 확인)
     @ParameterizedTest
-    @EnumSource(RoleType.class)
+    @EnumSource(Role.class)
     @DisplayName("예약 삭제: 모든 역할의 DELETE 요청은 405 UNSUPPORTED_REQUEST이고 삭제·조회·저장되지 않는다")
-    void deleteReservationIsNotProvided(RoleType role) throws Exception {
+    void deleteReservationIsNotProvided(Role role) throws Exception {
         mockMvc.perform(delete("/api/v1/referrals/reservations/{id}", othersReservation.getId())
                         .header(USER_ID, othersReferral.getReferrerId().toString())   // 의뢰 작성자 본인이라도
                         .header(ROLE, role.name())
