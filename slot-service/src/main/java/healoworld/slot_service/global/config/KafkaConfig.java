@@ -17,6 +17,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.TransientDataAccessException;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
@@ -34,6 +36,7 @@ import tools.jackson.core.JacksonException;
 public class KafkaConfig {
 
     private static final String[] MDC_HEADER_KEYS = {"eventId", "eventType"};
+    public static final String DEAD_LETTER_CONTAINER_FACTORY = "deadLetterListenerContainerFactory";
     public static final String FAILURE_SUMMARY_HEADER = "x-failure-summary";
     // DeadLetterPublishingRecoverer 기본 규칙의 DLT 토픽 이름 접미사 (docker-compose의 kafka-init이 같은 이름으로 미리 만든다)
     static final String DLT_SUFFIX = "-dlt";
@@ -197,5 +200,18 @@ public class KafkaConfig {
                 }
             }
         };
+    }
+
+    // DLT 메시지를 DB에 저장하는 컨슈머 전용 팩토리
+    // 기본 팩토리를 쓰면 저장 실패 시 "-dlt-dlt"로 보내고 넘어가 메시지가 유실되므로, 실패해도 포기하지 않는 정책을 따로 둔다
+    @Bean(DEAD_LETTER_CONTAINER_FACTORY)
+    public ConcurrentKafkaListenerContainerFactory<Object, Object> deadLetterListenerContainerFactory(
+            ConsumerFactory<Object, Object> consumerFactory) {
+        ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        // 저장 실패(DB 장애 등)는 복구될 때까지 10초 간격으로 무한 재시도한다 (recoverer가 없어 DLT로 다시 보내지 않음)
+        // 에러 핸들러를 @Bean으로 등록하면 CommonErrorHandler 빈이 2개가 되어 기본 팩토리가 kafkaErrorHandler를 쓰지 않게 되므로 여기서 직접 생성한다
+        factory.setCommonErrorHandler(new DefaultErrorHandler(new FixedBackOff(10_000L, FixedBackOff.UNLIMITED_ATTEMPTS)));
+        return factory;
     }
 }
