@@ -54,6 +54,12 @@ outbox:
 hold-expiry:
   fixed-delay-ms: 10000   # HOLD 만료 스캔 간격 (회차 종료 후 대기)
 
+event-cleanup:
+  cron: "0 0 4 * * *"            # 매일 새벽 4시 (Asia/Seoul)
+  outbox-retention-days: 7       # 발행 완료된 Outbox 보관 기간
+  consumed-retention-days: 14    # 소비 기록 보관 기간. Kafka 재전달 가능 기간(기본 7일)보다 길게 둔다
+  batch-size: 1000               # 한 번에 지우는 최대 건수
+
 eureka:
   instance:
     prefer-ip-address: true
