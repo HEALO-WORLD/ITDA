@@ -27,3 +27,6 @@ hold-expiry:
 equipment-downtime:
   lifecycle:
     enabled: false
+    
+event-cleanup:
+  enabled: false

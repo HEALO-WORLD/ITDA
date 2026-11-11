@@ -33,12 +33,12 @@ spring:
             - id: slot-service
               uri: lb://slot-service
               predicates:
-                - Path=/api/v1/slots/**,/api/v1/equipment-downtimes/**
+                - Path=/api/v1/slots/**,/api/v1/equipment-downtimes/**,/api/v1/slot-dead-letters/**
 
             - id: referral-service
               uri: lb://referral-service
               predicates:
-                - Path=/api/v1/referrals/**,/api/v1/equipment-incidents/**,/api/v1/notifications/**,/api/v1/examinations/**
+                - Path=/api/v1/referrals/**,/api/v1/equipment-incidents/**,/api/v1/notifications/**,/api/v1/examinations/**,/api/v1/referral-dead-letters/**
 
 eureka:
   instance:
@@ -91,6 +91,16 @@ gateway:
           # 예약 삭제(DELETE /api/v1/referrals/reservations/*)는 제공하지 않으므로 규칙을 두지 않는다 (fail-closed로 모든 역할 거부)
           - "POST /api/v1/exam-types"
           - "PATCH /api/v1/exam-types/*"
+          # DLT 실패 메시지 관리 (referral-service)
+          - "GET /api/v1/referral-dead-letters"
+          - "GET /api/v1/referral-dead-letters/*"
+          - "POST /api/v1/referral-dead-letters/*/reprocess"
+          - "POST /api/v1/referral-dead-letters/*/ignore"
+          # DLT 실패 메시지 관리 (slot-service)
+          - "GET /api/v1/slot-dead-letters"
+          - "GET /api/v1/slot-dead-letters/*"
+          - "POST /api/v1/slot-dead-letters/*/reprocess"
+          - "POST /api/v1/slot-dead-letters/*/ignore"
 
       # ── 검사기관 사용자만 ──
       - roles: [ EXAMINER ]

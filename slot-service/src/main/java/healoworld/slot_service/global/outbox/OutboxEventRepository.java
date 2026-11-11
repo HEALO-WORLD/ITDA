@@ -24,4 +24,17 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
     @Transactional
     @Query("update OutboxEvent e set e.retryCount = e.retryCount + 1, e.updatedAt = :now where e.id = :id")
     int increaseRetryCount(@Param("id") UUID id, @Param("now") LocalDateTime now);
+
+    // 발행 완료 후 cutoff 이전인 이벤트를 최대 batchSize건 지운다. 미발행(published_at IS NULL)은 조건에 걸리지 않는다
+    // PostgreSQL은 DELETE ... LIMIT가 없어 서브쿼리로 건수를 제한한다
+    @Modifying
+    @Transactional
+    @Query(value = """
+        delete from p_outbox_events
+         where id in (select id
+                        from p_outbox_events
+                       where published_at < :cutoff
+                       limit :batchSize)
+        """, nativeQuery = true)
+    int deletePublishedBefore(@Param("cutoff") LocalDateTime cutoff, @Param("batchSize") int batchSize);
 }

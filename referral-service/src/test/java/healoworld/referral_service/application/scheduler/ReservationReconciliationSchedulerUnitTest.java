@@ -1,6 +1,7 @@
 package healoworld.referral_service.application.scheduler;
 
 import healoworld.referral_service.application.event.result.SlotResultType;
+import healoworld.referral_service.application.service.ReconciliationFailureRecorder;
 import healoworld.referral_service.application.service.ReservationReconciliationService;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.ReservationStatus;
@@ -46,12 +47,15 @@ class ReservationReconciliationSchedulerUnitTest {
     @Mock
     private ExaminationRepository examinationRepository;
 
+    @Mock
+    private ReconciliationFailureRecorder failureRecorder;
+
     private ReservationReconciliationScheduler scheduler;
 
     @BeforeEach
     void setUp() {
         scheduler = new ReservationReconciliationScheduler(
-                reconciliationService, reservationRepository, slotClient, examinationRepository, BATCH_SIZE, 24, 10);
+                reconciliationService, reservationRepository, slotClient, examinationRepository, failureRecorder, BATCH_SIZE, 24, 10);
 
         // 기본값: 세 쿼리 모두 대상 없음. 테스트마다 필요한 쿼리만 덮어쓴다
         lenient().when(reservationRepository.findStaleInProgress(any(), any(), any())).thenReturn(List.of());
@@ -347,5 +351,72 @@ class ReservationReconciliationSchedulerUnitTest {
         verify(reconciliationService, never()).reconcile(eq(blockedAfterConfirm), any(), any());
         verify(reconciliationService, times(2)).reconcile(eq(blockedBeforeConfirm), eq(SlotResultType.SLOT_BOOKED), any());
         verify(reconciliationService, times(2)).reconcile(eq(canceled), eq(SlotResultType.SLOT_BOOKED), any());
+    }
+
+    // ---------- 복구 결과 기록: HELD + SlotBooked 사전 확인, 실패 분류 ----------
+
+    @Test
+    @DisplayName("HELD + SlotBooked 후보의 검사가 시작·완료됐으면 주입하지 않고 수동 확인 대상으로 기록한다")
+    void recordsManualReviewForHeldWithStartedExamination() {
+        ReconciliationTarget held = target(ReservationStatus.HELD);
+        when(reservationRepository.findStaleInProgress(any(), any(), any())).thenReturn(List.of(held));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(slot(held, "BOOKED", held.reservationId())));
+        when(examinationRepository.findReservationIdsWithStartedExamination(List.of(held.reservationId())))
+                .thenReturn(List.of(held.reservationId()));
+
+        scheduler.reconcileReservations();
+
+        verify(reconciliationService, never()).reconcile(any(), any(), any());
+        verify(failureRecorder).recordManualReview(eq(held.reservationId()), eq(SlotResultType.SLOT_BOOKED),
+                eq("EXAMINATION_RESERVATION_NOT_CHANGEABLE"), any());
+        verify(failureRecorder, never()).recordSuccess(any());
+    }
+
+    @Test
+    @DisplayName("CONFIRMED + SlotsBlocked의 검사 시작 제외는 기존처럼 건너뛰기만 하고 수동 확인 대상으로 기록하지 않는다")
+    void doesNotRecordConfirmedWithStartedExamination() {
+        ReconciliationTarget confirmed = target(ReservationStatus.CONFIRMED);
+        when(reservationRepository.findUpcomingConfirmed(any(), any(), any())).thenReturn(List.of(confirmed));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(slot(confirmed, "UNAVAILABLE", null)));
+        when(examinationRepository.findReservationIdsWithStartedExamination(any())).thenReturn(List.of(confirmed.reservationId()));
+
+        scheduler.reconcileReservations();
+
+        verifyNoInteractions(reconciliationService, failureRecorder);
+    }
+
+    @Test
+    @DisplayName("복구에 성공하면 성공을 기록하고, 실패하면 예외를 그대로 넘겨 실패를 기록한다")
+    void recordsSuccessAndFailure() {
+        ReconciliationTarget ok = target(ReservationStatus.REQUESTED);
+        ReconciliationTarget broken = target(ReservationStatus.REQUESTED);
+        when(reservationRepository.findStaleInProgress(any(), any(), any())).thenReturn(List.of(ok, broken));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(
+                slot(ok, "HELD", ok.reservationId()), slot(broken, "HELD", broken.reservationId())));
+        RuntimeException failure = new RuntimeException("db down");
+        lenient().doThrow(failure).when(reconciliationService).reconcile(eq(broken), any(), any());
+
+        scheduler.reconcileReservations();
+
+        verify(failureRecorder).recordSuccess(ok.reservationId());
+        verify(failureRecorder).recordFailure(broken.reservationId(), SlotResultType.SLOT_HELD, failure);
+        verify(failureRecorder, never()).recordSuccess(broken.reservationId());
+    }
+
+    @Test
+    @DisplayName("실패 기록 자체가 실패해도 회차의 나머지 예약은 계속 복구한다")
+    void continuesWhenRecordingFails() {
+        ReconciliationTarget broken = target(ReservationStatus.REQUESTED);
+        ReconciliationTarget next = target(ReservationStatus.REQUESTED);
+        when(reservationRepository.findStaleInProgress(any(), any(), any())).thenReturn(List.of(broken, next));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(
+                slot(broken, "HELD", broken.reservationId()), slot(next, "HELD", next.reservationId())));
+        lenient().doThrow(new RuntimeException("db down")).when(reconciliationService).reconcile(eq(broken), any(), any());
+        doThrow(new RuntimeException("record failed")).when(failureRecorder).recordFailure(any(), any(), any());
+
+        scheduler.reconcileReservations();
+
+        verify(reconciliationService).reconcile(eq(next), eq(SlotResultType.SLOT_HELD), any());
+        verify(failureRecorder).recordSuccess(next.reservationId());
     }
 }

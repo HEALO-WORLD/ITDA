@@ -30,6 +30,9 @@ public class ReferralHistory extends BaseEntity {
     @JoinColumn(name = "reservation_id", nullable = false)
     private Reservation reservation;
 
+    // 이 상태 변경을 일으킨 이벤트 ID
+    // - Kafka 이벤트로 바뀐 경우: 받은 이벤트의 eventId (보상 커맨드를 함께 발행해도 받은 eventId를 남긴다. 발행 커맨드는 Outbox의 aggregate_id로 찾을 수 있다)
+    // - 사용자 요청(HTTP)으로 바뀐 경우: 받은 이벤트가 없으므로 그 요청으로 발행한 커맨드의 Outbox eventId
     private UUID eventId;
 
     @Column(length = 20)

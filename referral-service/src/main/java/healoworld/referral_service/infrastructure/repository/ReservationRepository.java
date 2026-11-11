@@ -159,6 +159,9 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
                    and not exists (select 1 from OutboxEvent o
                                       where o.aggregateId = r.id
                                         and o.publishedAt is null)
+                   and not exists (select 1 from ReconciliationFailure f
+                                      where f.reservationId = r.id
+                                        and f.status = healoworld.referral_service.domain.enums.ReconciliationFailureStatus.MANUAL_REVIEW)
                    order by r.id
             """)
     List<ReconciliationTarget> findStaleInProgress(
@@ -176,6 +179,9 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
                    and not exists (select 1 from OutboxEvent o
                                       where o.aggregateId = r.id
                                         and o.publishedAt is null)
+                   and not exists (select 1 from ReconciliationFailure f
+                                      where f.reservationId = r.id
+                                        and f.status = healoworld.referral_service.domain.enums.ReconciliationFailureStatus.MANUAL_REVIEW)
                    order by r.id
             """)
     List<ReconciliationTarget> findUpcomingConfirmed(
@@ -197,6 +203,9 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
                    and not exists (select 1 from OutboxEvent o
                                       where o.aggregateId = r.id
                                         and o.publishedAt is null)
+                   and not exists (select 1 from ReconciliationFailure f
+                                      where f.reservationId = r.id
+                                        and f.status = healoworld.referral_service.domain.enums.ReconciliationFailureStatus.MANUAL_REVIEW)
                    order by r.id
             """)
     List<ReconciliationTarget> findRecentlyEnded(

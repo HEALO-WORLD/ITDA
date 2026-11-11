@@ -31,6 +31,7 @@ public class OutboxPublisher {
     private final Clock clock;
     private final Tracer tracer;
     private final Propagator propagator;
+    private final OutboxPublishMetrics outboxPublishMetrics;
 
     @Scheduled(fixedDelayString = "${outbox.publish.fixed-delay-ms:1000}")   // 회차 종료 후 outbox.publish.fixed-delay-ms 뒤 시작
     public void publish() {
@@ -49,7 +50,10 @@ public class OutboxPublisher {
                         event.getRetryCount() + 1, e);
                 return; // 뒤 이벤트가 먼저 나가지 않도록 이번 회차 중단
             }
-            outboxEventRepository.markPublished(event.getId(), LocalDateTime.now(clock));
+            LocalDateTime publishedAt = LocalDateTime.now(clock);
+            outboxEventRepository.markPublished(event.getId(), publishedAt);
+            outboxPublishMetrics.recordWait(event, publishedAt);
+            outboxPublishMetrics.recordDwell(event, publishedAt);
             log.debug("Outbox 발행 완료. id={}, type={}", event.getId(), event.getEventType());
         }
     }

@@ -6,6 +6,8 @@ import healoworld.slot_service.application.event.command.ReleaseHoldEvent;
 import healoworld.slot_service.application.event.command.ReleaseSlotEvent;
 import healoworld.slot_service.application.event.command.SlotCommand;
 import healoworld.slot_service.application.service.SlotCommandHandler;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -23,8 +25,11 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class SlotCommandConsumer {
 
+    static final String COMMAND_DURATION = "slot.command.duration";
+
     private final SlotCommandHandler slotCommandHandler;
     private final JsonMapper jsonMapper;
+    private final MeterRegistry meterRegistry;
 
     @KafkaListener(topics = "slot-commands")
     public void consume(ConsumerRecord<String, String> record) {
@@ -32,15 +37,43 @@ public class SlotCommandConsumer {
         log.debug("slot-commands 수신. type={}, key={}, offset={}", eventType, record.key(), record.offset());
 
         switch (eventType) {
-            case HoldRequestedEvent.TYPE ->
-                    slotCommandHandler.handleHoldRequested(read(record, HoldRequestedEvent.class, eventType));
-            case BookSlotEvent.TYPE ->
-                    slotCommandHandler.handleBookSlot(read(record, BookSlotEvent.class, eventType));
-            case ReleaseHoldEvent.TYPE ->
-                    slotCommandHandler.handleReleaseHold(read(record, ReleaseHoldEvent.class, eventType));
-            case ReleaseSlotEvent.TYPE ->
-                    slotCommandHandler.handleReleaseSlot(read(record, ReleaseSlotEvent.class, eventType));
+            case HoldRequestedEvent.TYPE -> {
+                HoldRequestedEvent event = read(record, HoldRequestedEvent.class, eventType);
+                timed(eventType, () -> slotCommandHandler.handleHoldRequested(event));
+            }
+            case BookSlotEvent.TYPE -> {
+                BookSlotEvent event = read(record, BookSlotEvent.class, eventType);
+                timed(eventType, () -> slotCommandHandler.handleBookSlot(event));
+            }
+            case ReleaseHoldEvent.TYPE -> {
+                ReleaseHoldEvent event = read(record, ReleaseHoldEvent.class, eventType);
+                timed(eventType, () -> slotCommandHandler.handleReleaseHold(event));
+            }
+            case ReleaseSlotEvent.TYPE -> {
+                ReleaseSlotEvent event = read(record, ReleaseSlotEvent.class, eventType);
+                timed(eventType, () -> slotCommandHandler.handleReleaseSlot(event));
+            }
             default -> throw new IllegalArgumentException("지원하지 않는 이벤트 유형입니다: " + eventType);
+        }
+    }
+
+    // 처리 시간: 핸들러 호출부터 트랜잭션 커밋까지 (JSON 파싱·검증은 제외)
+    // 재시도하면 시도마다 따로 기록하고, 예외로 끝난 시도는 outcome=error로 남긴다
+    private void timed(String eventType, Runnable handler) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+        String outcome = "success";
+        try {
+            handler.run();
+        } catch (RuntimeException e) {
+            outcome = "error";
+            throw e;
+        } finally {
+            sample.stop(Timer.builder(COMMAND_DURATION)
+                    .description("slot-commands 핸들러 처리 시간 (트랜잭션 커밋 포함)")
+                    .tag("type", eventType)
+                    .tag("outcome", outcome)
+                    .publishPercentileHistogram()   // Grafana에서 p50/p95 계산용 bucket 노출
+                    .register(meterRegistry));
         }
     }
 
