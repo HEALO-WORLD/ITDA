@@ -3,6 +3,7 @@ package healoworld.slot_service.application.service;
 import healoworld.slot_service.application.event.result.HoldExpiredEvent;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
+import healoworld.slot_service.global.metrics.SlotMetrics;
 import healoworld.slot_service.global.outbox.OutboxEvent;
 import healoworld.slot_service.global.outbox.OutboxEventRepository;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
@@ -29,6 +30,7 @@ public class SlotHoldExpiryService {
     private final OutboxEventRepository outboxEventRepository;
     private final SlotStatusHistoryRecorder slotStatusHistoryRecorder;
     private final JsonMapper jsonMapper;
+    private final SlotMetrics slotMetrics;
     private final Clock clock;
 
     // 만료 처리했으면 true, 그 사이 확정·해제·재HOLD되어 대상이 아니면 false
@@ -60,6 +62,7 @@ public class SlotHoldExpiryService {
         outboxEventRepository.save(OutboxEvent.create(event.eventId(), AGGREGATE_TYPE, slotId, RESULT_TOPIC,
                 slotId.toString(), HoldExpiredEvent.TYPE, jsonMapper.writeValueAsString(event), now));
 
+        slotMetrics.holdExpired();
         log.info("HOLD 만료 처리. slotId={}, reservationId={}, heldUntil={}", slotId, reservationId, heldUntil);
         return true;
     }

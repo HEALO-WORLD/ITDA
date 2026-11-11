@@ -9,8 +9,6 @@ import healoworld.slot_service.domain.entity.SlotStatusHistory;
 import healoworld.slot_service.domain.enums.HoldFailureReason;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
-import healoworld.slot_service.global.exception.BaseException;
-import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
 import healoworld.slot_service.support.FixedClockConfig;
@@ -24,12 +22,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.UUID;
 
 import static healoworld.slot_service.support.SlotStatusHistoryTestSupport.singleHistory;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -98,6 +99,7 @@ class SlotHoldServiceTest extends PostgresContainerSupport {
 
         Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
         assertThat(result.isSuccess()).isTrue();
+        assertThat(result.isAlreadyHeld()).isTrue();   // 메트릭에서 idempotent로 구분
         assertThat(result.getHeldUntil()).isEqualTo(originalHeldUntil);
         assertThat(saved.getHeldUntil()).isEqualTo(originalHeldUntil);
         assertThat(saved.getReservationId()).isEqualTo(reservationId);
@@ -117,11 +119,90 @@ class SlotHoldServiceTest extends PostgresContainerSupport {
     }
 
     @Test
-    void 없는_슬롯은_SLOT_NOT_FOUND_예외가_발생한다() {
-        assertThatThrownBy(() -> slotHoldService.hold(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()))
-                .isInstanceOf(BaseException.class)
-                .extracting("errorCode")
-                .isEqualTo(ErrorCode.SLOT_NOT_FOUND);
+    void 없는_슬롯은_예외_없이_notFound_결과를_SLOT_CONFLICT로_돌려준다() {
+        HoldResult result = slotHoldService.hold(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.isNotFound()).isTrue();
+        assertThat(result.getFailureReason()).isEqualTo(HoldFailureReason.SLOT_CONFLICT);
+    }
+
+    // ---------- 이미 시작한 슬롯 (NOW = 2026-10-30 10:00) ----------
+
+    @Test
+    void 지난_날짜의_AVAILABLE_슬롯은_SLOT_EXPIRED로_실패하고_상태가_바뀌지_않는다() {
+        Slot slot = slotRepository.saveAndFlush(slotAt(NOW_DATE.minusDays(1), LocalTime.of(9, 0)));
+
+        HoldResult result = slotHoldService.hold(slot.getId(), UUID.randomUUID(), UUID.randomUUID());
+
+        Slot saved = slotRepository.findById(slot.getId()).orElseThrow();
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getFailureReason()).isEqualTo(HoldFailureReason.SLOT_EXPIRED);
+        assertThat(saved.getStatus()).isEqualTo(SlotStatus.AVAILABLE);
+        assertThat(saved.getReservationId()).isNull();
+        assertThat(slotStatusHistoryRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void 오늘_이미_시작한_슬롯은_SLOT_EXPIRED로_실패한다() {
+        Slot slot = slotRepository.saveAndFlush(slotAt(NOW_DATE, LocalTime.of(9, 30)));
+
+        HoldResult result = slotHoldService.hold(slot.getId(), UUID.randomUUID(), UUID.randomUUID());
+
+        assertThat(result.getFailureReason()).isEqualTo(HoldFailureReason.SLOT_EXPIRED);
+    }
+
+    @Test
+    void 지금_시작하는_슬롯은_SLOT_EXPIRED로_실패한다() {
+        Slot slot = slotRepository.saveAndFlush(slotAt(NOW_DATE, FixedClockConfig.NOW.toLocalTime()));
+
+        HoldResult result = slotHoldService.hold(slot.getId(), UUID.randomUUID(), UUID.randomUUID());
+
+        assertThat(result.getFailureReason()).isEqualTo(HoldFailureReason.SLOT_EXPIRED);
+    }
+
+    @Test
+    void 오늘_아직_시작_전인_슬롯은_HOLD에_성공한다() {
+        Slot slot = slotRepository.saveAndFlush(slotAt(NOW_DATE, FixedClockConfig.NOW.toLocalTime().plusMinutes(1)));
+
+        HoldResult result = slotHoldService.hold(slot.getId(), UUID.randomUUID(), UUID.randomUUID());
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(slotRepository.findById(slot.getId()).orElseThrow().getStatus()).isEqualTo(SlotStatus.HELD);
+    }
+
+    @Test
+    void 이미_시작한_슬롯은_다른_예약이_잡고_있어도_SLOT_EXPIRED로_실패한다() {
+        Slot slot = slotAt(NOW_DATE.minusDays(1), LocalTime.of(9, 0));
+        ReflectionTestUtils.setField(slot, "status", SlotStatus.BOOKED);
+        ReflectionTestUtils.setField(slot, "reservationId", UUID.randomUUID());
+        slotRepository.saveAndFlush(slot);
+
+        HoldResult result = slotHoldService.hold(slot.getId(), UUID.randomUUID(), UUID.randomUUID());
+
+        assertThat(result.getFailureReason()).isEqualTo(HoldFailureReason.SLOT_EXPIRED);
+    }
+
+    @Test
+    void 같은_예약으로_이미_HELD면_시작_시각이_지났어도_기존_결과로_성공한다() {
+        UUID reservationId = UUID.randomUUID();
+        LocalDateTime heldUntil = FixedClockConfig.NOW.plusMinutes(3);
+        Slot slot = slotAt(NOW_DATE, LocalTime.of(9, 30));
+        ReflectionTestUtils.setField(slot, "status", SlotStatus.HELD);
+        ReflectionTestUtils.setField(slot, "reservationId", reservationId);
+        ReflectionTestUtils.setField(slot, "heldUntil", heldUntil);
+        slotRepository.saveAndFlush(slot);
+
+        HoldResult result = slotHoldService.hold(slot.getId(), reservationId, UUID.randomUUID());
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getHeldUntil()).isEqualTo(heldUntil);
+    }
+
+    private static final LocalDate NOW_DATE = FixedClockConfig.NOW.toLocalDate();
+
+    private static Slot slotAt(LocalDate date, LocalTime startTime) {
+        return Slot.create(UUID.randomUUID(), UUID.randomUUID(), date, startTime, startTime.plusMinutes(30));
     }
 
     // ---------- 상태 이력 ----------

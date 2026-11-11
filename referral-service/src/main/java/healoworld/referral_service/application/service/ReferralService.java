@@ -2,18 +2,18 @@ package healoworld.referral_service.application.service;
 
 import feign.FeignException;
 import healoworld.referral_service.domain.entity.Referral;
-import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.client.institution.EquipmentOwnerResponse;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
-import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
@@ -39,7 +39,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReferralService {
     private final ReferralRepository referralRepository;
-    private final ReferralHistoryRepository referralHistoryRepository;
+    private final ReferralHistoryService referralHistoryService;
     private final ReservationService reservationService;
     private final ReservationRepository reservationRepository;
     private final InstitutionClient institutionClient;
@@ -69,6 +69,10 @@ public class ReferralService {
             throw new BaseException(ErrorCode.PARTNERSHIP_NOT_ACTIVE);
         }
 
+        validateEquipment(createReferralRequest.getReservation().getEquipmentId(), createReferralRequest.getReservation().getExamInstitutionId());
+
+        validateSlot();
+
         Referral createdReferral = Referral.create(createReferralRequest.getReferringInstitutionId(), userId, createReferralRequest.getExamTypeId(), createReferralRequest.getPatientName(), createReferralRequest.getIdempotencyKey());
         try {
             referralRepository.saveAndFlush(createdReferral);
@@ -81,9 +85,7 @@ public class ReferralService {
         Reservation reservation = reservationService.createReservation(outboxEventId, createdReferral, createReferralRequest.getReservation());
         createdReferral.assignReservation(reservation.getId());
 
-        // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(createdReferral, reservation, null, createdReferral.getReferralStatus(), Reason.REFERRAL_CREATED, outboxEventId, userId);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(createdReferral, reservation, null, createdReferral.getReferralStatus(), Reason.REFERRAL_CREATED, outboxEventId, userId);
 
         return ReferralResponse.from(createdReferral);
     }
@@ -142,6 +144,8 @@ public class ReferralService {
             throw new BaseException(ErrorCode.PARTNERSHIP_NOT_ACTIVE);
         }
 
+        validateEquipment(request.getEquipmentId(), request.getExamInstitutionId());
+
         UUID outboxEventId = UUID.randomUUID();
         Reservation reservation = reservationService.createReservation(outboxEventId, referral, request);
 
@@ -149,17 +153,36 @@ public class ReferralService {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
         }
         // referralHistory 기록
-        ReferralHistory history = ReferralHistory.create(referral, reservation, ReferralStatus.NEEDS_RESCHEDULE, ReferralStatus.PENDING, Reason.RESCHEDULED, outboxEventId, userId);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, ReferralStatus.NEEDS_RESCHEDULE, ReferralStatus.PENDING, Reason.RESCHEDULED, outboxEventId, userId);
+
         return ReservationResponse.from(reservation);
     }
 
-    private boolean isActivePartnership(UUID requester, UUID examInstitution) {
+    private boolean isActivePartnership(UUID requesterId, UUID examInstitutionId) {
         try {
-            return institutionClient.check(requester, examInstitution).active();
+            return institutionClient.check(requesterId, examInstitutionId).active();
         } catch (FeignException e) {
-            log.warn("협력 관계 확인 실패. requester={}, exam={}", requester, examInstitution, e);
-            throw new BaseException(ErrorCode.INSTITUTION_SERVICE_UNAVAILABLE);   // 503
+            log.warn("협력 관계 확인 실패. requester={}, exam={}", requesterId, examInstitutionId, e);
+            throw new BaseException(ErrorCode.INSTITUTION_SERVICE_UNAVAILABLE);
         }
+    }
+
+    private void validateEquipment(UUID equipmentId, UUID examInstitutionId) {
+        try {
+            ApiResponse<EquipmentOwnerResponse> response = institutionClient.getEquipmentOwner(equipmentId);
+            if (!examInstitutionId.equals(response.getData().institutionId())) {
+                throw new BaseException(ErrorCode.EQUIPMENT_NOT_IN_EXAM_INSTITUTION);
+            }
+        } catch (FeignException.NotFound e) {
+            log.info("장비 없음. equipment={}, exam={}", equipmentId, examInstitutionId);
+            throw new BaseException(ErrorCode.EQUIPMENT_NOT_IN_EXAM_INSTITUTION);
+        } catch (FeignException e) {
+            log.warn("장비 소유 확인 실패. equipment={}, exam={}", equipmentId, examInstitutionId, e);
+            throw new BaseException(ErrorCode.INSTITUTION_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    private void validateSlot() {
+
     }
 }

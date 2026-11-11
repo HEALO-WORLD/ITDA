@@ -24,6 +24,16 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
 
     Optional<Slot> findByIdAndDeletedAtIsNull(UUID id);
 
+    // 여러 슬롯의 현재 상태 일괄 조회 (Referral 정합성 점검용 내부 API). 삭제된 슬롯은 제외한다
+    List<Slot> findAllByIdInAndDeletedAtIsNull(Collection<UUID> ids);
+
+    @Query("""
+        select s.equipmentId
+        from Slot s
+        where s.id = :slotId
+        """)
+    Optional<UUID> findEquipmentIdBySlotId(@Param("slotId") UUID slotId);
+
     @Query("""
         select count(s) > 0
         from Slot s
@@ -78,6 +88,8 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
             Pageable pageable
     );
 
+    // AVAILABLE이고 아직 시작 전인 슬롯만 HOLD한다.
+    // 시작 시각이 지났거나 지금 시작하는 슬롯(date·startTime <= today·nowTime)은 0행이 된다 (슬롯 검색의 onlyFuture와 같은 기준)
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
         update Slot s
@@ -88,11 +100,14 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
          where s.id = :slotId
            and s.status = :available
            and s.deletedAt is null
+           and (s.date > :today or (s.date = :today and s.startTime > :nowTime))
         """)
     int holdIfAvailable(@Param("slotId") UUID slotId,
                         @Param("reservationId") UUID reservationId,
                         @Param("heldUntil") LocalDateTime heldUntil,
                         @Param("now") LocalDateTime now,
+                        @Param("today") LocalDate today,
+                        @Param("nowTime") LocalTime nowTime,
                         @Param("held") SlotStatus held,
                         @Param("available") SlotStatus available);
 
@@ -193,18 +208,18 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
                                        @Param("now") LocalDateTime now,
                                        @Param("unavailable") SlotStatus unavailable);
 
-    // HOLD 만료 대상 조회. 오래된 HOLD부터 처리한다
+    // HOLD 만료 대상 조회. 오래된 HOLD부터 처리하고, 만료 처리에 필요한 컬럼만 읽는다
     @Query("""
-        select s
+        select new healoworld.slot_service.infrastructure.repository.ExpiredHold(s.id, s.reservationId, s.heldUntil)
           from Slot s
          where s.status = :held
            and s.heldUntil <= :now
            and s.deletedAt is null
          order by s.heldUntil asc
         """)
-    List<Slot> findExpiredHolds(@Param("held") SlotStatus held,
-                                @Param("now") LocalDateTime now,
-                                Pageable pageable);
+    List<ExpiredHold> findExpiredHolds(@Param("held") SlotStatus held,
+                                       @Param("now") LocalDateTime now,
+                                       Pageable pageable);
 
     // 아직 같은 예약으로 HELD이고 만료 시각이 지난 경우에만 AVAILABLE로 되돌린다.
     // 조회 후 그 사이 확정되거나 다른 예약으로 다시 HOLD된 슬롯은 0행이 반환된다
@@ -299,4 +314,33 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
                               @Param("downtimeId") UUID downtimeId,
                               @Param("now") LocalDateTime now,
                               @Param("occupiedStatuses") Collection<SlotStatus> occupiedStatuses);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select s
+        from Slot s, EquipmentDowntime d
+        where s.equipmentDowntimeId = d.id
+        and s.equipmentId = :equipmentId
+        and s.deletedAt is null
+        and d.recoveredAt is not null
+        and s.reservationId is null
+        and s.status = healoworld.slot_service.domain.enums.SlotStatus.UNAVAILABLE
+        and (s.date > :today or (s.date = :today and s.startTime > :time))
+        order by s.id
+        """)
+    List<Slot> findRecoveryCandidatesForUpdate(@Param("equipmentId") UUID equipmentId,
+                                               @Param("today") LocalDate today, @Param("time") LocalTime time);
+
+    @Query("""
+        select distinct s.equipmentId
+        from Slot s, EquipmentDowntime d
+        where s.equipmentDowntimeId = d.id
+        and s.deletedAt is null
+        and d.recoveredAt is not null
+        and s.status = healoworld.slot_service.domain.enums.SlotStatus.UNAVAILABLE
+        and s.reservationId is null
+        and (s.date > :today or (s.date = :today and s.startTime > :time))
+        order by s.equipmentId
+        """)
+    List<UUID> findRecoveryEquipmentIds(@Param("today") LocalDate today, @Param("time") LocalTime time);
 }

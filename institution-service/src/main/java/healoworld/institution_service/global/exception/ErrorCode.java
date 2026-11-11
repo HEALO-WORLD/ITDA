@@ -14,6 +14,8 @@ public enum ErrorCode {
     USER_NOT_APPROVED(HttpStatus.FORBIDDEN, "미승인 아이디입니다. 승인 후 이용해주세요."),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
     USER_ALREADY_APPROVED(HttpStatus.CONFLICT, "이미 승인된 사용자입니다."),
+    INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 Refresh Token입니다. 다시 로그인해 주세요."),
+    REFRESH_TOKEN_REUSED(HttpStatus.UNAUTHORIZED, "이미 사용된 Refresh Token입니다. 보안을 위해 다시 로그인해 주세요."),
 
     // institution
     INSTITUTION_NOT_FOUND(HttpStatus.NOT_FOUND, "기관을 찾을 수 없습니다."),
@@ -36,6 +38,7 @@ public enum ErrorCode {
     DUPLICATE_EQUIPMENT_NAME(HttpStatus.CONFLICT, "해당 기관에 같은 이름의 장비가 이미 등록되어 있습니다."),
     INSTITUTION_NOT_AVAILABLE(HttpStatus.CONFLICT, "활성 검사기관에만 장비를 등록할 수 있습니다."),
     DUPLICATE_EQUIPMENT_EXAM_TYPE(HttpStatus.CONFLICT, "이미 등록된 장비·검사 유형 연결입니다."),
+    EQUIPMENT_RECOVERY_REQUIRED(HttpStatus.CONFLICT, "진행 중인 장비 중단의 복구 확인이 필요합니다."),
     EQUIPMENT_NOT_AVAILABLE(HttpStatus.CONFLICT, "현재 검사에 사용할 수 없는 장비입니다."),
     OPERATING_HOURS_NOT_AVAILABLE(HttpStatus.CONFLICT, "해당 날짜에 설정된 장비 운영시간이 없습니다."),
 

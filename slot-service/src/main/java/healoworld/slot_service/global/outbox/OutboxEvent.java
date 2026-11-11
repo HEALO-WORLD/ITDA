@@ -47,6 +47,10 @@ public class OutboxEvent {
     @Column(name = "trace_parent", length = 55)
     private String traceParent;
 
+    // 이 결과를 만든 명령의 occurredAt. 발행 완료 시 체류 시간(slot.event.dwell)을 잰다 (원인 명령이 없으면 NULL)
+    @Column(name = "source_occurred_at")
+    private LocalDateTime sourceOccurredAt;
+
     @Column(name = "published_at")
     private LocalDateTime publishedAt;
 
@@ -59,6 +63,13 @@ public class OutboxEvent {
     public static OutboxEvent create(UUID eventId, String aggregateType, UUID aggregateId,
                                      String topic, String messageKey, String eventType,
                                      String payloadJson, LocalDateTime now) {
+        return create(eventId, aggregateType, aggregateId, topic, messageKey, eventType, payloadJson, null, now);
+    }
+
+    // 받은 명령에 대한 결과 이벤트용. sourceOccurredAt은 원인 명령의 occurredAt
+    public static OutboxEvent create(UUID eventId, String aggregateType, UUID aggregateId,
+                                     String topic, String messageKey, String eventType,
+                                     String payloadJson, LocalDateTime sourceOccurredAt, LocalDateTime now) {
         OutboxEvent e = new OutboxEvent();
         e.id = eventId;
         e.aggregateType = aggregateType;
@@ -67,6 +78,7 @@ public class OutboxEvent {
         e.messageKey = messageKey;
         e.eventType = eventType;
         e.payload = payloadJson;
+        e.sourceOccurredAt = sourceOccurredAt;
         e.retryCount = 0;
         e.createdAt = e.updatedAt = now;
         return e;

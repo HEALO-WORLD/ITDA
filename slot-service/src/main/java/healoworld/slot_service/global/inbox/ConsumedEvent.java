@@ -10,7 +10,9 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "p_consumed_events")
+// 정리 스케줄러(EventCleanupScheduler)가 processed_at < cutoff 조건으로 지운다
+@Table(name = "p_consumed_events",
+        indexes = @Index(name = "idx_consumed_processed_at", columnList = "processed_at"))
 @IdClass(ConsumedEventId.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

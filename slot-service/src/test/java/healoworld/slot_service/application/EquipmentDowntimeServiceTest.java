@@ -2,6 +2,7 @@ package healoworld.slot_service.application;
 
 import healoworld.slot_service.application.service.EquipmentDowntimeService;
 import healoworld.slot_service.domain.entity.EquipmentDowntime;
+import healoworld.slot_service.domain.enums.EquipmentDowntimeType;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
 import feign.FeignException;
@@ -286,6 +287,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
     private EquipmentDowntimeCreateRequest request(OffsetDateTime startedAt, OffsetDateTime endedAt, String reason) {
         EquipmentDowntimeCreateRequest request = new EquipmentDowntimeCreateRequest();
         ReflectionTestUtils.setField(request, "equipmentId", EQUIPMENT_ID);
+        ReflectionTestUtils.setField(request, "downtimeType", EquipmentDowntimeType.FAILURE);
         ReflectionTestUtils.setField(request, "startedAt", startedAt);
         ReflectionTestUtils.setField(request, "endedAt", endedAt);
         ReflectionTestUtils.setField(request, "reason", reason);

@@ -9,7 +9,9 @@ import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.exception.BaseException;
+import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.exception.ErrorCode;
+import healoworld.referral_service.infrastructure.client.institution.EquipmentOwnerResponse;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.client.institution.PartnershipCheckResponse;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
@@ -21,6 +23,7 @@ import healoworld.referral_service.presentation.dto.request.CreateReservationReq
 import healoworld.referral_service.presentation.dto.response.ReferralResponse;
 import healoworld.referral_service.presentation.dto.response.ReservationResponse;
 import healoworld.referral_service.support.ConditionalUpdateStubs;
+import healoworld.referral_service.support.DomainFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -36,13 +39,14 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 import feign.FeignException;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static healoworld.referral_service.support.DomainFixtures.EXAM_START;
 import static healoworld.referral_service.support.DomainFixtures.referralIn;
 import static healoworld.referral_service.support.DomainFixtures.reservation;
-import static healoworld.referral_service.support.DomainFixtures.reservationRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -84,11 +88,23 @@ class ReferralServiceTest {
     // 조건부 UPDATE를 DB처럼 흉내 낸다 (기대 상태가 맞으면 바꾸고 1, 아니면 0)
     private ConditionalUpdateStubs updates;
 
+    // 장비 ID → 소속 기관 ID. institution-service의 장비 소유 정보를 흉내 낸다 (reservationRequest()가 채운다)
+    private final Map<UUID, UUID> equipmentOwners = new HashMap<>();
+
     @BeforeEach
     void setUp() {
         updates = new ConditionalUpdateStubs(reservationRepository, referralRepository);
+        // 이력 기록은 실제 ReferralHistoryService로 위임해 기존처럼 referralHistoryRepository.save로 검증한다
+        ReflectionTestUtils.setField(referralService, "referralHistoryService",
+                new ReferralHistoryService(referralHistoryRepository, referralRepository));
         // 기본은 협력 관계가 있는 기관. 검증 실패 케이스는 테스트에서 덮어쓴다
         lenient().when(institutionClient.check(any(), any())).thenReturn(new PartnershipCheckResponse(true));
+        // 기본은 요청한 장비가 요청한 검사기관 소속. 등록되지 않은 장비는 다른 기관 소속으로 응답한다
+        lenient().when(institutionClient.getEquipmentOwner(any())).thenAnswer(invocation -> {
+            UUID equipmentId = invocation.getArgument(0);
+            UUID owner = equipmentOwners.getOrDefault(equipmentId, UUID.randomUUID());
+            return ApiResponse.ok("장비 소속 기관 조회에 성공했습니다.", new EquipmentOwnerResponse(equipmentId, owner));
+        });
     }
 
     // 헤더의 소속 기관이 본문의 의뢰기관과 같은 정상 요청으로 생성한다
@@ -112,6 +128,7 @@ class ReferralServiceTest {
             create(USER_ID, request);
 
             verify(institutionClient).check(request.getReferringInstitutionId(), reservationRequest.getExamInstitutionId());
+            verify(institutionClient).getEquipmentOwner(reservationRequest.getEquipmentId());
             ArgumentCaptor<Referral> captor = ArgumentCaptor.forClass(Referral.class);
             verify(referralRepository).saveAndFlush(captor.capture());
             Referral saved = captor.getValue();
@@ -168,6 +185,54 @@ class ReferralServiceTest {
             assertErrorCode(() -> create(USER_ID, request), ErrorCode.PARTNERSHIP_NOT_ACTIVE);
             verify(referralRepository, never()).saveAndFlush(any());
             verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("장비가 요청한 검사기관 소속이 아니면 EQUIPMENT_NOT_IN_EXAM_INSTITUTION(400), 의뢰·예약을 만들지 않는다")
+        void equipmentOfOtherInstitution() {
+            CreateReservationRequest reservationRequest = reservationRequest();
+            equipmentOwners.put(reservationRequest.getEquipmentId(), UUID.randomUUID());
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest);
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.EQUIPMENT_NOT_IN_EXAM_INSTITUTION);
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("장비가 없거나 삭제됐으면(404) EQUIPMENT_NOT_IN_EXAM_INSTITUTION(400), 의뢰·예약을 만들지 않는다")
+        void equipmentNotFound() {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+            given(institutionClient.getEquipmentOwner(any())).willThrow(FeignException.NotFound.class);
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.EQUIPMENT_NOT_IN_EXAM_INSTITUTION);
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("장비 소유 기관 조회가 404 외의 이유로 실패하면 503(INSTITUTION_SERVICE_UNAVAILABLE), 의뢰·예약을 만들지 않는다")
+        void equipmentOwnerLookupFails() {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+            given(institutionClient.getEquipmentOwner(any())).willThrow(FeignException.class);
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.INSTITUTION_SERVICE_UNAVAILABLE);
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("협력 관계가 아니면 장비 소유 기관은 조회하지 않는다")
+        void notPartnerSkipsEquipmentCheck() {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+            given(institutionClient.check(any(), any())).willReturn(new PartnershipCheckResponse(false));
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.PARTNERSHIP_NOT_ACTIVE);
+            verify(institutionClient, never()).getEquipmentOwner(any());
         }
 
         @Test
@@ -499,6 +564,44 @@ class ReferralServiceTest {
         }
 
         @Test
+        @DisplayName("새 장비가 새 검사기관 소속이 아니면 EQUIPMENT_NOT_IN_EXAM_INSTITUTION(400), 예약을 만들지 않는다")
+        void equipmentOfOtherInstitution() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            CreateReservationRequest request = reservationRequest();
+            equipmentOwners.put(request.getEquipmentId(), UUID.randomUUID());
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, RoleType.REQUESTER, referral.getId(), request), ErrorCode.EQUIPMENT_NOT_IN_EXAM_INSTITUTION);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+            assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        }
+
+        @Test
+        @DisplayName("새 장비가 없거나 삭제됐으면(404) EQUIPMENT_NOT_IN_EXAM_INSTITUTION(400), 예약을 만들지 않는다")
+        void equipmentNotFound() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+            given(institutionClient.getEquipmentOwner(any())).willThrow(FeignException.NotFound.class);
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, RoleType.REQUESTER, referral.getId(), reservationRequest()), ErrorCode.EQUIPMENT_NOT_IN_EXAM_INSTITUTION);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("장비 소유 기관 조회가 404 외의 이유로 실패하면 503(INSTITUTION_SERVICE_UNAVAILABLE), 예약을 만들지 않는다")
+        void equipmentOwnerLookupFails() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+            given(institutionClient.getEquipmentOwner(any())).willThrow(FeignException.class);
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, RoleType.REQUESTER, referral.getId(), reservationRequest()), ErrorCode.INSTITUTION_SERVICE_UNAVAILABLE);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
         @DisplayName("새 예약을 만든 뒤 의뢰 UPDATE가 0행이면 예외로 새 예약까지 롤백되게 하고 이력을 남기지 않는다")
         void rescheduleUpdateMissed() {
             Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
@@ -522,6 +625,13 @@ class ReferralServiceTest {
                     USER_ID, RoleType.ADMIN, referralId, reservationRequest()), ErrorCode.REFERRAL_NOT_FOUND);
             verifyNoInteractions(reservationService);
         }
+    }
+
+    // 픽스처 예약 요청을 만들고, 요청한 장비를 요청한 검사기관 소속으로 등록한다
+    private CreateReservationRequest reservationRequest() {
+        CreateReservationRequest request = DomainFixtures.reservationRequest();
+        equipmentOwners.put(request.getEquipmentId(), request.getExamInstitutionId());
+        return request;
     }
 
     private CreateReferralRequest createRequest(UUID idempotencyKey, CreateReservationRequest reservationRequest) {

@@ -11,6 +11,10 @@ services:
     image: postgres:18
     container_name: itda-postgres
     logging: *default-logging
+    # PostgreSQL이 PID 1이면 부모를 잃은 프로세스(헬스체크 타임아웃으로 남은 pg_isready 등)를 떠안는다.
+    # 그 프로세스가 0이 아닌 코드로 끝나면 백엔드가 죽은 것으로 보고 DB 전체를 재시작한다.
+    # init(tini)을 PID 1로 두어 이런 프로세스는 tini가 정리하게 한다
+    init: true
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
@@ -20,6 +24,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
 
   redis:
     image: redis:8.10.3
@@ -30,6 +35,7 @@ services:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
+    restart: unless-stopped
 
   kafka:
     image: apache/kafka:4.4.0
@@ -56,6 +62,7 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     volumes:
       - kafka-data:/var/lib/kafka/data
+    restart: unless-stopped
 
   kafka-ui:
     image: kafbat/kafka-ui:v1.5.0
@@ -68,6 +75,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     depends_on:
       - kafka
+    restart: unless-stopped
 
   kafka-init:
     image: apache/kafka:4.4.0
@@ -82,8 +90,8 @@ services:
           echo "Kafka 대기 중..."
           sleep 2
         done
-        for topic in slot-commands slot-results equipment-events \
-                     slot-commands-dlt slot-results-dlt equipment-events-dlt; do
+        for topic in slot-commands slot-results equipment-events equipment-availability \
+                     slot-commands-dlt slot-results-dlt equipment-events-dlt equipment-availability-dlt; do
           /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
             --create --if-not-exists --topic "$$topic" \
             --partitions 3 --replication-factor 1
@@ -100,6 +108,7 @@ services:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:13.2.4
@@ -114,6 +123,7 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
+    restart: unless-stopped
 
 volumes:
   postgres-data:

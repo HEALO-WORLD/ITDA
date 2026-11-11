@@ -25,6 +25,31 @@ spring:
               filters:
                 - SetStatus=404
 
+            # 로컬 통합 Swagger UI에서 참조할 OpenAPI 문서 프록시
+            - id: openapi-institution
+              uri: lb://institution-service
+              predicates:
+                - Path=/openapi/institution
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+
+            - id: openapi-slot
+              uri: lb://slot-service
+              predicates:
+                - Path=/openapi/slot
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+
+            - id: openapi-referral
+              uri: lb://referral-service
+              predicates:
+                - Path=/openapi/referral
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+
             - id: institution-service
               uri: lb://institution-service
               predicates:
@@ -33,12 +58,32 @@ spring:
             - id: slot-service
               uri: lb://slot-service
               predicates:
-                - Path=/api/v1/slots/**,/api/v1/equipment-downtimes/**
+                - Path=/api/v1/slots/**,/api/v1/equipment-downtimes/**,/api/v1/slot-dead-letters/**
 
             - id: referral-service
               uri: lb://referral-service
               predicates:
-                - Path=/api/v1/referrals/**,/api/v1/equipment-incidents/**,/api/v1/notifications/**,/api/v1/examinations/**
+                - Path=/api/v1/referrals/**,/api/v1/equipment-incidents/**,/api/v1/notifications/**,/api/v1/examinations/**,/api/v1/referral-dead-letters/**
+
+# 명시적으로 켠 로컬 개발 환경에서만 Gateway 통합 Swagger UI를 제공한다.
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+    disable-swagger-default-url: true
+    urls-primary-name: Institution
+    urls:
+      - name: Institution
+        url: /openapi/institution
+      - name: Slot
+        url: /openapi/slot
+      - name: Referral
+        url: /openapi/referral
+
+itda:
+  swagger:
+    enabled: ${SWAGGER_ENABLED:false}
 
 eureka:
   instance:
@@ -74,6 +119,8 @@ gateway:
     public-rules:
       - "POST /api/v1/auth/signup"
       - "POST /api/v1/auth/login"
+      - "POST /api/v1/auth/reissue"
+      - "POST /api/v1/auth/logout"
       - "GET /api/v1/institutions/public"
 
     groups:
@@ -89,6 +136,16 @@ gateway:
           # 예약 삭제(DELETE /api/v1/referrals/reservations/*)는 제공하지 않으므로 규칙을 두지 않는다 (fail-closed로 모든 역할 거부)
           - "POST /api/v1/exam-types"
           - "PATCH /api/v1/exam-types/*"
+          # DLT 실패 메시지 관리 (referral-service)
+          - "GET /api/v1/referral-dead-letters"
+          - "GET /api/v1/referral-dead-letters/*"
+          - "POST /api/v1/referral-dead-letters/*/reprocess"
+          - "POST /api/v1/referral-dead-letters/*/ignore"
+          # DLT 실패 메시지 관리 (slot-service)
+          - "GET /api/v1/slot-dead-letters"
+          - "GET /api/v1/slot-dead-letters/*"
+          - "POST /api/v1/slot-dead-letters/*/reprocess"
+          - "POST /api/v1/slot-dead-letters/*/ignore"
 
       # ── 검사기관 사용자만 ──
       - roles: [ EXAMINER ]
@@ -97,6 +154,7 @@ gateway:
           - "PATCH /api/v1/partnerships/*/reject"
           - "POST /api/v1/institutions/*/equipments"
           - "PATCH /api/v1/equipments/*"
+          - "PATCH /api/v1/equipments/*/status"
           - "POST /api/v1/equipments/*/exam-types"
           - "PATCH /api/v1/equipments/*/exam-types/*"
           - "PUT /api/v1/equipments/*/operating-hours"
@@ -134,6 +192,8 @@ gateway:
           - "PATCH,DELETE /api/v1/slots/*"
           - "POST /api/v1/equipment-downtimes"
           - "PATCH,DELETE /api/v1/equipment-downtimes/*"
+          - "PATCH /api/v1/equipment-downtimes/*/recovery"
+          - "PATCH /api/v1/equipment-downtimes/*/extension"
           - "GET /api/v1/equipment-incidents"
           - "GET /api/v1/equipment-incidents/summary"   # 장비 장애 현황 집계
           - "GET /api/v1/equipment-incidents/{incidentId}"

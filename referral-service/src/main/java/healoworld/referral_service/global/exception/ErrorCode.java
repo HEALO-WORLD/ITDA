@@ -8,8 +8,14 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum ErrorCode {
 
+    // 권한
+    ADMIN_ONLY(HttpStatus.FORBIDDEN, "관리자만 접근 권한이 있습니다."),
+
     // institution
     INSTITUTION_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "기관 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요."),
+
+    // slot
+    SLOT_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "슬롯 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요."),
 
     // referral
     REFERRAL_FORBIDDEN(HttpStatus.FORBIDDEN, "본인 소속 기관으로만 의뢰를 생성할 수 있습니다."),
@@ -25,6 +31,8 @@ public enum ErrorCode {
     INVALID_RESERVATION_STATUS(HttpStatus.CONFLICT, "현재 예약상태에서는 처리할 수 없습니다."),
     INVALID_FAILURE_REASON(HttpStatus.BAD_REQUEST, "유효하지 않은 실패 사유입니다."),
     RESERVATION_CANCEL_DEADLINE_PASSED(HttpStatus.CONFLICT, "예약 취소는 검사 시작 2시간 전까지만 가능합니다."),
+    EQUIPMENT_NOT_IN_EXAM_INSTITUTION(HttpStatus.BAD_REQUEST, "선택한 검사기관의 장비가 아닙니다."),
+    SLOT_MISMATCH(HttpStatus.BAD_REQUEST, "선택한 슬롯이 예약 정보(장비·검사 종류·일시)와 일치하지 않습니다."),
 
     // common
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "유효성 검사에 실패했습니다."),
@@ -43,6 +51,7 @@ public enum ErrorCode {
     INVALID_EXAMINATION_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 검사 상태 변경입니다."),
     EXAMINATION_START_NOT_ALLOWED(HttpStatus.CONFLICT, "유효한 예약이 확인되지 않아 검사를 시작할 수 없습니다."),
     EXAMINATION_RESERVATION_NOT_CHANGEABLE(HttpStatus.CONFLICT, "이미 시작되었거나 완료된 검사는 예약을 변경할 수 없습니다."),
+    EXAMINATION_CANCEL_NOT_ALLOWED(HttpStatus.CONFLICT, "이미 시작되었거나 완료된 검사의 예약은 취소할 수 없습니다."),
     EXAMINATION_NOT_COMPLETED(HttpStatus.CONFLICT, "검사가 완료된 후에만 결과를 등록할 수 있습니다."),
     EXAMINATION_RESULT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 등록된 검사 결과가 있습니다."),
     EXAMINATION_RESULT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "해당 검사 결과를 등록할 권한이 없습니다."),
@@ -54,7 +63,12 @@ public enum ErrorCode {
     EQUIPMENT_INCIDENT_NOT_FOUND(HttpStatus.NOT_FOUND, "장비 장애를 찾을 수 없습니다."),
     EQUIPMENT_INCIDENT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "장비 장애를 조회할 권한이 없습니다."),
     INVALID_EQUIPMENT_INCIDENT_PERIOD(HttpStatus.BAD_REQUEST, "장비 장애의 발생 시각 또는 영향 시간 구간이 올바르지 않습니다."),
-    EQUIPMENT_INCIDENT_EVENT_CONFLICT(HttpStatus.CONFLICT, "같은 이벤트 ID로 내용이 다른 장비 장애가 이미 등록되어 있습니다.");
+    EQUIPMENT_INCIDENT_EVENT_CONFLICT(HttpStatus.CONFLICT, "같은 이벤트 ID로 내용이 다른 장비 장애가 이미 등록되어 있습니다."),
+
+    // dead letter
+    DEAD_LETTER_NOT_FOUND(HttpStatus.NOT_FOUND, "실패 메시지를 찾을 수 없습니다."),
+    DEAD_LETTER_ALREADY_RESOLVED(HttpStatus.CONFLICT, "이미 재처리되었거나 무시된 실패 메시지입니다."),
+    DEAD_LETTER_REPUBLISH_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "메시지를 다시 발행하지 못했습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String message;

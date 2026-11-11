@@ -60,6 +60,7 @@ public class SlotCreateWriter {
             throw new BaseException(ErrorCode.SLOT_GENERATION_EMPTY);
         }
 
+        slotCreationLockRepository.lockEquipmentShared(equipmentId);
         slotCreationLockRepository.lock(equipmentId, date);
 
         Instant now = clock.instant();
@@ -98,10 +99,10 @@ public class SlotCreateWriter {
 
             // 장비 중단 등록도 같은 장비·날짜의 advisory lock을 잡으므로, 잠금 획득 후의 이 조회는
             // 먼저 커밋된 중단을 반드시 본다 (READ COMMITTED에서는 쿼리마다 새 스냅샷을 쓴다)
-            if (equipmentDowntimeRepository.existsActiveOverlap(
+            if (equipmentDowntimeRepository.existsBlockingOverlap(
                     equipmentId,
                     date.atTime(range.startTime()),
-                    date.atTime(range.endTime())
+                    date.atTime(range.endTime()), LocalDateTime.now(clock)
             )) {
                 throw new BaseException(ErrorCode.SLOT_IN_DOWNTIME);
             }

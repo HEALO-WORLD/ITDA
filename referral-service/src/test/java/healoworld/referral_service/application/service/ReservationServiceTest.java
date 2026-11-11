@@ -1,9 +1,11 @@
 package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.application.event.command.SlotCommandType;
+import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
@@ -11,6 +13,8 @@ import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
+import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -22,14 +26,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,8 +49,10 @@ import static healoworld.referral_service.support.DomainFixtures.reservationRequ
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -49,6 +61,12 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class ReservationServiceTest {
     private static final UUID USER_ID = UUID.randomUUID();
     private static final UUID OTHER_USER_ID = UUID.randomUUID();
+    // 서비스의 현재 시각: 한국 시간 2026-11-10 10:00으로 고정한다 (JVM 기본 시간대와 무관)
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 10, 10, 0);
+
+    @Spy
+    private Clock clock = Clock.fixed(NOW.atZone(SEOUL).toInstant(), SEOUL);
 
     @Mock
     private ReservationRepository reservationRepository;
@@ -62,6 +80,15 @@ class ReservationServiceTest {
     @Mock
     private ReferralRepository referralRepository;
 
+    @Mock
+    private IncidentReservationRepository incidentReservationRepository;
+
+    @Mock
+    private ExaminationRepository examinationRepository;
+
+    @Mock
+    private InstitutionNotificationService institutionNotificationService;
+
     @InjectMocks
     private ReservationService reservationService;
 
@@ -74,6 +101,9 @@ class ReservationServiceTest {
     void setUp() {
         referral = referralIn(ReferralStatus.PENDING, USER_ID);
         updates = new ConditionalUpdateStubs(reservationRepository, referralRepository);
+        // 이력 기록은 실제 ReferralHistoryService로 위임해 기존처럼 referralHistoryRepository.save로 검증한다
+        ReflectionTestUtils.setField(reservationService, "referralHistoryService",
+                new ReferralHistoryService(referralHistoryRepository, referralRepository));
     }
 
     @Nested
@@ -178,7 +208,7 @@ class ReservationServiceTest {
         void setUp() {
             confirmedReferral = referralIn(ReferralStatus.CONFIRMED, USER_ID);
             confirmed = reservationIn(ReservationStatus.CONFIRMED, confirmedReferral);
-            startsIn(confirmed, LocalDateTime.now().plusDays(1));
+            startsIn(confirmed, NOW.plusDays(1));
         }
 
         @Test
@@ -199,6 +229,8 @@ class ReservationServiceTest {
             assertThat(history.getReason()).isEqualTo(Reason.CANCELED_BY_REQUESTER);
             assertThat(history.getEventId()).isEqualTo(releaseEventId);
             assertThat(history.getChangedBy()).isEqualTo(USER_ID);
+            // 취소가 모두 성공한 뒤 취소된 예약의 검사기관 알림을 ReleaseSlot eventId로 요청한다
+            verify(institutionNotificationService).notifyReservationCanceled(confirmedReferral.getId(), confirmed, releaseEventId);
         }
 
         @Test
@@ -220,7 +252,7 @@ class ReservationServiceTest {
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_NOT_FOUND);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
@@ -236,7 +268,7 @@ class ReservationServiceTest {
         @Test
         @DisplayName("시작 2시간 전 직전까지는 취소할 수 있다")
         void justBeforeDeadline() {
-            startsIn(confirmed, LocalDateTime.now().plusHours(2).plusMinutes(1));
+            startsIn(confirmed, NOW.plusHours(2).plusMinutes(1));
             stored(confirmed);
 
             reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
@@ -245,21 +277,45 @@ class ReservationServiceTest {
         }
 
         @Test
-        @DisplayName("시작 2시간 전이 지나면 취소할 수 없다")
-        void afterDeadline() {
-            startsIn(confirmed, LocalDateTime.now().plusHours(1).plusMinutes(59));
+        @DisplayName("시작까지 정확히 2시간 남았으면 취소할 수 없다 (2시간 전 '직전'까지만 허용)")
+        void exactlyAtDeadline() {
+            startsIn(confirmed, NOW.plusHours(2));
             stored(confirmed);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
+        }
+
+        @Test
+        @DisplayName("2시간 제한은 서버(JVM) 시간대가 아니라 한국 시간으로 판단한다")
+        void deadlineUsesKoreanTime() {
+            // 한국 시간 10:00 = UTC 01:00. 검사 시작이 한국 시간 11:30이면 남은 시간은 1시간 30분이라 거절해야 한다
+            // (현재 시각을 UTC 01:00으로 잘못 구하면 10시간 30분이 남은 것으로 보여 취소가 통과된다)
+            startsIn(confirmed, LocalDateTime.of(2026, 11, 10, 11, 30));
+            stored(confirmed);
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
+        }
+
+        @Test
+        @DisplayName("시작 2시간 전이 지나면 취소할 수 없다")
+        void afterDeadline() {
+            startsIn(confirmed, NOW.plusHours(1).plusMinutes(59));
+            stored(confirmed);
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
+            assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
         @DisplayName("이미 시작한 예약은 취소할 수 없다")
         void alreadyStarted() {
-            startsIn(confirmed, LocalDateTime.now().minusHours(3));
+            startsIn(confirmed, NOW.minusHours(3));
             stored(confirmed);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
@@ -270,58 +326,158 @@ class ReservationServiceTest {
         @DisplayName("확정되지 않은 예약은 취소할 수 없고 아무것도 기록하지 않는다")
         void notConfirmed() {
             Reservation requested = reservationIn(ReservationStatus.REQUESTED, referral);
-            startsIn(requested, LocalDateTime.now().plusDays(1));
+            startsIn(requested, NOW.plusDays(1));
             stored(requested);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, requested.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
         @DisplayName("이미 취소된 예약을 다시 취소하면 409이고 아무것도 기록하지 않는다")
         void alreadyCanceled() {
             Reservation canceled = reservationIn(ReservationStatus.CANCELED, confirmedReferral);
-            startsIn(canceled, LocalDateTime.now().plusDays(1));
+            startsIn(canceled, NOW.plusDays(1));
             stored(canceled);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, canceled.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
         @DisplayName("예약은 확정인데 의뢰가 취소할 수 없는 상태면 예외로 예약 변경까지 롤백되게 하고 아무것도 기록하지 않는다")
         void referralNotCancelable() {
             Reservation reservation = reservationIn(ReservationStatus.CONFIRMED, referral);   // 의뢰는 PENDING
-            startsIn(reservation, LocalDateTime.now().plusDays(1));
+            startsIn(reservation, NOW.plusDays(1));
             stored(reservation);
 
             assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, reservation.getId()),
                     ErrorCode.INVALID_REFERRAL_STATUS);
-            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository);
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
 
         @Test
-        @DisplayName("의뢰 ID만 먼저 조회하고, 의뢰를 잠근 뒤에 예약을 읽는다")
-        void locksReferralBeforeReadingReservation() {
+        @DisplayName("의뢰 → 예약 → 검사 순서로 잠근 뒤 검사를 확인하고, 그 다음에 예약·의뢰를 바꾸고 ReleaseSlot을 기록한다")
+        void locksInOrderAndValidatesBeforeChanges() {
             stored(confirmed);
 
             reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
 
-            InOrder inOrder = inOrder(reservationRepository, referralRepository);
+            InOrder inOrder = inOrder(reservationRepository, referralRepository, incidentReservationRepository,
+                    examinationRepository, slotCommandOutbox, referralHistoryRepository);
             inOrder.verify(reservationRepository).findReferralIdById(confirmed.getId());
             inOrder.verify(referralRepository).findByIdForUpdate(confirmedReferral.getId());
-            inOrder.verify(reservationRepository).findById(confirmed.getId());
+            inOrder.verify(incidentReservationRepository).findByIdForUpdate(confirmed.getId());
+            inOrder.verify(examinationRepository).findByReferralIdForUpdate(confirmedReferral.getId());
+            inOrder.verify(reservationRepository).cancelIfConfirmed(eq(confirmed.getId()), eq(USER_ID), any());
+            inOrder.verify(referralRepository).cancelIfCancelable(eq(confirmedReferral.getId()), eq(USER_ID), any());
+            inOrder.verify(slotCommandOutbox).recordOutbox(confirmed, SlotCommandType.RELEASE_SLOT);
+            inOrder.verify(referralHistoryRepository).save(any());
+            // 잠금 없는 예약 조회는 쓰지 않는다
+            verify(reservationRepository, never()).findById(any());
         }
 
-        // 의뢰 ID 조회 → 의뢰 잠금 → 예약 조회 순서로 준비한다
+        @ParameterizedTest(name = "검사 {0}")
+        @EnumSource(value = ExaminationStatus.class, names = {"IN_PROGRESS", "COMPLETED"})
+        @DisplayName("검사가 시작·완료됐으면 409 EXAMINATION_CANCEL_NOT_ALLOWED이고 예약·의뢰·Outbox·이력을 바꾸지 않는다")
+        void examinationStartedOrCompleted(ExaminationStatus status) {
+            stored(confirmed, examinationOf(confirmed, status));
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
+            assertNothingChanged();
+        }
+
+        @Test
+        @DisplayName("관리자도 검사가 시작된 예약은 취소할 수 없다")
+        void adminCannotCancelStartedExamination() {
+            stored(confirmed, examinationOf(confirmed, ExaminationStatus.IN_PROGRESS));
+
+            assertErrorCode(() -> reservationService.cancelReservation(OTHER_USER_ID, UUID.randomUUID(), RoleType.ADMIN, confirmed.getId()),
+                    ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
+            assertNothingChanged();
+        }
+
+        @Test
+        @DisplayName("검사가 없으면 상태를 확인할 수 없으므로 거부한다 (fail-closed, 409 INVALID_RESERVATION_STATUS)")
+        void noExamination() {
+            stored(confirmed, null);
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.INVALID_RESERVATION_STATUS);
+            assertNothingChanged();
+        }
+
+        @Test
+        @DisplayName("검사가 취소할 예약이 아닌 다른 예약에 연결돼 있으면 거부한다")
+        void examinationLinkedToOtherReservation() {
+            Examination other = examinationOf(confirmed, ExaminationStatus.SCHEDULED);
+            ReflectionTestUtils.setField(other, "reservationId", UUID.randomUUID());
+            stored(confirmed, other);
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.INVALID_RESERVATION_STATUS);
+            assertNothingChanged();
+        }
+
+        @Test
+        @DisplayName("의뢰의 현재 예약이 아니면 거부하고 검사도 조회하지 않는다")
+        void notCurrentReservation() {
+            stored(confirmed);
+            ReflectionTestUtils.setField(confirmedReferral, "currentReservationId", UUID.randomUUID());
+
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+                    ErrorCode.INVALID_RESERVATION_STATUS);
+            assertNothingChanged();
+            verify(examinationRepository, never()).findByReferralIdForUpdate(any());
+        }
+
+        @Test
+        @DisplayName("검사 잠금·조회가 실패하면(잠금 대기 초과·DB 오류) 정책 오류가 아닌 원래 예외로 실패하고 아무것도 바꾸지 않는다")
+        void examinationLookupFailure() {
+            stored(confirmed);
+            given(examinationRepository.findByReferralIdForUpdate(confirmedReferral.getId()))
+                    .willThrow(new PessimisticLockingFailureException("가상 잠금 대기 초과"));
+
+            assertThatThrownBy(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()))
+                    .isInstanceOf(PessimisticLockingFailureException.class);
+            assertNothingChanged();
+        }
+
+        // 거부되면 예약·의뢰 조건부 UPDATE, ReleaseSlot Outbox, 이력을 하나도 실행하지 않는다
+        private void assertNothingChanged() {
+            assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
+            assertThat(confirmedReferral.getReferralStatus()).isEqualTo(ReferralStatus.CONFIRMED);
+            verify(reservationRepository, never()).cancelIfConfirmed(any(), any(), any());
+            verify(referralRepository, never()).cancelIfCancelable(any(), any(), any());
+            verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
+        }
+
+        // 실제 예약 확정 흐름처럼 의뢰가 이 예약을 현재 예약으로 가리키고, 이 예약에 연결된 SCHEDULED 검사가 있는 상태로 준비한다
+        // 조회 순서: 의뢰 ID 조회 → 의뢰 잠금 → 예약 잠금 → 검사 잠금
         private void stored(Reservation reservation) {
+            stored(reservation, examinationOf(reservation, ExaminationStatus.SCHEDULED));
+        }
+
+        // examination이 null이면 검사가 없는 상태다
+        private void stored(Reservation reservation, Examination examination) {
             Referral owner = reservation.getReferral();
+            ReflectionTestUtils.setField(owner, "currentReservationId", reservation.getId());
             given(reservationRepository.findReferralIdById(reservation.getId())).willReturn(Optional.of(owner.getId()));
             given(referralRepository.findByIdForUpdate(owner.getId())).willReturn(Optional.of(owner));
-            given(reservationRepository.findById(reservation.getId())).willReturn(Optional.of(reservation));
+            given(incidentReservationRepository.findByIdForUpdate(reservation.getId())).willReturn(Optional.of(reservation));
+            // 권한·2시간 제한·현재 예약 확인에서 먼저 거절되는 테스트는 검사를 조회하지 않는다
+            lenient().when(examinationRepository.findByReferralIdForUpdate(owner.getId())).thenReturn(Optional.ofNullable(examination));
             updates.register(reservation);
+        }
+
+        private Examination examinationOf(Reservation reservation, ExaminationStatus status) {
+            Examination examination = Examination.schedule(reservation.getReferral().getId(), reservation.getId(),
+                    reservation.getExamInstitutionId());
+            ReflectionTestUtils.setField(examination, "status", status);
+            return examination;
         }
     }
 

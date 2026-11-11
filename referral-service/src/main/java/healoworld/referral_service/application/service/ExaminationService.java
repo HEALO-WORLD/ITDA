@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -38,6 +39,8 @@ public class ExaminationService {
     private final ReservationRepository reservationRepository;
     // 예약 행 잠금(FOR UPDATE). 장비 장애 처리가 쓰는 잠금 조회를 검사 시작에서도 재사용해 잠금 순서를 맞춘다
     private final IncidentReservationRepository incidentReservationRepository;
+    // 검사 시작·완료·예약 연결 변경 시각 (한국 시간)
+    private final Clock clock;
 
     // 최초 예약 확정 시 의뢰·예약 Saga가 호출한다. 호출한 쪽 트랜잭션에 참여하므로 의뢰·예약 확정과 함께 커밋/롤백된다
     // 같은 확정 처리가 다시 실행되면 기존 검사 ID를 그대로 돌려준다 (멱등)
@@ -87,7 +90,7 @@ public class ExaminationService {
         }
 
         int updated = examinationRepository.changeReservationIfScheduled(examination.getId(), newReservationId,
-                newExamInstitutionId, LocalDateTime.now());
+                newExamInstitutionId, LocalDateTime.now(clock));
 
         // 조회 이후 다른 요청이 먼저 검사를 시작했다면 0건이 갱신된다
         if (updated == 0 && !findById(examination.getId()).isLinkedTo(newReservationId, newExamInstitutionId)) {
@@ -134,7 +137,7 @@ public class ExaminationService {
             );
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         int updated;
 
         if (requestedStatus == ExaminationStatus.IN_PROGRESS) {

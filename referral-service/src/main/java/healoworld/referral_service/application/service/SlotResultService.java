@@ -2,9 +2,11 @@ package healoworld.referral_service.application.service;
 
 import healoworld.referral_service.application.event.command.SlotCommandType;
 import healoworld.referral_service.application.event.result.SlotResultType;
+import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
+import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
@@ -15,6 +17,8 @@ import healoworld.referral_service.global.inbox.ConsumedEvent;
 import healoworld.referral_service.global.inbox.ConsumedEventId;
 import healoworld.referral_service.global.inbox.ConsumedEventRepository;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
+import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
+import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -35,11 +39,16 @@ import java.util.UUID;
 public class SlotResultService {
     private final ReferralRepository referralRepository;
     private final ReservationRepository reservationRepository;
-    private final ReferralHistoryRepository referralHistoryRepository;
+    private final ReferralHistoryService referralHistoryService;
     private final ConsumedEventRepository consumedEventRepository;
     private final SlotCommandOutbox slotCommandOutbox;
     private final ExaminationService examinationService;
     private final EquipmentIncidentService equipmentIncidentService;
+    // SlotsBlocked 처리 시 예약·검사 행 잠금 (의뢰 → 예약 → 검사 순서. 검사 시작·장애 후속 처리와 같은 순서)
+    private final IncidentReservationRepository incidentReservationRepository;
+    private final ExaminationRepository examinationRepository;
+    // 예약 확정 성공 시 검사기관 공통 알림 (같은 트랜잭션)
+    private final InstitutionNotificationService institutionNotificationService;
 
     public static final String CONSUMER = "referral-service";
 
@@ -117,8 +126,7 @@ public class SlotResultService {
 
         ReferralStatus toStatus = failOrRequestReschedule(referral, reservation, now);
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, eventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, eventId, null);
     }
 
     // 예약 HELD → CONFIRMED, 의뢰 PENDING → CONFIRMED, 검사 생성
@@ -130,18 +138,25 @@ public class SlotResultService {
             log.info("이미 처리된 SlotBooked 무시. eventId={}, reservationId={}", eventId, reservation.getId());
             return;
         }
+        // 확정 전 최종 확인: 예약 행은 위 UPDATE로 잠겼으므로(의뢰 → 예약) 이어서 검사를 잠근 뒤 확인한다 (의뢰 → 예약 → 검사)
+        // 예약 확정 전에는 검사를 시작할 수 없으므로 검사가 이미 시작·완료됐다면 데이터 불일치다. 자동 확정하지 않고
+        // 예외로 예약 변경까지 롤백한다 (Kafka: BaseException이라 재시도 없이 DLT, 정합성 복구: 수동 확인 대상)
+        ensureExaminationNotStarted(referral, reservation, eventId);
         if (referralRepository.confirmIfPending(referral.getId(), now) == 0) {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);   // 예약 변경까지 롤백
         }
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, ReferralStatus.CONFIRMED, Reason.RESERVATION_CONFIRMED, eventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, ReferralStatus.CONFIRMED, Reason.RESERVATION_CONFIRMED, eventId, null);
 
         examinationService.syncScheduledExamination(
                 referral.getId(),
                 reservation.getId(),
                 reservation.getExamInstitutionId()
         );
+
+        // 예약·의뢰 확정이 모두 성공한 뒤에만 검사기관 알림을 만든다 (첫 예약 확정 / 같은 기관 일정 변경 / 다른 기관 변경)
+        // 이 트랜잭션이 롤백되면 알림도 남지 않고, 같은 SlotBooked가 다시 와도 inbox·confirmIfHeld에서 걸러져 여기까지 오지 않는다
+        institutionNotificationService.notifyReservationConfirmed(referral.getId(), reservation, eventId);
 
         // 장비 장애 이벤트가 이 확정보다 먼저 처리됐다면 영향 예약 조회에서 빠졌으므로, 여기서 후속 처리 작업을 만든다
         // 예약 차단·의뢰 재조정은 장애 후속 처리 스케줄러가 기존 흐름대로 처리한다 (겹치는 장애가 없으면 변경 없음)
@@ -161,10 +176,10 @@ public class SlotResultService {
 
         ReferralStatus toStatus = failOrRequestReschedule(referral, reservation, now);
 
-        UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
+        slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, outboxEventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, eventId, null);
+
     }
 
     // 예약 HELD → FAILED(HOLD_EXPIRED), 의뢰 FAILED 또는 NEEDS_RESCHEDULE, ReleaseHold 발행
@@ -179,14 +194,26 @@ public class SlotResultService {
 
         ReferralStatus toStatus = failOrRequestReschedule(referral, reservation, now);
 
-        UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
+        slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, outboxEventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, eventId, null);
     }
 
     // 예약 진행 중 → BLOCKED(EQUIPMENT_FAILURE), 의뢰 PENDING·CONFIRMED → NEEDS_RESCHEDULE
+    // 검사가 이미 시작·완료됐다면 예약·의뢰·이력을 바꾸지 않는다 (장애 후속 처리 IncidentProcessingService와 같은 정책)
+    // 잠금 순서: 의뢰(handle에서 잠금) → 예약 → 검사. 검사 시작(ExaminationService.lockForStart)·장애 후속 처리와 같은 순서라
+    //           검사 상태를 확인한 뒤 예약을 차단할 때까지 검사 시작이 끼어들지 못하고, 교착도 생기지 않는다
     private void onSlotsBlocked(Referral referral, Reservation reservation, UUID eventId) {
+        incidentReservationRepository.findByIdForUpdate(reservation.getId());
+        ExaminationStatus examinationStatus = examinationRepository.findByReferralIdForUpdate(referral.getId())
+                .map(Examination::getStatus)
+                .orElse(null);
+        if (examinationStatus == ExaminationStatus.IN_PROGRESS || examinationStatus == ExaminationStatus.COMPLETED) {
+            log.warn("검사가 이미 {}라 SlotsBlocked로 예약을 차단하지 않음, 담당자 확인 필요. eventId={}, referralId={}, reservationId={}",
+                    examinationStatus, eventId, referral.getId(), reservation.getId());
+            return;
+        }
+
         ReferralStatus fromStatus = referral.getReferralStatus();
         LocalDateTime now = LocalDateTime.now();
 
@@ -198,8 +225,20 @@ public class SlotResultService {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);   // 예약 변경까지 롤백
         }
 
-        ReferralHistory history = ReferralHistory.create(referral, reservation, fromStatus, ReferralStatus.NEEDS_RESCHEDULE, Reason.RESERVATION_BLOCKED, eventId, null);
-        referralHistoryRepository.save(history);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, ReferralStatus.NEEDS_RESCHEDULE, Reason.RESERVATION_BLOCKED, eventId, null);
+    }
+
+    // 의뢰의 검사가 IN_PROGRESS·COMPLETED면 확정하지 않는다. 검사의 reservationId가 아니라 의뢰 기준으로 본다
+    // (같은 예약에 연결된 경우 ExaminationService.updateReservation()이 조기 반환해 검사 상태를 보지 않으므로 여기서 막는다)
+    private void ensureExaminationNotStarted(Referral referral, Reservation reservation, UUID eventId) {
+        ExaminationStatus examinationStatus = examinationRepository.findByReferralIdForUpdate(referral.getId())
+                .map(Examination::getStatus)
+                .orElse(null);
+        if (examinationStatus == ExaminationStatus.IN_PROGRESS || examinationStatus == ExaminationStatus.COMPLETED) {
+            log.warn("검사가 이미 {}라 SlotBooked로 예약을 확정하지 않음, 담당자 확인 필요. eventId={}, referralId={}, reservationId={}",
+                    examinationStatus, eventId, referral.getId(), reservation.getId());
+            throw new BaseException(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE);
+        }
     }
 
     private boolean isExpected(Reservation reservation, UUID eventId, SlotResultType eventType, ReservationStatus... expected) {

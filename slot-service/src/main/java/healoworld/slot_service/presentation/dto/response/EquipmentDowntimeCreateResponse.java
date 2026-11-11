@@ -2,6 +2,7 @@ package healoworld.slot_service.presentation.dto.response;
 
 import healoworld.slot_service.application.dto.EquipmentDowntimeRegistration;
 import healoworld.slot_service.domain.entity.EquipmentDowntime;
+import healoworld.slot_service.domain.enums.EquipmentDowntimeType;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -23,6 +24,7 @@ public class EquipmentDowntimeCreateResponse {
     private final OffsetDateTime startedAt;
     private final OffsetDateTime endedAt;
     private final String reason;
+    private final EquipmentDowntimeType downtimeType;
     // 이번 등록으로 AVAILABLE → UNAVAILABLE이 된 슬롯 수
     private final int affectedSlotCount;
     // 예약이 잡혀 있어 상태를 유지한 HELD·BOOKED 슬롯. 예약·의뢰 후속 처리는 Referral Service가 담당한다
@@ -36,6 +38,7 @@ public class EquipmentDowntimeCreateResponse {
                 downtime.getStartedAt().atZone(BUSINESS_ZONE).toOffsetDateTime(),
                 downtime.getEndedAt().atZone(BUSINESS_ZONE).toOffsetDateTime(),
                 downtime.getReason(),
+                downtime.getDowntimeType(),
                 registration.blockedSlotCount(),
                 registration.conflictedSlots().stream()
                         .map(slot -> new ConflictedSlot(slot.slotId(), slot.status(), slot.reservationId()))
