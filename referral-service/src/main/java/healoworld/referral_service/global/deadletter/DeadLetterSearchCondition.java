@@ -1,6 +1,5 @@
-package healoworld.referral_service.presentation.dto.request;
+package healoworld.referral_service.global.deadletter;
 
-import healoworld.referral_service.global.deadletter.DeadLetterStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;

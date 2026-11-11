@@ -1,9 +1,6 @@
-package healoworld.referral_service.application.service;
+package healoworld.referral_service.global.deadletter;
 
 import healoworld.referral_service.domain.enums.RoleType;
-import healoworld.referral_service.global.deadletter.DeadLetterEvent;
-import healoworld.referral_service.global.deadletter.DeadLetterEventRepository;
-import healoworld.referral_service.global.deadletter.DeadLetterStatus;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;

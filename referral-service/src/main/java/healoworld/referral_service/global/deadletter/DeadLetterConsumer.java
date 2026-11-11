@@ -1,8 +1,6 @@
-package healoworld.referral_service.presentation.consumer;
+package healoworld.referral_service.global.deadletter;
 
 import healoworld.referral_service.global.config.KafkaConfig;
-import healoworld.referral_service.global.deadletter.DeadLetterEvent;
-import healoworld.referral_service.global.deadletter.DeadLetterEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;

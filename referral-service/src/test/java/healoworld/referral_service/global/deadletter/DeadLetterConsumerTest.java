@@ -1,9 +1,6 @@
-package healoworld.referral_service.presentation.consumer;
+package healoworld.referral_service.global.deadletter;
 
 import healoworld.referral_service.global.config.KafkaConfig;
-import healoworld.referral_service.global.deadletter.DeadLetterEvent;
-import healoworld.referral_service.global.deadletter.DeadLetterEventRepository;
-import healoworld.referral_service.global.deadletter.DeadLetterStatus;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
@@ -14,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 
 import java.nio.ByteBuffer;
@@ -103,6 +101,18 @@ class DeadLetterConsumerTest {
         deadLetterConsumer.consume(dltRecord(headers));
 
         verifyNoInteractions(deadLetterEventRepository);
+    }
+
+    @Test
+    @DisplayName("referral-service가 받는 토픽(slot-results·equipment-events)의 DLT를 별도 그룹·DLT 전용 팩토리로 구독한다")
+    void listensToOwnDlts() throws NoSuchMethodException {
+        KafkaListener listener = DeadLetterConsumer.class.getMethod("consume", ConsumerRecord.class)
+                .getAnnotation(KafkaListener.class);
+
+        // 토픽 이름은 원래 토픽 + "-dlt"(KafkaConfig.DLT_SUFFIX) 규칙과 같아야 실제 DLT를 읽는다
+        assertThat(listener.topics()).containsExactlyInAnyOrder("slot-results-dlt", "equipment-events-dlt");
+        assertThat(listener.groupId()).isEqualTo("referral-service-dlt");
+        assertThat(listener.containerFactory()).isEqualTo(KafkaConfig.DEAD_LETTER_CONTAINER_FACTORY);
     }
 
     @Test

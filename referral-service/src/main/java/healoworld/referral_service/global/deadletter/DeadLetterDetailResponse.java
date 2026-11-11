@@ -1,7 +1,5 @@
-package healoworld.referral_service.presentation.dto.response;
+package healoworld.referral_service.global.deadletter;
 
-import healoworld.referral_service.global.deadletter.DeadLetterEvent;
-import healoworld.referral_service.global.deadletter.DeadLetterStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;

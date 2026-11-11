@@ -1,12 +1,8 @@
-package healoworld.referral_service.presentation.controller;
+package healoworld.referral_service.global.deadletter;
 
-import healoworld.referral_service.application.service.DeadLetterService;
 import healoworld.referral_service.domain.enums.RoleType;
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
-import healoworld.referral_service.presentation.dto.request.DeadLetterSearchCondition;
-import healoworld.referral_service.presentation.dto.response.DeadLetterDetailResponse;
-import healoworld.referral_service.presentation.dto.response.DeadLetterResponse;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;

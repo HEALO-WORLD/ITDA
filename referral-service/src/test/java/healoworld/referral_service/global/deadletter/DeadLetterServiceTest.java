@@ -1,15 +1,9 @@
-package healoworld.referral_service.application.service;
+package healoworld.referral_service.global.deadletter;
 
 import healoworld.referral_service.domain.enums.RoleType;
-import healoworld.referral_service.global.deadletter.DeadLetterEvent;
-import healoworld.referral_service.global.deadletter.DeadLetterEventRepository;
-import healoworld.referral_service.global.deadletter.DeadLetterStatus;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
-import healoworld.referral_service.presentation.dto.request.DeadLetterSearchCondition;
-import healoworld.referral_service.presentation.dto.response.DeadLetterDetailResponse;
-import healoworld.referral_service.presentation.dto.response.DeadLetterResponse;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.header.Header;
@@ -73,10 +67,10 @@ class DeadLetterServiceTest {
         UUID id = UUID.randomUUID();
 
         assertErrorCode(() -> deadLetterService.getDeadLetters(role, new DeadLetterSearchCondition(null, null, null)),
-                ErrorCode.DEAD_LETTER_ACCESS_DENIED);
-        assertErrorCode(() -> deadLetterService.getDeadLetter(role, id), ErrorCode.DEAD_LETTER_ACCESS_DENIED);
-        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, role, id), ErrorCode.DEAD_LETTER_ACCESS_DENIED);
-        assertErrorCode(() -> deadLetterService.ignore(ADMIN_ID, role, id), ErrorCode.DEAD_LETTER_ACCESS_DENIED);
+                ErrorCode.ADMIN_ONLY);
+        assertErrorCode(() -> deadLetterService.getDeadLetter(role, id), ErrorCode.ADMIN_ONLY);
+        assertErrorCode(() -> deadLetterService.reprocess(ADMIN_ID, role, id), ErrorCode.ADMIN_ONLY);
+        assertErrorCode(() -> deadLetterService.ignore(ADMIN_ID, role, id), ErrorCode.ADMIN_ONLY);
 
         verifyNoInteractions(deadLetterEventRepository, kafkaTemplate);
     }

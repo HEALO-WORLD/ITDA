@@ -1,14 +1,9 @@
-package healoworld.referral_service.application.service;
+package healoworld.referral_service.global.deadletter;
 
 import healoworld.referral_service.domain.enums.RoleType;
-import healoworld.referral_service.global.deadletter.DeadLetterEvent;
-import healoworld.referral_service.global.deadletter.DeadLetterEventRepository;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
-import healoworld.referral_service.presentation.dto.request.DeadLetterSearchCondition;
-import healoworld.referral_service.presentation.dto.response.DeadLetterDetailResponse;
-import healoworld.referral_service.presentation.dto.response.DeadLetterResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -91,7 +86,7 @@ public class DeadLetterService {
 
     private void verifyAdmin(RoleType role) {
         if (role != RoleType.ADMIN) {
-            throw new BaseException(ErrorCode.DEAD_LETTER_ACCESS_DENIED);
+            throw new BaseException(ErrorCode.ADMIN_ONLY);
         }
     }
 
