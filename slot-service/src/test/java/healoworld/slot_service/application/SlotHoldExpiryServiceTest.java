@@ -9,6 +9,7 @@ import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
 import healoworld.slot_service.global.outbox.OutboxEvent;
 import healoworld.slot_service.global.outbox.OutboxEventRepository;
+import healoworld.slot_service.infrastructure.repository.ExpiredHold;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import healoworld.slot_service.infrastructure.repository.SlotStatusHistoryRepository;
 import healoworld.slot_service.support.FixedClockConfig;
@@ -176,9 +177,11 @@ class SlotHoldExpiryServiceTest extends PostgresContainerSupport {
         ReflectionTestUtils.setField(deleted, "deletedAt", NOW.minusMinutes(1));
         slotRepository.saveAndFlush(deleted);
 
-        List<Slot> result = slotRepository.findExpiredHolds(SlotStatus.HELD, NOW, PageRequest.of(0, 100));
+        List<ExpiredHold> result = slotRepository.findExpiredHolds(SlotStatus.HELD, NOW, PageRequest.of(0, 100));
 
-        assertThat(result).extracting(Slot::getId).containsExactly(older.getId(), newer.getId());
+        assertThat(result).extracting(ExpiredHold::slotId).containsExactly(older.getId(), newer.getId());
+        assertThat(result.get(0).reservationId()).isEqualTo(older.getReservationId());
+        assertThat(result.get(0).heldUntil()).isEqualTo(older.getHeldUntil());
     }
 
     // ---------- 상태 이력 ----------
