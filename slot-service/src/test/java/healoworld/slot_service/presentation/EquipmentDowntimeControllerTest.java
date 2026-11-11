@@ -137,7 +137,7 @@ class EquipmentDowntimeControllerTest {
 
     private String body(String equipmentId, String startedAt, String endedAt, String reason) {
         return """
-                {"equipmentId": %s, "startedAt": %s, "endedAt": %s, "reason": %s}
+                {"equipmentId": %s, "startedAt": %s, "endedAt": %s, "reason": %s, "downtimeType": "FAILURE"}
                 """.formatted(equipmentId, startedAt, endedAt, reason);
     }
 }

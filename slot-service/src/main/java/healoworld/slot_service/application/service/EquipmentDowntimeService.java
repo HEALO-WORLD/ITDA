@@ -1,6 +1,8 @@
 package healoworld.slot_service.application.service;
 
 import healoworld.slot_service.global.exception.BaseException;
+import healoworld.slot_service.infrastructure.repository.EquipmentDowntimeRepository;
+import healoworld.slot_service.presentation.dto.response.EquipmentDowntimeLifecycleResponse;
 import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.infrastructure.client.EquipmentOwnerClient;
 import healoworld.slot_service.infrastructure.client.EquipmentVisibilityClient;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.Set;
 import java.util.UUID;
@@ -33,6 +36,8 @@ public class EquipmentDowntimeService {
     private final EquipmentVisibilityClient equipmentVisibilityClient;
     private final EquipmentOwnerClient equipmentOwnerClient;
     private final Clock clock;
+    private final EquipmentDowntimeRepository downtimes;
+    private final EquipmentDowntimeLifecycleWriter lifecycleWriter;
 
     public EquipmentDowntimeCreateResponse createDowntime(
             EquipmentDowntimeCreateRequest request,
@@ -62,8 +67,26 @@ public class EquipmentDowntimeService {
                 startedAt,
                 endedAt,
                 request.getReason().strip(),
-                userId
+                userId, request.getDowntimeType()
         ));
+    }
+
+    public EquipmentDowntimeLifecycleResponse recover(UUID id, String reason,
+                                                      UUID userId, UUID userInstitutionId, String userRole) {
+        validateActor(userId, userInstitutionId, userRole);
+        var d = downtimes.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
+        UUID owner = resolveOwnerInstitution(d.getEquipmentId(), userInstitutionId, userRole);
+        return lifecycleWriter.recover(id, d.getEquipmentId(), owner, userId, reason);
+    }
+
+    public EquipmentDowntimeLifecycleResponse extend(UUID id, OffsetDateTime endedAt,
+                                                     UUID userId, UUID userInstitutionId, String userRole) {
+        validateActor(userId, userInstitutionId, userRole);
+        var d = downtimes.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new BaseException(ErrorCode.RESOURCE_NOT_FOUND));
+        UUID owner = resolveOwnerInstitution(d.getEquipmentId(), userInstitutionId, userRole);
+        return lifecycleWriter.extend(id, d.getEquipmentId(), owner, userId, toBusinessTime(endedAt.toInstant()));
     }
 
     private void validateActor(UUID userId, UUID institutionId, String role) {

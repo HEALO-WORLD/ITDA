@@ -154,6 +154,7 @@ gateway:
           - "PATCH /api/v1/partnerships/*/reject"
           - "POST /api/v1/institutions/*/equipments"
           - "PATCH /api/v1/equipments/*"
+          - "PATCH /api/v1/equipments/*/status"
           - "POST /api/v1/equipments/*/exam-types"
           - "PATCH /api/v1/equipments/*/exam-types/*"
           - "PUT /api/v1/equipments/*/operating-hours"
@@ -191,6 +192,8 @@ gateway:
           - "PATCH,DELETE /api/v1/slots/*"
           - "POST /api/v1/equipment-downtimes"
           - "PATCH,DELETE /api/v1/equipment-downtimes/*"
+          - "PATCH /api/v1/equipment-downtimes/*/recovery"
+          - "PATCH /api/v1/equipment-downtimes/*/extension"
           - "GET /api/v1/equipment-incidents"
           - "GET /api/v1/equipment-incidents/summary"   # 장비 장애 현황 집계
           - "GET /api/v1/equipment-incidents/{incidentId}"
