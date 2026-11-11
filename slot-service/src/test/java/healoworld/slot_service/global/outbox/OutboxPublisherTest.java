@@ -3,6 +3,8 @@ package healoworld.slot_service.global.outbox;
 import brave.Tracing;
 import healoworld.slot_service.global.config.ClockConfig;
 import healoworld.slot_service.support.FixedClockConfig;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.brave.bridge.BraveCurrentTraceContext;
 import io.micrometer.tracing.brave.bridge.BravePropagator;
@@ -21,10 +23,12 @@ import org.springframework.kafka.support.SendResult;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,14 +53,17 @@ class OutboxPublisherTest {
     private Tracing tracing;
     private Tracer tracer;
 
+    private SimpleMeterRegistry meterRegistry;
+
     @BeforeEach
     void setUp() {
         ZoneId zone = ClockConfig.ZONE;
         Clock clock = Clock.fixed(FixedClockConfig.NOW.atZone(zone).toInstant(), zone);
         tracing = Tracing.newBuilder().traceId128Bit(true).propagationFactory(new W3CPropagation()).build();
         tracer = new BraveTracer(tracing.tracer(), new BraveCurrentTraceContext(tracing.currentTraceContext()));
+        meterRegistry = new SimpleMeterRegistry();
         outboxPublisher = new OutboxPublisher(outboxEventRepository, kafkaTemplate, clock,
-                tracer, new BravePropagator(tracing));
+                tracer, new BravePropagator(tracing), new OutboxPublishMetrics(meterRegistry));
     }
 
     @AfterEach
@@ -145,6 +152,68 @@ class OutboxPublisherTest {
 
         assertThat(spanWhenSending.get()).isNull();
         verify(outboxEventRepository).markPublished(event.getId(), FixedClockConfig.NOW);
+    }
+
+    @Test
+    void 발행에_성공하면_원인_명령의_occurredAt부터_발행까지_체류_시간을_기록한다() {
+        OutboxEvent event = outboxEvent("SlotHeld", FixedClockConfig.NOW.minusNanos(800_000_000));
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        Timer timer = meterRegistry.find(OutboxPublishMetrics.DWELL).tag("type", "SlotHeld").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+        assertThat(timer.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(800);
+    }
+
+    @Test
+    void 발행에_성공하면_created_at부터_발행까지_Outbox_대기_시간을_기록한다() {
+        OutboxEvent event = outboxEvent("HoldExpired", null, FixedClockConfig.NOW.minusNanos(300_000_000));
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        Timer timer = meterRegistry.find(OutboxPublishMetrics.WAIT).tag("type", "HoldExpired").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+        assertThat(timer.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(300);
+    }
+
+    @Test
+    void 원인_명령이_없는_이벤트는_체류_시간을_기록하지_않는다() {
+        OutboxEvent event = outboxEvent("HoldExpired");
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        assertThat(meterRegistry.find(OutboxPublishMetrics.DWELL).timer()).isNull();
+    }
+
+    @Test
+    void 발행에_실패하면_체류_시간을_기록하지_않는다() {
+        OutboxEvent event = outboxEvent("SlotHeld", FixedClockConfig.NOW.minusSeconds(1));
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
+        when(kafkaTemplate.send(any(ProducerRecord.class)))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("브로커 응답 없음")));
+
+        outboxPublisher.publish();
+
+        assertThat(meterRegistry.find(OutboxPublishMetrics.DWELL).timer()).isNull();
+        assertThat(meterRegistry.find(OutboxPublishMetrics.WAIT).timer()).isNull();
+    }
+
+    private OutboxEvent outboxEvent(String eventType, LocalDateTime sourceOccurredAt) {
+        return outboxEvent(eventType, sourceOccurredAt, FixedClockConfig.NOW);
+    }
+
+    private OutboxEvent outboxEvent(String eventType, LocalDateTime sourceOccurredAt, LocalDateTime createdAt) {
+        UUID slotId = UUID.randomUUID();
+        return OutboxEvent.create(UUID.randomUUID(), "SLOT", slotId, "slot-results",
+                slotId.toString(), eventType, "{\"slotId\":\"" + slotId + "\"}", sourceOccurredAt, createdAt);
     }
 
     private OutboxEvent outboxEvent(String eventType) {

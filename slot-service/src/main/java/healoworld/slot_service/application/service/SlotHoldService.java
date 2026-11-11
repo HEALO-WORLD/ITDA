@@ -48,7 +48,7 @@ public class SlotHoldService {
 
         // 중복 요청은 시작 시각과 관계없이 처음 HOLD 결과를 그대로 돌려준다
         if (slot.isHeldBy(reservationId)) {
-            return HoldResult.success(slotId, reservationId, slot.getHeldUntil());
+            return HoldResult.alreadyHeld(slotId, reservationId, slot.getHeldUntil());
         }
         // 이미 시작한 슬롯은 상태와 관계없이 다시 잡을 수 없으므로 SLOT_EXPIRED로 알린다
         if (slot.hasStarted(now)) {
