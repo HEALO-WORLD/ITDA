@@ -150,6 +150,7 @@ services:
       TZ: Asia/Seoul
       EUREKA_URL: http://eureka-server:8761/eureka/
       JWT_SECRET: ${JWT_SECRET:?.env에 JWT_SECRET을 설정하세요}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false} # 로컬 문서 확인 시에만 true
     depends_on:
       eureka-server:
         condition: service_healthy
