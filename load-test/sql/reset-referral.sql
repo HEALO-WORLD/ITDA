@@ -8,6 +8,11 @@ WHERE equipment_id = 'f0000000-0000-0000-0000-00000000e001';
 
 DELETE FROM p_outbox_events      WHERE aggregate_id IN (SELECT id FROM lt_reservations);
 DELETE FROM p_notifications      WHERE referral_id  IN (SELECT referral_id FROM lt_reservations);
+-- 예약 확정·취소 때 생기는 검사기관 알림과 사용자별 읽음 기록
+DELETE FROM p_institution_notification_reads
+WHERE notification_id IN (SELECT id FROM p_institution_notifications
+                          WHERE reservation_id IN (SELECT id FROM lt_reservations));
+DELETE FROM p_institution_notifications WHERE reservation_id IN (SELECT id FROM lt_reservations);
 DELETE FROM p_examinations       WHERE referral_id  IN (SELECT referral_id FROM lt_reservations);
 DELETE FROM p_referral_histories WHERE referral_id  IN (SELECT referral_id FROM lt_reservations);
 DELETE FROM p_reservations       WHERE id           IN (SELECT id FROM lt_reservations);
