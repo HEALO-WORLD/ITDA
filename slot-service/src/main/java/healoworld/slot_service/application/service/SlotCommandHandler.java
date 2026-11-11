@@ -19,7 +19,6 @@ import healoworld.slot_service.global.inbox.ConsumedEventId;
 import healoworld.slot_service.global.inbox.ConsumedEventRepository;
 import healoworld.slot_service.global.outbox.OutboxEvent;
 import healoworld.slot_service.global.outbox.OutboxEventRepository;
-import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -43,7 +42,6 @@ public class SlotCommandHandler {
     private final SlotHoldService slotHoldService;
     private final SlotBookService slotBookService;
     private final SlotReleaseService slotReleaseService;
-    private final SlotRepository slotRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ConsumedEventRepository consumedEventRepository;
     private final JsonMapper jsonMapper;
@@ -59,22 +57,20 @@ public class SlotCommandHandler {
 
         LocalDateTime now = LocalDateTime.now(clock);
 
-        // 없는 슬롯이면 hold()가 예외를 던져 트랜잭션이 롤백되므로 먼저 확인하고 실패 결과를 보낸다
-        if (!slotRepository.existsById(event.slotId())) {
+        // 슬롯 존재 확인을 따로 하지 않는다. 없는 슬롯은 hold()가 UPDATE 0행 뒤 notFound 결과로 알려준다
+        HoldResult result = slotHoldService.hold(event.slotId(), event.reservationId(), event.eventId());
+        if (result.isSuccess()) {
+            SlotHeldEvent held = SlotHeldEvent.of(event, result.getHeldUntil(), now);
+            saveOutbox(held.eventId(), event.slotId(), SlotHeldEvent.TYPE, held, event.occurredAt(), now);
+            slotMetrics.hold(result.isAlreadyHeld() ? HoldOutcome.IDEMPOTENT : HoldOutcome.SUCCESS);
+        } else if (result.isNotFound()) {
             log.warn("HOLD 요청 슬롯 없음, SlotHoldFailed 발행. slotId={}, reservationId={}",
                     event.slotId(), event.reservationId());
-            saveHoldFailed(event, HoldFailureReason.SLOT_CONFLICT, now);
+            saveHoldFailed(event, result.getFailureReason(), now);
             slotMetrics.hold(HoldOutcome.NOT_FOUND);
         } else {
-            HoldResult result = slotHoldService.hold(event.slotId(), event.reservationId(), event.eventId());
-            if (result.isSuccess()) {
-                SlotHeldEvent held = SlotHeldEvent.of(event, result.getHeldUntil(), now);
-                saveOutbox(held.eventId(), event.slotId(), SlotHeldEvent.TYPE, held, event.occurredAt(), now);
-                slotMetrics.hold(result.isAlreadyHeld() ? HoldOutcome.IDEMPOTENT : HoldOutcome.SUCCESS);
-            } else {
-                saveHoldFailed(event, result.getFailureReason(), now);
-                slotMetrics.hold(HoldOutcome.from(result.getFailureReason()));
-            }
+            saveHoldFailed(event, result.getFailureReason(), now);
+            slotMetrics.hold(HoldOutcome.from(result.getFailureReason()));
         }
 
         consumedEventRepository.save(ConsumedEvent.create(event.eventId(), CONSUMER, HoldRequestedEvent.TYPE, now));
