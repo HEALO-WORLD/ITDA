@@ -105,6 +105,11 @@ public class Slot extends BaseEntity {
         return this.status == SlotStatus.HELD && reservationId.equals(this.reservationId);
     }
 
+    // 시작 시각이 now 이전이거나 같으면 이미 시작한 슬롯이다 (holdIfAvailable의 시작 전 조건과 같은 기준)
+    public boolean hasStarted(LocalDateTime now) {
+        return !LocalDateTime.of(date, startTime).isAfter(now);
+    }
+
     public boolean isBookedBy(UUID reservationId) {
         return this.status == SlotStatus.BOOKED && reservationId.equals(this.reservationId);
     }
