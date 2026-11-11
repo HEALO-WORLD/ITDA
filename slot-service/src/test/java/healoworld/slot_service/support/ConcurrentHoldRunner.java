@@ -18,8 +18,8 @@ public final class ConcurrentHoldRunner {
 
     public record RoundResult(int success, int fail, int error, long elapsedMs) {}
 
-    // 실제 시계로 돌기 때문에 HOLD 조건(시작 전 슬롯)을 통과하도록 충분히 미래 날짜로 둔다
-    private static final LocalDate SLOT_DATE = LocalDate.of(2026, 12, 20);
+    // 실제 시계로 돌기 때문에 HOLD 조건(시작 전 슬롯)을 항상 통과하도록 오늘부터 1년 뒤 날짜로 둔다
+    private static final LocalDate SLOT_DATE = LocalDate.now().plusYears(1);
 
     private ConcurrentHoldRunner() {}
 
