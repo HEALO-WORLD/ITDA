@@ -9,6 +9,11 @@ spring:
       # 테이블이 없으면 만들고, 테스트가 끝나도 DROP하지 않는다
       ddl-auto: update
     show-sql: false
+  kafka:
+    listener:
+      # 테스트에서는 Kafka 리스너를 자동 시작하지 않는다 (브로커 없이 localhost:9092 연결을 시도하지 않게)
+      # 실제 Kafka가 필요한 테스트는 spring.kafka.listener.auto-startup=true로 켠다 (SlotResultKafkaFlowIntegrationTest)
+      auto-startup: false
 
 # 테스트에서는 Eureka 서버에 등록·조회하지 않는다
 eureka:
@@ -19,7 +24,3 @@ itda:
   incident-processing:
     scheduler:
       enabled: false
-
-kafka:
-  listener:
-    auto-startup: false
