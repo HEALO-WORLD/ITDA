@@ -138,6 +138,10 @@ public class SlotResultService {
             log.info("이미 처리된 SlotBooked 무시. eventId={}, reservationId={}", eventId, reservation.getId());
             return;
         }
+        // 확정 전 최종 확인: 예약 행은 위 UPDATE로 잠겼으므로(의뢰 → 예약) 이어서 검사를 잠근 뒤 확인한다 (의뢰 → 예약 → 검사)
+        // 예약 확정 전에는 검사를 시작할 수 없으므로 검사가 이미 시작·완료됐다면 데이터 불일치다. 자동 확정하지 않고
+        // 예외로 예약 변경까지 롤백한다 (Kafka: BaseException이라 재시도 없이 DLT, 정합성 복구: 수동 확인 대상)
+        ensureExaminationNotStarted(referral, reservation, eventId);
         if (referralRepository.confirmIfPending(referral.getId(), now) == 0) {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);   // 예약 변경까지 롤백
         }
@@ -222,6 +226,19 @@ public class SlotResultService {
         }
 
         referralHistoryService.recordHistory(referral, reservation, fromStatus, ReferralStatus.NEEDS_RESCHEDULE, Reason.RESERVATION_BLOCKED, eventId, null);
+    }
+
+    // 의뢰의 검사가 IN_PROGRESS·COMPLETED면 확정하지 않는다. 검사의 reservationId가 아니라 의뢰 기준으로 본다
+    // (같은 예약에 연결된 경우 ExaminationService.updateReservation()이 조기 반환해 검사 상태를 보지 않으므로 여기서 막는다)
+    private void ensureExaminationNotStarted(Referral referral, Reservation reservation, UUID eventId) {
+        ExaminationStatus examinationStatus = examinationRepository.findByReferralIdForUpdate(referral.getId())
+                .map(Examination::getStatus)
+                .orElse(null);
+        if (examinationStatus == ExaminationStatus.IN_PROGRESS || examinationStatus == ExaminationStatus.COMPLETED) {
+            log.warn("검사가 이미 {}라 SlotBooked로 예약을 확정하지 않음, 담당자 확인 필요. eventId={}, referralId={}, reservationId={}",
+                    examinationStatus, eventId, referral.getId(), reservation.getId());
+            throw new BaseException(ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE);
+        }
     }
 
     private boolean isExpected(Reservation reservation, UUID eventId, SlotResultType eventType, ReservationStatus... expected) {
