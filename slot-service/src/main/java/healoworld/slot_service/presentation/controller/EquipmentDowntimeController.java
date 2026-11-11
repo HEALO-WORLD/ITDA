@@ -1,6 +1,7 @@
 package healoworld.slot_service.presentation.controller;
 
 import healoworld.slot_service.application.service.EquipmentDowntimeService;
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.dto.ApiResponse;
 import healoworld.slot_service.presentation.dto.request.EquipmentDowntimeCreateRequest;
 import healoworld.slot_service.presentation.dto.response.EquipmentDowntimeCreateResponse;
@@ -71,7 +72,7 @@ public class EquipmentDowntimeController {
     public ResponseEntity<ApiResponse<EquipmentDowntimeCreateResponse>> createDowntime(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
             @Parameter(description = "요청자 기관 ID") @RequestHeader("X-Institution-Id") UUID userInstitutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") String userRole,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role userRole,
             @Valid @RequestBody EquipmentDowntimeCreateRequest request
     ) {
         EquipmentDowntimeCreateResponse response = equipmentDowntimeService.createDowntime(
@@ -89,7 +90,7 @@ public class EquipmentDowntimeController {
             @PathVariable UUID downtimeId,
             @RequestHeader("X-User-Id") UUID userId,
             @RequestHeader("X-Institution-Id") UUID institutionId,
-            @RequestHeader("X-Role") String role,
+            @RequestHeader("X-Role") Role role,
             @Valid @RequestBody EquipmentDowntimeRecoveryRequest request) {
         return ResponseEntity.ok(ApiResponse.ok("장비 복구가 확인되었습니다.",
                 equipmentDowntimeService.recover(downtimeId, request.reason(), userId, institutionId, role)));
@@ -101,7 +102,7 @@ public class EquipmentDowntimeController {
             @PathVariable UUID downtimeId,
             @RequestHeader("X-User-Id") UUID userId,
             @RequestHeader("X-Institution-Id") UUID institutionId,
-            @RequestHeader("X-Role") String role,
+            @RequestHeader("X-Role") Role role,
             @Valid @RequestBody EquipmentDowntimeExtensionRequest request) {
         return ResponseEntity.ok(ApiResponse.ok("장비 중단 기간이 연장되었습니다.",
                 equipmentDowntimeService.extend(downtimeId, request.endedAt(), userId, institutionId, role)));

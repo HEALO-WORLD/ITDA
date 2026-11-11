@@ -1,5 +1,6 @@
 package healoworld.slot_service.application.service;
 
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.domain.enums.SlotView;
 import healoworld.slot_service.global.dto.SliceResponse;
 import healoworld.slot_service.global.exception.BaseException;
@@ -24,12 +25,12 @@ public class SlotQueryService {
             SlotSearchRequest request,
             UUID userId,
             UUID userInstitutionId,
-            String role
+            Role role
     ) {
         validateActor(userId, userInstitutionId, role);
         slotService.validateSearchRequest(request);
 
-        if ("REQUESTER".equals(role)
+        if (role == Role.REQUESTER
                 && request.getView() == SlotView.MANAGEMENT) {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
@@ -49,7 +50,7 @@ public class SlotQueryService {
             UUID slotId,
             UUID userId,
             UUID userInstitutionId,
-            String role
+            Role role
     ) {
         validateActor(userId, userInstitutionId, role);
 
@@ -64,7 +65,7 @@ public class SlotQueryService {
                         userInstitutionId,
                         role,
                         null,
-                        "REQUESTER".equals(role)
+                        role == Role.REQUESTER
                 );
 
         if (!visibleEquipmentIds.contains(response.getEquipmentId())) {
@@ -77,14 +78,10 @@ public class SlotQueryService {
     private void validateActor(
             UUID userId,
             UUID institutionId,
-            String role
+            Role role
     ) {
         if (userId == null || institutionId == null || role == null) {
             throw new BaseException(ErrorCode.INVALID_INPUT);
-        }
-
-        if (!Set.of("REQUESTER", "EXAMINER", "ADMIN").contains(role)) {
-            throw new BaseException(ErrorCode.FORBIDDEN);
         }
     }
 }

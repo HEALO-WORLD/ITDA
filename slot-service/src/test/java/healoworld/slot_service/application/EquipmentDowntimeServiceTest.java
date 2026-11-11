@@ -3,6 +3,7 @@ package healoworld.slot_service.application;
 import healoworld.slot_service.application.service.EquipmentDowntimeService;
 import healoworld.slot_service.domain.entity.EquipmentDowntime;
 import healoworld.slot_service.domain.enums.EquipmentDowntimeType;
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
 import feign.FeignException;
@@ -24,7 +25,7 @@ import healoworld.slot_service.support.PostgresContainerSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -102,7 +103,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
         EquipmentDowntimeCreateResponse response = equipmentDowntimeService.createDowntime(
                 request(OffsetDateTime.parse("2026-11-10T00:00:00Z"),
                         OffsetDateTime.parse("2026-11-10T18:00:00+09:00"), "  가상 고장 사유  "),
-                USER_ID, INSTITUTION_ID, "EXAMINER");
+                USER_ID, INSTITUTION_ID, Role.EXAMINER);
 
         EquipmentDowntime saved = equipmentDowntimeRepository.findById(response.getId()).orElseThrow();
         assertThat(saved.getEquipmentId()).isEqualTo(EQUIPMENT_ID);
@@ -127,7 +128,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
         ownerIs(EQUIPMENT_ID, UUID.randomUUID());
 
         assertThatThrownBy(() -> equipmentDowntimeService.createDowntime(
-                validRequest(), USER_ID, INSTITUTION_ID, "EXAMINER"))
+                validRequest(), USER_ID, INSTITUTION_ID, Role.EXAMINER))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.FORBIDDEN);
         assertNothingSaved();
@@ -139,7 +140,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
         ownerIs(EQUIPMENT_ID, ownerInstitutionId);
 
         EquipmentDowntimeCreateResponse response = equipmentDowntimeService.createDowntime(
-                validRequest(), USER_ID, INSTITUTION_ID, "ADMIN");
+                validRequest(), USER_ID, INSTITUTION_ID, Role.ADMIN);
 
         assertThat(equipmentDowntimeRepository.existsById(response.getId())).isTrue();
         assertThat(singlePayload().get("institutionId").asString()).isEqualTo(ownerInstitutionId.toString());
@@ -152,7 +153,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
         examinerOwns(UUID.randomUUID());
 
         assertThatThrownBy(() -> equipmentDowntimeService.createDowntime(
-                validRequest(), USER_ID, INSTITUTION_ID, "EXAMINER"))
+                validRequest(), USER_ID, INSTITUTION_ID, Role.EXAMINER))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.FORBIDDEN);
         assertNothingSaved();
@@ -163,7 +164,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
         given(institutionClient.getEquipmentOwner(EQUIPMENT_ID)).willThrow(feignError(404));
 
         assertThatThrownBy(() -> equipmentDowntimeService.createDowntime(
-                validRequest(), USER_ID, INSTITUTION_ID, "ADMIN"))
+                validRequest(), USER_ID, INSTITUTION_ID, Role.ADMIN))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
         assertNothingSaved();
@@ -174,7 +175,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
         given(institutionClient.getEquipmentOwner(EQUIPMENT_ID)).willThrow(feignError(503));
 
         assertThatThrownBy(() -> equipmentDowntimeService.createDowntime(
-                validRequest(), USER_ID, INSTITUTION_ID, "ADMIN"))
+                validRequest(), USER_ID, INSTITUTION_ID, Role.ADMIN))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.REFERENCE_SERVICE_UNAVAILABLE);
         assertNothingSaved();
@@ -188,7 +189,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
 
         for (int i = 0; i < 2; i++) {
             assertThatThrownBy(() -> equipmentDowntimeService.createDowntime(
-                    validRequest(), USER_ID, INSTITUTION_ID, "ADMIN"))
+                    validRequest(), USER_ID, INSTITUTION_ID, Role.ADMIN))
                     .isInstanceOf(BaseException.class)
                     .extracting("errorCode").isEqualTo(ErrorCode.REFERENCE_RESPONSE_INVALID);
         }
@@ -196,8 +197,8 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"REQUESTER", "UNKNOWN"})
-    void EXAMINER_ADMIN이_아니면_403이고_장비_조회도_하지_않는다(String role) {
+    @EnumSource(value = Role.class, names = {"REQUESTER"})
+    void EXAMINER_ADMIN이_아니면_403이고_장비_조회도_하지_않는다(Role role) {
         assertThatThrownBy(() -> equipmentDowntimeService.createDowntime(
                 validRequest(), USER_ID, INSTITUTION_ID, role))
                 .isInstanceOf(BaseException.class)
@@ -210,14 +211,14 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
         OffsetDateTime at = OffsetDateTime.parse("2026-11-10T09:00:00+09:00");
 
         assertThatThrownBy(() -> equipmentDowntimeService.createDowntime(
-                request(at, at, "가상 고장 사유"), USER_ID, INSTITUTION_ID, "EXAMINER"))
+                request(at, at, "가상 고장 사유"), USER_ID, INSTITUTION_ID, Role.EXAMINER))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.DOWNTIME_INVALID_TIME_RANGE);
 
         // 오프셋이 달라도 같은 순간이면 길이 0인 구간이다 (KST 09:00 = UTC 00:00)
         assertThatThrownBy(() -> equipmentDowntimeService.createDowntime(
                 request(at, OffsetDateTime.parse("2026-11-10T00:00:00Z"), "가상 고장 사유"),
-                USER_ID, INSTITUTION_ID, "EXAMINER"))
+                USER_ID, INSTITUTION_ID, Role.EXAMINER))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.DOWNTIME_INVALID_TIME_RANGE);
 
@@ -233,7 +234,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
         EquipmentDowntimeCreateResponse response = equipmentDowntimeService.createDowntime(
                 request(OffsetDateTime.parse("2026-10-30T08:00:00+09:00"),
                         OffsetDateTime.parse("2026-10-30T18:00:00+09:00"), "가상 고장 사유"),
-                USER_ID, INSTITUTION_ID, "EXAMINER");
+                USER_ID, INSTITUTION_ID, Role.EXAMINER);
 
         assertThat(equipmentDowntimeRepository.existsById(response.getId())).isTrue();
     }
@@ -243,7 +244,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
         assertThatThrownBy(() -> equipmentDowntimeService.createDowntime(
                 request(OffsetDateTime.parse("2026-10-30T08:00:00+09:00"),
                         OffsetDateTime.parse("2026-10-30T10:00:00+09:00"), "가상 고장 사유"),
-                USER_ID, INSTITUTION_ID, "EXAMINER"))
+                USER_ID, INSTITUTION_ID, Role.EXAMINER))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.DOWNTIME_END_NOT_FUTURE);
 
@@ -252,7 +253,7 @@ class EquipmentDowntimeServiceTest extends PostgresContainerSupport {
     }
 
     private void examinerOwns(UUID equipmentId) {
-        given(equipmentVisibilityClient.getVisibleEquipmentIds(INSTITUTION_ID, "EXAMINER", null, false))
+        given(equipmentVisibilityClient.getVisibleEquipmentIds(INSTITUTION_ID, Role.EXAMINER, null, false))
                 .willReturn(Set.of(equipmentId));
     }
 

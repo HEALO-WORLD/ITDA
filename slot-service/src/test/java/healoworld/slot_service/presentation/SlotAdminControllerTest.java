@@ -90,7 +90,7 @@ class SlotAdminControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"REQUESTER", "EXAMINER", "admin"})
+    @ValueSource(strings = {"REQUESTER", "EXAMINER"})
     void ADMIN이_아니면_403이고_서비스를_호출하지_않는다(String role) throws Exception {
         mockMvc.perform(post("/api/v1/slots/{slotId}/release", UUID.randomUUID())
                         .header(ROLE_HEADER, role)
@@ -99,6 +99,20 @@ class SlotAdminControllerTest {
                         .content(body(UUID.randomUUID())))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(ErrorCode.ADMIN_ONLY.name()));
+
+        verify(slotReleaseService, never()).forceRelease(any(), any(), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"admin", "UNKNOWN"})
+    void 정의되지_않은_권한_값이면_400_INVALID_INPUT이고_서비스를_호출하지_않는다(String role) throws Exception {
+        mockMvc.perform(post("/api/v1/slots/{slotId}/release", UUID.randomUUID())
+                        .header(ROLE_HEADER, role)
+                        .header(USER_ID_HEADER, ADMIN_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body(UUID.randomUUID())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_INPUT.name()));
 
         verify(slotReleaseService, never()).forceRelease(any(), any(), any());
     }
@@ -210,12 +224,23 @@ class SlotAdminControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"REQUESTER", "EXAMINER", "admin"})
+    @ValueSource(strings = {"REQUESTER", "EXAMINER"})
     void 이력조회_ADMIN이_아니면_403이고_서비스를_호출하지_않는다(String role) throws Exception {
         mockMvc.perform(get("/api/v1/slots/{slotId}/status-histories", UUID.randomUUID())
                         .header(ROLE_HEADER, role))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(ErrorCode.ADMIN_ONLY.name()));
+
+        verify(slotStatusHistoryService, never()).getHistories(any(), anyInt(), anyInt());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"admin", "UNKNOWN"})
+    void 이력조회_정의되지_않은_권한_값이면_400_INVALID_INPUT이고_서비스를_호출하지_않는다(String role) throws Exception {
+        mockMvc.perform(get("/api/v1/slots/{slotId}/status-histories", UUID.randomUUID())
+                        .header(ROLE_HEADER, role))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_INPUT.name()));
 
         verify(slotStatusHistoryService, never()).getHistories(any(), anyInt(), anyInt());
     }
