@@ -42,8 +42,12 @@ public enum ErrorCode {
     // equipment
     REFERENCE_NOT_AVAILABLE(HttpStatus.CONFLICT,"장비 또는 운영시간을 사용할 수 없습니다."),
     REFERENCE_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE,"기준정보 서비스를 일시적으로 사용할 수 없습니다."),
-    REFERENCE_RESPONSE_INVALID(HttpStatus.BAD_GATEWAY,"기준정보 서비스의 응답이 올바르지 않습니다.");
+    REFERENCE_RESPONSE_INVALID(HttpStatus.BAD_GATEWAY,"기준정보 서비스의 응답이 올바르지 않습니다."),
 
+    // dead letter
+    DEAD_LETTER_NOT_FOUND(HttpStatus.NOT_FOUND, "실패 메시지를 찾을 수 없습니다."),
+    DEAD_LETTER_ALREADY_RESOLVED(HttpStatus.CONFLICT, "이미 재처리되었거나 무시된 실패 메시지입니다."),
+    DEAD_LETTER_REPUBLISH_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "메시지를 다시 발행하지 못했습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String message;
