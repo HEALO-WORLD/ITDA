@@ -28,6 +28,13 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
     List<Slot> findAllByIdInAndDeletedAtIsNull(Collection<UUID> ids);
 
     @Query("""
+        select s.equipmentId
+        from Slot s
+        where s.id = :slotId
+        """)
+    Optional<UUID> findEquipmentIdBySlotId(@Param("slotId") UUID slotId);
+
+    @Query("""
         select count(s) > 0
         from Slot s
         where s.equipmentId = :equipmentId
@@ -307,4 +314,33 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
                               @Param("downtimeId") UUID downtimeId,
                               @Param("now") LocalDateTime now,
                               @Param("occupiedStatuses") Collection<SlotStatus> occupiedStatuses);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select s
+        from Slot s, EquipmentDowntime d
+        where s.equipmentDowntimeId = d.id
+        and s.equipmentId = :equipmentId
+        and s.deletedAt is null
+        and d.recoveredAt is not null
+        and s.reservationId is null
+        and s.status = healoworld.slot_service.domain.enums.SlotStatus.UNAVAILABLE
+        and (s.date > :today or (s.date = :today and s.startTime > :time))
+        order by s.id
+        """)
+    List<Slot> findRecoveryCandidatesForUpdate(@Param("equipmentId") UUID equipmentId,
+                                               @Param("today") LocalDate today, @Param("time") LocalTime time);
+
+    @Query("""
+        select distinct s.equipmentId
+        from Slot s, EquipmentDowntime d
+        where s.equipmentDowntimeId = d.id
+        and s.deletedAt is null
+        and d.recoveredAt is not null
+        and s.status = healoworld.slot_service.domain.enums.SlotStatus.UNAVAILABLE
+        and s.reservationId is null
+        and (s.date > :today or (s.date = :today and s.startTime > :time))
+        order by s.equipmentId
+        """)
+    List<UUID> findRecoveryEquipmentIds(@Param("today") LocalDate today, @Param("time") LocalTime time);
 }

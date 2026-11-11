@@ -4,6 +4,7 @@ import healoworld.slot_service.application.dto.EquipmentDowntimeRegistration;
 import healoworld.slot_service.application.dto.EquipmentDowntimeRegistration.ConflictedSlot;
 import healoworld.slot_service.application.event.downtime.EquipmentDowntimeStartedEvent;
 import healoworld.slot_service.domain.entity.EquipmentDowntime;
+import healoworld.slot_service.domain.enums.EquipmentDowntimeType;
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.domain.enums.SlotStatusChangeReason;
@@ -32,8 +33,8 @@ import java.util.UUID;
 // 원격 호출(소유권 확인)은 호출하는 쪽(EquipmentDowntimeService)이 트랜잭션 밖에서 먼저 끝낸다
 //
 // 동시성
-//  1) 같은 장비·날짜 advisory lock: 슬롯 생성(SlotCreateWriter)과 같은 키를 쓰므로 중단 등록, 같은 기간의 중단 중복 등록,
-//     중단 구간의 슬롯 생성이 서로 순서대로 실행된다. 여러 날짜는 날짜 오름차순으로 잠가 교착을 피한다
+//  1) 장비 배타 advisory lock을 먼저 얻고 날짜 잠금을 오름차순으로 얻는다.
+//     생성·HOLD·BOOK의 장비 공유 잠금 연결은 후속 단계에서 수행한다.
 //  2) 겹치는 슬롯 행 잠금(findOverlappingForUpdate): HOLD·BOOK·해제·만료는 행 단위 조건부 UPDATE라
 //     이 트랜잭션이 끝날 때까지 기다린 뒤, 바뀐 상태·equipment_downtime_id로 조건을 다시 평가한다
 @Slf4j
@@ -52,14 +53,22 @@ public class EquipmentDowntimeWriter {
     private final OutboxEventRepository outboxEventRepository;
     private final JsonMapper jsonMapper;
     private final Clock clock;
+    private final EquipmentAvailabilityPublisher availabilityPublisher;
 
     // startedAt·endedAt: 한국 시간 기준. changedBy: 등록한 사용자 ID (상태 이력의 changed_by)
     // institutionId: Institution Service에서 확인한 장비의 실제 소속 기관 ID (이벤트에 담는다)
     @Transactional
     public EquipmentDowntimeRegistration register(UUID equipmentId, UUID institutionId, LocalDateTime startedAt,
                                                   LocalDateTime endedAt, String reason, UUID changedBy) {
+        return register(equipmentId, institutionId, startedAt, endedAt, reason, changedBy, EquipmentDowntimeType.FAILURE);
+    }
+
+    @Transactional
+    public EquipmentDowntimeRegistration register(UUID equipmentId, UUID institutionId, LocalDateTime startedAt,
+                                                  LocalDateTime endedAt, String reason, UUID changedBy, EquipmentDowntimeType downtimeType) {
         LocalDateTime now = LocalDateTime.now(clock);
 
+        slotCreationLockRepository.lockEquipment(equipmentId);
         lockDates(equipmentId, startedAt, endedAt);
 
         // 잠금을 얻은 뒤 조회하므로 먼저 커밋된 같은 장비의 중단을 놓치지 않는다
@@ -68,7 +77,19 @@ public class EquipmentDowntimeWriter {
         }
 
         EquipmentDowntime downtime = equipmentDowntimeRepository.saveAndFlush(
-                EquipmentDowntime.create(equipmentId, startedAt, endedAt, reason));
+                EquipmentDowntime.register(equipmentId, institutionId, downtimeType, startedAt, endedAt, reason, changedBy));
+        if (downtime.activate(now)) {
+            availabilityPublisher.saveSnapshot(downtime, changedBy, reason, now);
+        }
+        return blockPeriod(downtime, institutionId, startedAt, endedAt, changedBy, now);
+    }
+
+    @Transactional
+    public EquipmentDowntimeRegistration blockPeriod(EquipmentDowntime downtime, UUID institutionId,
+                                                     LocalDateTime startedAt, LocalDateTime endedAt, UUID changedBy, LocalDateTime now) {
+        UUID equipmentId = downtime.getEquipmentId();
+        slotCreationLockRepository.lockEquipment(equipmentId);
+        lockDates(equipmentId, startedAt, endedAt);
 
         // 행을 잠근 뒤 읽은 상태라 아래 분류와 UPDATE 사이에 다른 트랜잭션이 상태를 바꿀 수 없다
         List<Slot> slots = slotRepository.findOverlappingForUpdate(equipmentId,
@@ -106,18 +127,21 @@ public class EquipmentDowntimeWriter {
 
         // 이벤트는 Kafka로 직접 보내지 않고 Outbox에 저장한다. 위 변경과 함께 커밋·롤백되고,
         // 커밋 후 OutboxPublisher가 발행한다 (발행 실패 시 같은 행·같은 eventId로 재시도)
-        saveStartedEvent(downtime, institutionId, now);
+        saveStartedEvent(downtime, institutionId, startedAt, endedAt, now);
 
         log.info("장비 중단 등록. downtimeId={}, equipmentId={}, blocked={}, conflicted={}",
                 downtime.getId(), equipmentId, availableIds.size(), conflicts.size());
         return new EquipmentDowntimeRegistration(downtime, availableIds.size(), List.copyOf(conflicts));
     }
 
-    // topic = equipment-events, key = equipmentId (같은 장비의 이벤트 순서 유지, Referral Consumer가 key와 본문을 대조함)
+    // topic = equipment-events, key = equipmentId (동일 파티션 배치 기준, Referral Consumer가 key와 본문을 대조함)
     // occurredAt은 한국 시간 기준 등록 시각이다. 저장한 now와 같은 순간이며 시간대만 Asia/Seoul로 고정한다
-    private void saveStartedEvent(EquipmentDowntime downtime, UUID institutionId, LocalDateTime now) {
+    private void saveStartedEvent(EquipmentDowntime downtime, UUID institutionId,
+                                  LocalDateTime startedAt, LocalDateTime endedAt, LocalDateTime now) {
         LocalDateTime occurredAt = now.atZone(clock.getZone()).withZoneSameInstant(BUSINESS_ZONE).toLocalDateTime();
-        EquipmentDowntimeStartedEvent event = EquipmentDowntimeStartedEvent.of(downtime, institutionId, occurredAt);
+        EquipmentDowntimeStartedEvent event = new EquipmentDowntimeStartedEvent(UUID.randomUUID(),
+                EquipmentDowntimeStartedEvent.TYPE, occurredAt, downtime.getEquipmentId(), institutionId,
+                downtime.getReason(), startedAt, endedAt);
         outboxEventRepository.save(OutboxEvent.create(event.eventId(), AGGREGATE_TYPE, downtime.getId(),
                 EquipmentDowntimeStartedEvent.TOPIC, downtime.getEquipmentId().toString(),
                 EquipmentDowntimeStartedEvent.TYPE, jsonMapper.writeValueAsString(event), now));
