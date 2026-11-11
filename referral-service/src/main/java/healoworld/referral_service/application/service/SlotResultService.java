@@ -176,9 +176,9 @@ public class SlotResultService {
 
         ReferralStatus toStatus = failOrRequestReschedule(referral, reservation, now);
 
-        UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
+        slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
 
-        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, outboxEventId, null);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, eventId, null);
 
     }
 
@@ -194,9 +194,9 @@ public class SlotResultService {
 
         ReferralStatus toStatus = failOrRequestReschedule(referral, reservation, now);
 
-        UUID outboxEventId = slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
+        slotCommandOutbox.recordOutbox(reservation, SlotCommandType.RELEASE_HOLD);
 
-        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, outboxEventId, null);
+        referralHistoryService.recordHistory(referral, reservation, fromStatus, toStatus, Reason.RESERVATION_FAILED, eventId, null);
     }
 
     // 예약 진행 중 → BLOCKED(EQUIPMENT_FAILURE), 의뢰 PENDING·CONFIRMED → NEEDS_RESCHEDULE
