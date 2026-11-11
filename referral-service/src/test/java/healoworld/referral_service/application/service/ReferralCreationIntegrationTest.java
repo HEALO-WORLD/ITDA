@@ -29,6 +29,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -82,6 +83,8 @@ import static org.mockito.Mockito.doThrow;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+// 이 클래스만 쓰는 설정 조합이라 컨텍스트가 따로 캐시된다. 끝나면 닫아 테스트 Postgres 커넥션을 돌려준다 (too many clients 방지)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ReferralCreationIntegrationTest extends PostgresContainerSupport {
 
     @TestConfiguration(proxyBeanMethods = false)
