@@ -3,6 +3,8 @@ package healoworld.slot_service.application;
 import healoworld.slot_service.application.service.SlotStatusQueryService;
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.global.exception.BaseException;
+import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.infrastructure.repository.SlotRepository;
 import healoworld.slot_service.presentation.dto.response.SlotStatusResponse;
 import healoworld.slot_service.support.FixedClockConfig;
@@ -23,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // 슬롯 상태 일괄 조회(내부 API용)를 실제 PostgreSQL로 확인한다
 // 컨텍스트 설정은 다른 슬롯 DB 테스트와 같게 두어 기존 컨텍스트를 재사용한다
@@ -35,6 +38,19 @@ class SlotStatusQueryServiceTest extends PostgresContainerSupport {
     @Autowired private SlotRepository slotRepository;
 
     private final List<UUID> savedIds = new ArrayList<>();
+
+    @Test
+    void rejectsDeletedAndMissingReservationContexts() {
+        Slot deleted = SlotFixture.available();
+        ReflectionTestUtils.setField(deleted, "deletedAt", LocalDateTime.of(2026, 11, 1, 12, 0));
+        UUID deletedId = save(deleted).getId();
+
+        for (UUID id : List.of(deletedId, UUID.randomUUID())) {
+            assertThatThrownBy(() -> slotStatusQueryService.getReservationContext(id))
+                    .isInstanceOfSatisfying(BaseException.class,
+                            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
+        }
+    }
 
     @AfterEach
     void cleanUp() {
