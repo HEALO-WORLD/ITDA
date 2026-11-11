@@ -8,6 +8,7 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import org.apache.http.HttpHeaders;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.cloud.gateway.route.Route;
@@ -24,6 +25,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
@@ -34,6 +36,11 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
     private static final String HEADER_ROLE = "X-Role";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String BLOCK_INTERNAL_ROUTE_ID = "block-internal";
+    private static final Set<String> SWAGGER_ROUTE_IDS = Set.of(
+            "openapi-institution", "openapi-slot", "openapi-referral");
+
+    @Value("${itda.swagger.enabled:false}")
+    private boolean swaggerEnabled;
 
     private final GatewayJwtProvider jwtProvider;
     private final JwtProperties jwtProperties;
@@ -58,6 +65,12 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
                     headers.remove(HEADER_ROLE);
                 })
                 .build();
+
+        // Swagger 문서 JSON은 로컬 Swagger UI에서 인증 없이 가져와야 한다.
+        // 활성화된 경우에도 문서 전용 GET 라우트만 통과시킨다.
+        if (swaggerEnabled && route != null && SWAGGER_ROUTE_IDS.contains(route.getId())) {
+            return chain.filter(exchange.mutate().request(request).build());
+        }
 
         // 2. 공개 API면 그대로 통과
         String path = request.getURI().getPath();

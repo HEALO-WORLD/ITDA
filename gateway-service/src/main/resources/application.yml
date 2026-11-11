@@ -25,6 +25,31 @@ spring:
               filters:
                 - SetStatus=404
 
+            # 로컬 통합 Swagger UI에서 참조할 OpenAPI 문서 프록시
+            - id: openapi-institution
+              uri: lb://institution-service
+              predicates:
+                - Path=/openapi/institution
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+
+            - id: openapi-slot
+              uri: lb://slot-service
+              predicates:
+                - Path=/openapi/slot
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+
+            - id: openapi-referral
+              uri: lb://referral-service
+              predicates:
+                - Path=/openapi/referral
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+
             - id: institution-service
               uri: lb://institution-service
               predicates:
@@ -39,6 +64,26 @@ spring:
               uri: lb://referral-service
               predicates:
                 - Path=/api/v1/referrals/**,/api/v1/equipment-incidents/**,/api/v1/notifications/**,/api/v1/examinations/**,/api/v1/referral-dead-letters/**
+
+# 명시적으로 켠 로컬 개발 환경에서만 Gateway 통합 Swagger UI를 제공한다.
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+    disable-swagger-default-url: true
+    urls-primary-name: Institution
+    urls:
+      - name: Institution
+        url: /openapi/institution
+      - name: Slot
+        url: /openapi/slot
+      - name: Referral
+        url: /openapi/referral
+
+itda:
+  swagger:
+    enabled: ${SWAGGER_ENABLED:false}
 
 eureka:
   instance:
