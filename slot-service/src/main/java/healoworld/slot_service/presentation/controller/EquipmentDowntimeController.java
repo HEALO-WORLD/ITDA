@@ -2,10 +2,14 @@ package healoworld.slot_service.presentation.controller;
 
 import healoworld.slot_service.application.service.EquipmentDowntimeService;
 import healoworld.slot_service.global.dto.ApiResponse;
+import healoworld.slot_service.global.dto.ErrorResponse;
 import healoworld.slot_service.presentation.dto.request.EquipmentDowntimeCreateRequest;
 import healoworld.slot_service.presentation.dto.response.EquipmentDowntimeCreateResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,31 +31,25 @@ public class EquipmentDowntimeController {
     @Operation(
             summary = "장비 중단 등록",
             description = """
-                    장비의 중단 구간을 등록합니다.
-
-                    - EXAMINER는 자기 기관 장비만, ADMIN은 모든 장비를 등록할 수 있습니다.
-                    - 시간은 오프셋을 포함해 보내며 한국 시간 기준으로 저장합니다.
-                    - 시작 일시는 과거여도 되지만(이미 발생한 장애), 종료 일시는 현재 이후여야 합니다.
-                    - 중단 구간과 겹치는 AVAILABLE 슬롯은 UNAVAILABLE로 바뀝니다(affectedSlotCount).
-                      경계만 맞닿는 슬롯은 겹치지 않는 것으로 봅니다.
-                    - HELD·BOOKED 슬롯은 상태와 예약을 유지한 채 conflictedSlots로 반환합니다.
-                      이 슬롯은 확정되지 않으며, 해제·만료되면 AVAILABLE이 아닌 UNAVAILABLE이 됩니다.
-                    - 예약·의뢰 상태는 바꾸지 않습니다. 등록과 같은 트랜잭션에서 EquipmentDowntimeStarted 이벤트를 Outbox에 저장하고,
-                      커밋 후 equipment-events 토픽으로 발행합니다. 이벤트의 기관 ID는 장비의 실제 소속 기관입니다.
-
-                    오류 응답:
-                    - 400 VALIDATION_FAILED: 필수 값 누락, 사유가 비었거나 500자 초과
-                    - 400 DOWNTIME_INVALID_TIME_RANGE: 종료 일시가 시작 일시 이후가 아님
-                    - 400 DOWNTIME_END_NOT_FUTURE: 종료 일시가 현재 이후가 아님
-                    - 409 DOWNTIME_OVERLAP: 같은 장비에 기간이 겹치는 중단이 이미 있음
-                    - 400 MISSING_HEADER: 사용자·기관·권한 헤더 누락
-                    - 400 INVALID_INPUT: 잘못된 UUID 또는 요청 본문
-                    - 403 FORBIDDEN: EXAMINER·ADMIN이 아니거나, EXAMINER가 자기 기관 장비가 아닌 장비를 지정
-                    - 404 RESOURCE_NOT_FOUND: ADMIN이 지정한 장비가 없음
-                    - 502 REFERENCE_RESPONSE_INVALID: Institution Service 응답이 올바르지 않음
-                    - 503 REFERENCE_SERVICE_UNAVAILABLE: Institution Service 응답 없음
+                    장비 중단 시간을 등록하고 겹치는 가용 슬롯을 UNAVAILABLE로 변경합니다. 선점·확정 슬롯은 충돌 목록에 포함하며 영향 예약의 후속 처리는 Kafka 이벤트로 진행합니다.
                     """
     )
+    // 코드별 사유는 위 description의 "오류 응답" 목록에 있다. 여기서는 상태 코드와 ErrorResponse 구조만 연결한다
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "등록 완료"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "VALIDATION_FAILED, DOWNTIME_INVALID_TIME_RANGE, DOWNTIME_END_NOT_FUTURE, MISSING_HEADER, INVALID_INPUT",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "FORBIDDEN",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "DOWNTIME_OVERLAP",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "502", description = "REFERENCE_RESPONSE_INVALID",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "REFERENCE_SERVICE_UNAVAILABLE",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @PostMapping
     public ResponseEntity<ApiResponse<EquipmentDowntimeCreateResponse>> createDowntime(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
