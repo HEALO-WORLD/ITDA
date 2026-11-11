@@ -89,6 +89,8 @@ export const options = {
     thresholds: {
         'http_req_failed{phase:main}': ['rate<0.01'],
         'checks{phase:main}': ['rate>0.99'],
+        // 항상 통과한다. k6는 threshold가 걸린 태그 지표만 요약에 따로 보여 주므로 본 측정 응답 시간을 보려고 둔다
+        'http_req_duration{phase:main}': ['max>=0'],
     },
     summaryTrendStats: ['avg', 'p(50)', 'p(95)', 'p(99)', 'max'],
 };
@@ -103,7 +105,7 @@ export function setup() {
             JSON.stringify({ loginId: TARGET.loginId, password: __ENV.LOGIN_PASSWORD }),
             { headers: { 'Content-Type': 'application/json' } });
         if (res.status !== 200) {
-            fail(`로그인 실패 (${res.status}). 계정 가입·승인(ec2-seed-institution.sql)을 확인`);
+            fail(`로그인 실패 (${res.status}). 비밀번호와 계정 가입·승인(ec2-approve-user.sql)을 확인`);
         }
         return { token: res.json('data.accessToken') };
     }

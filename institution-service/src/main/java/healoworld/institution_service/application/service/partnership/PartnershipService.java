@@ -13,6 +13,7 @@ import healoworld.institution_service.infrastructure.repository.PartnershipRepos
 import healoworld.institution_service.presentation.dto.response.MyPartnershipResponse;
 import healoworld.institution_service.presentation.dto.response.PartnershipResponse;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class PartnershipService {
+    private static final String UNIQUE_PARTNERSHIP_PAIR = "uk_partnership_pair";
+
     private final PartnershipRepository partnershipRepository;
     private final InstitutionRepository institutionRepository;
     private final PartnershipHistoryRepository partnershipHistoryRepository;
@@ -119,15 +122,23 @@ public class PartnershipService {
         try {
             partnershipRepository.saveAndFlush(partnership);
         } catch (DataIntegrityViolationException e) {
-            // 동시 요청으로 uk_partnership_pair 위반 → 실제로 행이 생겼으면 409, 아니면 원래 예외
-            if (partnershipRepository.findByRequesterInstitutionIdAndExamInstitutionId(
-                    requester.getId(), exam.getId()).isPresent()) {
-                throw new BaseException(ErrorCode.PARTNERSHIP_ALREADY_IN_PROGRESS);
-            }
-            throw e;
+            // 동시 요청으로 uk_partnership_pair 위반 -> 409
+            // 오류가 난 트랜잭션에서는 PostgreSQL이 이후 쿼리를 거부하므로 다시 조회하지 않고 제약 이름으로 판단
+            throw translateConstraint(e);
         }
         saveHistory(partnership, null);   // 첫 요청: null → PENDING
         return partnership;
+    }
+
+    private RuntimeException translateConstraint(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation                     // 제약 위반인지
+                    && "23505".equals(violation.getSQLState())                              // 그 중 unique위반인지(외래키 위반 등과 구분)
+                    && UNIQUE_PARTNERSHIP_PAIR.equals(violation.getConstraintName())) {     // 두 기관 쌍 제약인지(다른 unique 제약과 구분)
+                return new BaseException(ErrorCode.PARTNERSHIP_ALREADY_IN_PROGRESS);
+            }
+        }
+        return exception;
     }
 
     private void validateExamInstitution(Partnership partnership, UUID myInstitutionId) {

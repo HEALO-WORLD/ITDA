@@ -1,6 +1,7 @@
 package healoworld.slot_service.presentation.dto.request;
 
 import healoworld.slot_service.domain.entity.EquipmentDowntime;
+import healoworld.slot_service.domain.enums.EquipmentDowntimeType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -27,6 +28,10 @@ public class EquipmentDowntimeCreateRequest {
     @Schema(description = "중단 종료 일시 (시작 일시 이후)", example = "2026-11-10T18:00:00+09:00")
     @NotNull(message = "중단 종료 일시는 필수입니다.")
     private OffsetDateTime endedAt;
+
+    @Schema(description = "중단 유형", example = "MAINTENANCE")
+    @NotNull(message = "중단 유형은 필수입니다.")
+    private EquipmentDowntimeType downtimeType;
 
     // Referral의 EquipmentDowntimeStarted Consumer가 reason을 필수로 검증하므로 여기서도 필수로 받는다
     @Schema(description = "중단 사유 (최대 500자)", example = "갠트리 회전부 고장")
