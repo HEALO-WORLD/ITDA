@@ -7,6 +7,9 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 
 public interface EquipmentDowntimeRepository extends JpaRepository<EquipmentDowntime, UUID> {
 
@@ -18,10 +21,40 @@ public interface EquipmentDowntimeRepository extends JpaRepository<EquipmentDown
           from EquipmentDowntime d
          where d.equipmentId = :equipmentId
            and d.deletedAt is null
+           and d.recoveredAt is null
            and d.startedAt < :to
            and d.endedAt > :from
         """)
     boolean existsActiveOverlap(@Param("equipmentId") UUID equipmentId,
                                 @Param("from") LocalDateTime from,
                                 @Param("to") LocalDateTime to);
+
+    Optional<EquipmentDowntime> findByIdAndDeletedAtIsNull(UUID id);
+
+    List<EquipmentDowntime> findByEquipmentIdAndDeletedAtIsNullAndRecoveredAtIsNull(UUID equipmentId);
+
+    @Query("""
+        select distinct d.equipmentId from EquipmentDowntime d
+        where d.deletedAt is null
+        and d.recoveredAt is null
+        and d.activatedAt is null
+        and d.startedAt <= :now
+        and d.registeredBy is not null
+        order by d.equipmentId
+        """)
+    List<UUID> findDueEquipmentIds(@Param("now") LocalDateTime now, Pageable pageable);
+
+    // 예정 기간과의 겹침 또는 이미 시작했지만 복구되지 않은 장비인지 확인한다.
+    // 예정 종료 시각은 실제 복구 확인을 대신하지 않는다.
+    @Query("""
+        select count(d) > 0 from EquipmentDowntime d
+        where d.equipmentId = :equipmentId
+        and d.deletedAt is null
+        and d.recoveredAt is null
+        and d.startedAt < :to
+        and (d.endedAt > :from or d.startedAt <= :now)
+        """)
+    boolean existsBlockingOverlap(@Param("equipmentId") UUID equipmentId,
+                                  @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                                  @Param("now") LocalDateTime now);
 }

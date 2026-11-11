@@ -23,3 +23,7 @@ outbox:
 
 hold-expiry:
   enabled: false
+
+equipment-downtime:
+  lifecycle:
+    enabled: false

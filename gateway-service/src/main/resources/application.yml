@@ -137,6 +137,8 @@ gateway:
           - "PATCH,DELETE /api/v1/slots/*"
           - "POST /api/v1/equipment-downtimes"
           - "PATCH,DELETE /api/v1/equipment-downtimes/*"
+          - "PATCH /api/v1/equipment-downtimes/*/recovery"
+          - "PATCH /api/v1/equipment-downtimes/*/extension"
           - "GET /api/v1/equipment-incidents"
           - "GET /api/v1/equipment-incidents/summary"   # 장비 장애 현황 집계
           - "GET /api/v1/equipment-incidents/{incidentId}"

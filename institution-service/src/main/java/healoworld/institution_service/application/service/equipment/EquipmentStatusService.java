@@ -53,6 +53,9 @@ public class EquipmentStatusService {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
 
+        if (equipment.getDowntimeStatus() != null) {
+            throw new BaseException(ErrorCode.EQUIPMENT_RECOVERY_REQUIRED);
+        }
         EquipmentStatus fromStatus = equipment.getStatus();
         if (fromStatus == request.getStatus()) {
             return EquipmentDetailResponse.from(equipment);

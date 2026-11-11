@@ -24,12 +24,28 @@ public class SlotBookService {
     private final SlotHoldExpiryService slotHoldExpiryService;
     private final SlotStatusHistoryRecorder slotStatusHistoryRecorder;
     private final Clock clock;
+    private final SlotDowntimeGuard downtimeGuard;
 
     // eventId: 이 확정을 요청한 BookSlot 이벤트 ID. 상태 이력의 source_event_id로 남긴다
     @Transactional
     public BookOutcome book(UUID slotId, UUID reservationId, UUID eventId) {
+        boolean isBlocked = downtimeGuard.isBlocked(slotId);
         LocalDateTime now = LocalDateTime.now(clock);
 
+        if (isBlocked) {
+            Slot blocked = slotRepository.findById(slotId).orElse(null);
+            if (blocked == null || blocked.getDeletedAt() != null) {
+                return BookOutcome.FAILED;
+            }
+            if (blocked.isBookedBy(reservationId)) {
+                return BookOutcome.ALREADY_BOOKED;
+            }
+            if (blocked.isHeldBy(reservationId) && !blocked.getHeldUntil().isAfter(now)) {
+                slotHoldExpiryService.expire(slotId, reservationId, blocked.getHeldUntil());
+                return BookOutcome.HOLD_EXPIRED;
+            }
+            return BookOutcome.FAILED;
+        }
         int updated = slotRepository.bookIfHeld(slotId, reservationId, now, SlotStatus.HELD, SlotStatus.BOOKED);
         if (updated == 1) {
             slotStatusHistoryRecorder.recordByEvent(slotId, reservationId,

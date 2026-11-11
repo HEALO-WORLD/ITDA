@@ -36,6 +36,8 @@ public enum ErrorCode {
     // equipment downtime
     DOWNTIME_INVALID_TIME_RANGE(HttpStatus.BAD_REQUEST, "중단 종료 일시는 시작 일시 이후여야 합니다."),
     DOWNTIME_END_NOT_FUTURE(HttpStatus.BAD_REQUEST, "중단 종료 일시는 현재 이후여야 합니다."),
+    DOWNTIME_NOT_STARTED(HttpStatus.CONFLICT, "시작 전 중단은 복구 확인할 수 없습니다."),
+    DOWNTIME_NOT_EXTENDABLE(HttpStatus.CONFLICT, "미복구 중단의 종료 예정 시각만 현재 이후로 연장할 수 있습니다."),
     DOWNTIME_OVERLAP(HttpStatus.CONFLICT, "같은 장비에 기간이 겹치는 중단이 이미 있습니다."),
     SLOT_IN_DOWNTIME(HttpStatus.CONFLICT, "장비 중단 기간과 겹치는 슬롯은 등록할 수 없습니다."),
 

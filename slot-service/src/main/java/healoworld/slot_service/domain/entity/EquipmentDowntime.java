@@ -1,6 +1,7 @@
 package healoworld.slot_service.domain.entity;
 
 import healoworld.slot_service.global.entity.BaseEntity;
+import healoworld.slot_service.domain.enums.EquipmentDowntimeType;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -41,6 +42,76 @@ public class EquipmentDowntime extends BaseEntity {
     @Column(name = "reason", length = REASON_MAX_LENGTH)
     private String reason;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "downtime_type", nullable = false, length = 20)
+    private EquipmentDowntimeType downtimeType;
+
+    @Column(name = "institution_id")
+    private UUID institutionId;
+
+    @Column(name = "registered_by")
+    private UUID registeredBy;
+
+    @Column(name = "activated_at")
+    private LocalDateTime activatedAt;
+
+    @Column(name = "recovered_at")
+    private LocalDateTime recoveredAt;
+
+    @Column(name = "recovered_by")
+    private UUID recoveredBy;
+
+    @Column(name = "recovery_reason", length = REASON_MAX_LENGTH)
+    private String recoveryReason;
+
+    public static EquipmentDowntime register(
+            UUID equipmentId,
+            UUID institutionId,
+            EquipmentDowntimeType downtimeType,
+            LocalDateTime startedAt,
+            LocalDateTime endedAt,
+            String reason,
+            UUID registeredBy
+    ) {
+        EquipmentDowntime downtime = new EquipmentDowntime(equipmentId, startedAt, endedAt, reason);
+        downtime.institutionId = Objects.requireNonNull(institutionId);
+        downtime.downtimeType = Objects.requireNonNull(downtimeType);
+        downtime.registeredBy = Objects.requireNonNull(registeredBy);
+        return downtime;
+    }
+
+    public boolean activate(LocalDateTime now) {
+        // 서버가 예정 종료 이후 재시작되어도 복구 확인이 없으면 활성화한다.
+        if (recoveredAt != null || activatedAt != null || startedAt.isAfter(now)) {
+            return false;
+        }
+        activatedAt = now;
+        return true;
+    }
+
+    public boolean recover(LocalDateTime now, UUID userId, String reason) {
+        if (recoveredAt != null) {
+            return false;
+        }
+        if (startedAt.isAfter(now)) {
+            throw new IllegalStateException("시작 전 일정은 복구 확인할 수 없습니다.");
+        }
+        if (reason == null || reason.isBlank() || reason.length() > REASON_MAX_LENGTH) {
+            throw new IllegalArgumentException("복구 확인 사유는 1~500자여야 합니다.");
+        }
+        recoveredAt = now;
+        recoveredBy = Objects.requireNonNull(userId);
+        recoveryReason = reason.strip();
+        return true;
+    }
+
+    public void extend(LocalDateTime newEnd, LocalDateTime now) {
+        if (recoveredAt != null || !newEnd.isAfter(endedAt) || !newEnd.isAfter(now)) {
+            throw new IllegalStateException("미복구 중단의 종료 예정 시각만 현재 이후로 연장할 수 있습니다.");
+        }
+        endedAt = newEnd;
+    }
+
     private EquipmentDowntime(UUID equipmentId, LocalDateTime startedAt, LocalDateTime endedAt, String reason) {
         this.equipmentId = Objects.requireNonNull(equipmentId, "장비 ID는 필수입니다.");
         Objects.requireNonNull(startedAt, "중단 시작 일시는 필수입니다.");
@@ -53,6 +124,7 @@ public class EquipmentDowntime extends BaseEntity {
         this.startedAt = startedAt;
         this.endedAt = endedAt;
         this.reason = reason;
+        this.downtimeType = EquipmentDowntimeType.FAILURE;
     }
 
     public static EquipmentDowntime create(UUID equipmentId, LocalDateTime startedAt, LocalDateTime endedAt,

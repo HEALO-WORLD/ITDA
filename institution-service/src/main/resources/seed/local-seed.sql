@@ -16,6 +16,10 @@ VALUES ('20000000-0000-0000-0000-000000000003'::uuid, 'B영상의학과', 'EXAM'
         CURRENT_TIMESTAMP, '00000000-0000-0000-0000-000000000000'::uuid) ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO p_institutions (id, name, type, address, care_institution_code, active, created_at, created_by)
+VALUES ('20000000-0000-0000-0000-000000000004'::uuid, 'S영상의학과', 'EXAM', '서울특별시 관악구 신림로 185', '11100004', true,
+        CURRENT_TIMESTAMP, '00000000-0000-0000-0000-000000000000'::uuid) ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO p_institutions (id, name, type, address, care_institution_code, active, created_at, created_by)
 VALUES ('20000000-0000-0000-0000-000000000009'::uuid, 'ITDA운영사', 'PLATFORM', '서울특별시 중구 세종대로 909', NULL, true,
         CURRENT_TIMESTAMP, '00000000-0000-0000-0000-000000000000'::uuid) ON CONFLICT (id) DO NOTHING;
 
@@ -36,6 +40,12 @@ INSERT INTO p_users (id, login_id, password, role, institution_id, active, creat
 VALUES ('10000000-0000-0000-0000-000000000003'::uuid, 'imaging_b',
         '$2a$10$DppZq59LanAYWsSqHqfVv.rAozzKkmuZ9Ly3HuI4pBwolHLhmQWP6', 'EXAMINER',
         '20000000-0000-0000-0000-000000000003'::uuid, true,
+        CURRENT_TIMESTAMP, '00000000-0000-0000-0000-000000000000'::uuid) ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO p_users (id, login_id, password, role, institution_id, active, created_at, created_by)
+VALUES ('10000000-0000-0000-0000-000000000004'::uuid, 'imaging_s',
+        '$2a$10$DppZq59LanAYWsSqHqfVv.rAozzKkmuZ9Ly3HuI4pBwolHLhmQWP6', 'EXAMINER',
+        '20000000-0000-0000-0000-000000000004'::uuid, true,
         CURRENT_TIMESTAMP, '00000000-0000-0000-0000-000000000000'::uuid) ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO p_users (id, login_id, password, role, institution_id, active, created_at, created_by)

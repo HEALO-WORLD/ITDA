@@ -23,11 +23,16 @@ public class SlotHoldService {
     private final SlotRepository slotRepository;
     private final SlotStatusHistoryRecorder slotStatusHistoryRecorder;
     private final Clock clock;
+    private final SlotDowntimeGuard downtimeGuard;
 
     // eventId: 이 HOLD를 요청한 HoldRequested 이벤트 ID. 상태 이력의 source_event_id로 남긴다
     @Transactional
     public HoldResult hold(UUID slotId, UUID reservationId, UUID eventId) {
+        boolean blocked = downtimeGuard.isBlocked(slotId);
         LocalDateTime now = LocalDateTime.now(clock);
+        if (blocked) {
+            return HoldResult.failed(slotId, reservationId, HoldFailureReason.SLOT_CONFLICT);
+        }
         LocalDateTime heldUntil = now.plus(Slot.HOLD_DURATION);
 
         int updated = slotRepository.holdIfAvailable(
