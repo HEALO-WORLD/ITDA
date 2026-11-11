@@ -54,7 +54,7 @@ class JwtAuthenticationFilterTest {
 
     @BeforeEach
     void setUp() {
-        JwtProperties jwtProperties = new JwtProperties(TEST_SECRET, List.of());
+        JwtProperties jwtProperties = new JwtProperties(TEST_SECRET);
         // 실제 정책표 중 일부를 축소해 사용
         RolePolicy rolePolicy = new RolePolicy(new RolePolicyProperties(
                 List.of("POST /api/v1/auth/login"),
@@ -62,7 +62,7 @@ class JwtAuthenticationFilterTest {
                         new RolePolicyProperties.Group(List.of("REQUESTER"), List.of("POST /api/v1/partnerships")),
                         new RolePolicyProperties.Group(List.of("EXAMINER"), List.of("PATCH /api/v1/partnerships/*/approve"))
                 )));
-        filter = new JwtAuthenticationFilter(new GatewayJwtProvider(jwtProperties), jwtProperties, rolePolicy);
+        filter = new JwtAuthenticationFilter(new GatewayJwtProvider(jwtProperties), rolePolicy);
         passed = null;
     }
 
