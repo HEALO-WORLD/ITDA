@@ -30,6 +30,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -204,6 +205,74 @@ class OutboxPublisherTest {
 
         assertThat(meterRegistry.find(OutboxPublishMetrics.DWELL).timer()).isNull();
         assertThat(meterRegistry.find(OutboxPublishMetrics.WAIT).timer()).isNull();
+    }
+
+    @Test
+    void 꽉_찬_묶음을_모두_보내면_쉬지_않고_다음_묶음을_보낸다() {
+        List<OutboxEvent> full = outboxEvents(OutboxPublisher.BATCH_SIZE);
+        List<OutboxEvent> rest = outboxEvents(3);
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(full, rest);
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(2)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, times(OutboxPublisher.BATCH_SIZE + 3)).send(any(ProducerRecord.class));
+    }
+
+    @Test
+    void 덜_찬_묶음을_보내면_회차를_끝낸다() {
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc())
+                .thenReturn(outboxEvents(OutboxPublisher.BATCH_SIZE - 1));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(1)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+    }
+
+    @Test
+    void 읽은_이벤트가_없으면_발행하지_않고_회차를_끝낸다() {
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of());
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(1)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, never()).send(any(ProducerRecord.class));
+    }
+
+    @Test
+    void 꽉_찬_묶음이_계속_있어도_한_회차에_최대_묶음_수까지만_보낸다() {
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc())
+                .thenAnswer(invocation -> outboxEvents(OutboxPublisher.BATCH_SIZE));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(OutboxPublisher.MAX_BATCHES_PER_RUN))
+                .findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, times(OutboxPublisher.BATCH_SIZE * OutboxPublisher.MAX_BATCHES_PER_RUN))
+                .send(any(ProducerRecord.class));
+    }
+
+    @Test
+    void 꽉_찬_묶음_중간에_발행이_실패하면_다음_묶음을_읽지_않고_회차를_끝낸다() {
+        List<OutboxEvent> full = outboxEvents(OutboxPublisher.BATCH_SIZE);
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(full);
+        when(kafkaTemplate.send(any(ProducerRecord.class)))
+                .thenReturn(success())
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("브로커 응답 없음")));
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(1)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, times(2)).send(any(ProducerRecord.class));
+        verify(outboxEventRepository).markPublished(full.get(0).getId(), FixedClockConfig.NOW);
+        verify(outboxEventRepository).increaseRetryCount(full.get(1).getId(), FixedClockConfig.NOW);
+    }
+
+    private List<OutboxEvent> outboxEvents(int count) {
+        return IntStream.range(0, count).mapToObj(i -> outboxEvent("SlotHeld")).toList();
     }
 
     private OutboxEvent outboxEvent(String eventType, LocalDateTime sourceOccurredAt) {
