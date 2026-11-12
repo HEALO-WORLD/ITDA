@@ -6,7 +6,7 @@ import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
@@ -104,7 +104,7 @@ public class ExaminationService {
     public ExaminationStatusChangeResponse changeStatus(
             UUID examinationId,
             UUID institutionId,
-            RoleType role,
+            Role role,
             ExaminationStatus requestedStatus
     ) {
         // 검사 시작은 장비 장애 처리와 같은 순서(의뢰 → 예약 → 검사)로 잠근 뒤의 최신 상태로 판단한다
@@ -113,7 +113,7 @@ public class ExaminationService {
                 : findById(examinationId);
 
         // 1. EXAMINER 역할인지 확인
-        if (role != RoleType.EXAMINER) {
+        if (role != Role.EXAMINER) {
             throw new BaseException(ErrorCode.EXAMINATION_ACCESS_DENIED);
         }
 

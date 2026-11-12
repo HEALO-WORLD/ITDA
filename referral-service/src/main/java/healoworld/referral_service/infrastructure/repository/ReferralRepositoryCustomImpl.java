@@ -8,7 +8,7 @@ import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.presentation.dto.request.ReferralSearchCondition;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -27,7 +27,7 @@ public class ReferralRepositoryCustomImpl implements ReferralRepositoryCustom {
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public Page<Referral> search(ReferralSearchCondition cond, UUID institutionId, RoleType role, Pageable pageable) {
+    public Page<Referral> search(ReferralSearchCondition cond, UUID institutionId, Role role, Pageable pageable) {
         BooleanExpression[] conditions = {
                 institutionScope(institutionId, role),
                 referrerIdEq(cond.referrerId()),
@@ -54,8 +54,8 @@ public class ReferralRepositoryCustomImpl implements ReferralRepositoryCustom {
     }
 
     // 관리자가 아니면 본인 기관 의뢰만 조회
-    private BooleanExpression institutionScope(UUID institutionId, RoleType role) {
-        return role == RoleType.ADMIN ? null : referral.referringInstitutionId.eq(institutionId);
+    private BooleanExpression institutionScope(UUID institutionId, Role role) {
+        return role == Role.ADMIN ? null : referral.referringInstitutionId.eq(institutionId);
     }
 
     private BooleanExpression referrerIdEq(UUID referrerId) {

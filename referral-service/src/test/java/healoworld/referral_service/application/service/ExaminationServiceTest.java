@@ -6,7 +6,7 @@ import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
@@ -86,7 +86,7 @@ class ExaminationServiceTest {
         given(examinationRepository.findById(id)).willReturn(Optional.of(started));
 
         ExaminationStatusChangeResponse response = examinationService.changeStatus(
-                id, institutionId, RoleType.EXAMINER, ExaminationStatus.IN_PROGRESS);
+                id, institutionId, Role.EXAMINER, ExaminationStatus.IN_PROGRESS);
 
         assertThat(response.currentStatus()).isEqualTo(ExaminationStatus.IN_PROGRESS);
         var inOrder = inOrder(referralRepository, incidentReservationRepository, examinationRepository);
@@ -169,7 +169,7 @@ class ExaminationServiceTest {
                 examinationService.changeStatus(
                         id,
                         institutionId,
-                        RoleType.EXAMINER,
+                        Role.EXAMINER,
                         ExaminationStatus.COMPLETED
                 );
 

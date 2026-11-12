@@ -4,7 +4,7 @@ import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.dto.PagedResponse;
@@ -115,7 +115,7 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
         return examinationService.changeStatus(
                 examinationId,
                 examination.getExamInstitutionId(),
-                RoleType.EXAMINER,
+                Role.EXAMINER,
                 status
         );
     }
@@ -589,7 +589,7 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
         PagedResponse<ExaminationListResponse> response =
                 examinationQueryService.getExaminations(
                         examination.getExamInstitutionId(),
-                        RoleType.EXAMINER,
+                        Role.EXAMINER,
                         PageRequest.of(0, 10, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")))
                 );
 
@@ -894,7 +894,7 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
                 () -> examinationService.changeStatus(
                         UUID.randomUUID(),
                         UUID.randomUUID(),
-                        RoleType.EXAMINER,
+                        Role.EXAMINER,
                         ExaminationStatus.COMPLETED
                 ),
                 ErrorCode.EXAMINATION_NOT_FOUND
@@ -915,7 +915,7 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
                 () -> examinationService.changeStatus(
                         examination.getId(),
                         otherInstitutionId,
-                        RoleType.EXAMINER,
+                        Role.EXAMINER,
                         ExaminationStatus.IN_PROGRESS
                 ),
                 ErrorCode.EXAMINATION_ACCESS_DENIED
@@ -938,7 +938,7 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
                 () -> examinationService.changeStatus(
                         examination.getId(),
                         examination.getExamInstitutionId(),
-                        RoleType.REQUESTER,
+                        Role.REQUESTER,
                         ExaminationStatus.IN_PROGRESS
                 ),
                 ErrorCode.EXAMINATION_ACCESS_DENIED
@@ -960,7 +960,7 @@ class ExaminationServiceIntegrationTest extends PostgresContainerSupport {
                 () -> examinationService.changeStatus(
                         examination.getId(),
                         examination.getExamInstitutionId(),
-                        RoleType.ADMIN,
+                        Role.ADMIN,
                         ExaminationStatus.IN_PROGRESS
                 ),
                 ErrorCode.EXAMINATION_ACCESS_DENIED

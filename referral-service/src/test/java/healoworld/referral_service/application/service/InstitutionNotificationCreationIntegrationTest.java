@@ -6,7 +6,7 @@ import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
@@ -201,7 +201,7 @@ class InstitutionNotificationCreationIntegrationTest extends PostgresContainerSu
 
     private void cancel(Case referralCase, UUID reservationId) {
         reservationService.cancelReservation(referralCase.userId(), referralCase.requesterInstitutionId(),
-                RoleType.REQUESTER, reservationId);
+                Role.REQUESTER, reservationId);
     }
 
     // ---------- 조회 ----------
@@ -402,7 +402,7 @@ class InstitutionNotificationCreationIntegrationTest extends PostgresContainerSu
             assertErrorCode(catchThrowable(() -> cancel(soon, soonId)), ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
             assertErrorCode(catchThrowable(() -> cancel(started, startedId)), ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
             assertErrorCode(catchThrowable(() -> reservationService.cancelReservation(other.userId(), UUID.randomUUID(),
-                    RoleType.REQUESTER, otherId)), ErrorCode.RESERVATION_NOT_FOUND);
+                    Role.REQUESTER, otherId)), ErrorCode.RESERVATION_NOT_FOUND);
 
             for (Case referralCase : List.of(soon, started, other)) {
                 assertThat(notificationsOf(referralCase)).extracting(InstitutionNotification::getType)

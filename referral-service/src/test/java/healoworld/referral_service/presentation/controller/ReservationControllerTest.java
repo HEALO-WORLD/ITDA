@@ -6,7 +6,7 @@ import healoworld.referral_service.application.service.ReferralService;
 import healoworld.referral_service.application.service.ReservationService;
 import healoworld.referral_service.domain.enums.FailureReason;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -93,7 +93,7 @@ class ReservationControllerTest {
         @Test
         @DisplayName("200과 예약 필드를 돌려주고, 기관·예약 ID·역할을 Service에 넘긴다")
         void ok() throws Exception {
-            given(reservationService.getReservation(institutionId, reservationId, RoleType.EXAMINER))
+            given(reservationService.getReservation(institutionId, reservationId, Role.EXAMINER))
                     .willReturn(reservation(ReservationStatus.FAILED, FailureReason.SLOT_CONFLICT));
 
             mockMvc.perform(get(BASE + "/{reservationId}", reservationId)
@@ -137,7 +137,7 @@ class ReservationControllerTest {
         @Test
         @DisplayName("의뢰 단건 조회(/{referralId})가 아니라 예약 목록으로 연결되고, 쿼리 파라미터가 검색 조건으로 바인딩된다")
         void routesToReservationListAndBindsCondition() throws Exception {
-            given(reservationService.getReservations(eq(institutionId), any(ReservationSearchCondition.class), eq(RoleType.EXAMINER)))
+            given(reservationService.getReservations(eq(institutionId), any(ReservationSearchCondition.class), eq(Role.EXAMINER)))
                     .willReturn(new PagedResponse<>(List.of(reservation(ReservationStatus.CONFIRMED, null)), 1, 1, 10, 0));
 
             mockMvc.perform(get(BASE)
@@ -156,7 +156,7 @@ class ReservationControllerTest {
 
             verifyNoInteractions(referralService);
             ArgumentCaptor<ReservationSearchCondition> captor = ArgumentCaptor.forClass(ReservationSearchCondition.class);
-            then(reservationService).should().getReservations(eq(institutionId), captor.capture(), eq(RoleType.EXAMINER));
+            then(reservationService).should().getReservations(eq(institutionId), captor.capture(), eq(Role.EXAMINER));
             ReservationSearchCondition cond = captor.getValue();
             assertThat(cond.referralId()).isEqualTo(referralId);
             assertThat(cond.status()).isEqualTo(ReservationStatus.CONFIRMED);
@@ -197,7 +197,7 @@ class ReservationControllerTest {
                     .andExpect(jsonPath("$.message").value("취소가 완료되었습니다."))
                     .andExpect(jsonPath("$.data").doesNotExist());
 
-            then(reservationService).should().cancelReservation(userId, institutionId, RoleType.REQUESTER, reservationId);
+            then(reservationService).should().cancelReservation(userId, institutionId, Role.REQUESTER, reservationId);
         }
 
         @ParameterizedTest(name = "{0}")

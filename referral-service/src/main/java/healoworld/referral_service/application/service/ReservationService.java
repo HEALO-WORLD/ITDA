@@ -3,19 +3,17 @@ package healoworld.referral_service.application.service;
 import healoworld.referral_service.application.event.command.SlotCommandType;
 import healoworld.referral_service.domain.entity.Examination;
 import healoworld.referral_service.domain.entity.Referral;
-import healoworld.referral_service.domain.entity.ReferralHistory;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReservationRepository;
-import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
@@ -58,12 +56,12 @@ public class ReservationService {
     }
 
     @Transactional(readOnly = true)
-    public ReservationResponse getReservation(UUID institutionId, UUID reservationId, RoleType role) {
+    public ReservationResponse getReservation(UUID institutionId, UUID reservationId, Role role) {
         Reservation reservation = reservationRepository.findByIdWithReferral(reservationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
 
         if (!(institutionId.equals(reservation.getReferral().getReferringInstitutionId())
-                || role == RoleType.ADMIN
+                || role == Role.ADMIN
                 || institutionId.equals(reservation.getExamInstitutionId()))
         ) {
             throw new BaseException(ErrorCode.RESERVATION_NOT_FOUND);
@@ -72,7 +70,7 @@ public class ReservationService {
     }
 
     @Transactional(readOnly = true)
-    public PagedResponse<ReservationResponse> getReservations(UUID institutionId, ReservationSearchCondition cond, RoleType role) {
+    public PagedResponse<ReservationResponse> getReservations(UUID institutionId, ReservationSearchCondition cond, Role role) {
         Page<ReservationResponse> page = reservationRepository.search(cond, institutionId, role, cond.toPageable())
                 .map(ReservationResponse::from);
         return PagedResponse.from(page);
@@ -86,7 +84,7 @@ public class ReservationService {
     //   의뢰 잠금을 먼저 잡으므로 검사 시작과 취소는 한쪽이 커밋된 뒤에 다른 쪽이 진행된다
     // - 모든 검증(권한·2시간 제한·현재 예약·검사 상태)은 상태 변경·Outbox 저장보다 먼저 한다.
     //   검증에 실패하거나 조회 중 오류가 나면 이 트랜잭션 전체가 롤백되어 슬롯 해제 명령(RELEASE_SLOT)도 남지 않는다
-    public void cancelReservation(UUID userId, UUID institutionId, RoleType role, UUID reservationId) {
+    public void cancelReservation(UUID userId, UUID institutionId, Role role, UUID reservationId) {
         UUID referralId = reservationRepository.findReferralIdById(reservationId)
                 .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
 
@@ -98,7 +96,7 @@ public class ReservationService {
                 .orElseThrow(() -> new BaseException(ErrorCode.RESERVATION_NOT_FOUND));
 
         if (!(institutionId.equals(referral.getReferringInstitutionId())
-                || role == RoleType.ADMIN)
+                || role == Role.ADMIN)
         ) {
             throw new BaseException(ErrorCode.RESERVATION_NOT_FOUND);
         }

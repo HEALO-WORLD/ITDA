@@ -1,5 +1,6 @@
 package healoworld.slot_service.global.deadletter;
 
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.dto.PagedResponse;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
@@ -10,8 +11,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -44,7 +45,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class DeadLetterServiceTest {
-    private static final String ADMIN = "ADMIN";
+    private static final Role ADMIN = Role.ADMIN;
     private static final UUID ADMIN_ID = UUID.randomUUID();
     private static final String ORIGINAL_TOPIC = "slot-commands";
     private static final String KEY = "reservation-1";
@@ -62,10 +63,10 @@ class DeadLetterServiceTest {
     // ── 권한 ──
 
     @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {"REQUESTER", "EXAMINER", "admin"})
-    @DisplayName("ADMIN이 아니면(대소문자 다름·빈 값 포함) 조회·재처리·무시 모두 403이고 저장소·Kafka를 건드리지 않는다")
-    void rejectsNonAdmin(String role) {
+    @NullSource
+    @EnumSource(value = Role.class, names = {"REQUESTER", "EXAMINER"})
+    @DisplayName("ADMIN이 아니면(null 포함) 조회·재처리·무시 모두 403이고 저장소·Kafka를 건드리지 않는다")
+    void rejectsNonAdmin(Role role) {
         UUID id = UUID.randomUUID();
 
         assertErrorCode(() -> deadLetterService.getDeadLetters(role, new DeadLetterSearchCondition(null, null, null)),

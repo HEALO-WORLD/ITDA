@@ -8,7 +8,7 @@ import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.inbox.ConsumedEventId;
@@ -59,7 +59,6 @@ import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 
 /**
@@ -319,7 +318,7 @@ class SlotBookedIncidentLinkIntegrationTest extends PostgresContainerSupport {
         registerIncident(booking);
         slotBooked(booking);
 
-        reservationService.cancelReservation(booking.userId(), booking.institutionId(), RoleType.REQUESTER,
+        reservationService.cancelReservation(booking.userId(), booking.institutionId(), Role.REQUESTER,
                 booking.reservationId());
 
         IncidentReferral task = tasksOf(booking).getFirst();

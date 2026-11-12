@@ -1,7 +1,7 @@
 package healoworld.referral_service.presentation.controller;
 
 import healoworld.referral_service.application.service.InstitutionNotificationService;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
@@ -75,7 +75,7 @@ public class NotificationController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<NotificationResponse>>> getMyNotifications(
             @Parameter(description = "요청자 ID") @RequestHeader(USER_ID_HEADER) UUID userId,
-            @Parameter(description = "요청자 역할") @RequestHeader(value = ROLE_HEADER, required = false) RoleType role,
+            @Parameter(description = "요청자 역할") @RequestHeader(value = ROLE_HEADER, required = false) Role role,
             @Parameter(description = "요청자 소속 기관 ID (검사기관 사용자 필수)")
             @RequestHeader(value = INSTITUTION_ID_HEADER, required = false) UUID institutionId,
             @Parameter(description = "의뢰 ID. 해당 의뢰의 알림만 조회") @RequestParam(required = false) UUID referralId,
@@ -101,7 +101,7 @@ public class NotificationController {
     @GetMapping("/unread-count")
     public ResponseEntity<ApiResponse<UnreadCountResponse>> countUnread(
             @Parameter(description = "요청자 ID") @RequestHeader(USER_ID_HEADER) UUID userId,
-            @Parameter(description = "요청자 역할") @RequestHeader(value = ROLE_HEADER, required = false) RoleType role,
+            @Parameter(description = "요청자 역할") @RequestHeader(value = ROLE_HEADER, required = false) Role role,
             @Parameter(description = "요청자 소속 기관 ID (검사기관 사용자 필수)")
             @RequestHeader(value = INSTITUTION_ID_HEADER, required = false) UUID institutionId) {
         UnreadCountResponse unreadCount = isExaminer(role)
@@ -124,7 +124,7 @@ public class NotificationController {
     @PatchMapping("/{notificationId}/read")
     public ResponseEntity<ApiResponse<NotificationReadResponse>> markAsRead(
             @Parameter(description = "요청자 ID") @RequestHeader(USER_ID_HEADER) UUID userId,
-            @Parameter(description = "요청자 역할") @RequestHeader(value = ROLE_HEADER, required = false) RoleType role,
+            @Parameter(description = "요청자 역할") @RequestHeader(value = ROLE_HEADER, required = false) Role role,
             @Parameter(description = "요청자 소속 기관 ID (검사기관 사용자 필수)")
             @RequestHeader(value = INSTITUTION_ID_HEADER, required = false) UUID institutionId,
             @Parameter(description = "알림 ID") @PathVariable UUID notificationId) {
@@ -134,8 +134,8 @@ public class NotificationController {
         return ResponseEntity.ok(ApiResponse.ok("알림 읽음 처리 성공", read));
     }
 
-    private static boolean isExaminer(RoleType role) {
-        return role == RoleType.EXAMINER;
+    private static boolean isExaminer(Role role) {
+        return role == Role.EXAMINER;
     }
 
     // 검사기관 공통 알림은 소속 기관이 수신 대상이므로 기관 헤더가 없으면 처리하지 않는다 (다른 기관 알림으로 대체하지 않음)

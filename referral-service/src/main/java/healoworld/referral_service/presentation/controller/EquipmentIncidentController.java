@@ -1,7 +1,7 @@
 package healoworld.referral_service.presentation.controller;
 
 import healoworld.referral_service.application.service.EquipmentIncidentQueryService;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.presentation.dto.request.EquipmentIncidentSearchCondition;
@@ -53,7 +53,7 @@ public class EquipmentIncidentController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<EquipmentIncidentResponse>>> getIncidents(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @ParameterObject @ModelAttribute EquipmentIncidentSearchCondition cond
     ) {
         PagedResponse<EquipmentIncidentResponse> response =
@@ -84,7 +84,7 @@ public class EquipmentIncidentController {
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<EquipmentIncidentSummaryResponse>> getSummary(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "조회할 기관 ID (ADMIN 필수, EXAMINER는 무시)")
             @RequestParam(value = "institutionId", required = false) UUID requestedInstitutionId
     ) {
@@ -109,7 +109,7 @@ public class EquipmentIncidentController {
     @GetMapping("/{incidentId}")
     public ResponseEntity<ApiResponse<EquipmentIncidentDetailResponse>> getIncident(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "장애 ID") @PathVariable("incidentId") UUID incidentId
     ) {
         EquipmentIncidentDetailResponse response = equipmentIncidentQueryService.getIncident(role, institutionId,
@@ -135,7 +135,7 @@ public class EquipmentIncidentController {
     @GetMapping("/{incidentId}/referrals")
     public ResponseEntity<ApiResponse<PagedResponse<IncidentReferralResponse>>> getIncidentReferrals(
             @Parameter(description = "요청자 소속 기관 ID") @RequestHeader("X-Institution-Id") UUID institutionId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") RoleType role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @Parameter(description = "장애 ID") @PathVariable("incidentId") UUID incidentId,
             @ParameterObject @ModelAttribute IncidentReferralSearchCondition cond
     ) {

@@ -1,5 +1,6 @@
 package healoworld.slot_service.global.deadletter;
 
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.support.PostgresContainerSupport;
@@ -110,7 +111,7 @@ class DeadLetterServiceIntegrationTest extends PostgresContainerSupport {
         given(kafkaTemplate.send(any(ProducerRecord.class)))
                 .willReturn(CompletableFuture.failedFuture(new KafkaException("broker down")));
 
-        assertThatThrownBy(() -> deadLetterService.reprocess(ADMIN_ID, "ADMIN", event.getId()))
+        assertThatThrownBy(() -> deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, event.getId()))
                 .isInstanceOf(BaseException.class);
 
         DeadLetterEvent reloaded = deadLetterEventRepository.findById(event.getId()).orElseThrow();
@@ -138,7 +139,7 @@ class DeadLetterServiceIntegrationTest extends PostgresContainerSupport {
                 futures.add(executor.submit(() -> {
                     ready.await();
                     try {
-                        return deadLetterService.reprocess(ADMIN_ID, "ADMIN", event.getId()).status();
+                        return deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, event.getId()).status();
                     } catch (BaseException e) {
                         return e.getErrorCode();
                     }
@@ -172,10 +173,10 @@ class DeadLetterServiceIntegrationTest extends PostgresContainerSupport {
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
             Future<DeadLetterStatus> reprocess = executor.submit(
-                    () -> deadLetterService.reprocess(ADMIN_ID, "ADMIN", event.getId()).status());
+                    () -> deadLetterService.reprocess(ADMIN_ID, Role.ADMIN, event.getId()).status());
             assertThat(publishing.await(5, TimeUnit.SECONDS)).isTrue();
 
-            assertThatThrownBy(() -> deadLetterService.ignore(ADMIN_ID, "ADMIN", event.getId()))
+            assertThatThrownBy(() -> deadLetterService.ignore(ADMIN_ID, Role.ADMIN, event.getId()))
                     .isInstanceOf(BaseException.class)
                     .extracting(e -> ((BaseException) e).getErrorCode())
                     .isEqualTo(ErrorCode.DEAD_LETTER_ALREADY_RESOLVED);

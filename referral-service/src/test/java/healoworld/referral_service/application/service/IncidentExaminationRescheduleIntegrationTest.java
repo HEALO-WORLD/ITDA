@@ -12,7 +12,7 @@ import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
@@ -258,7 +258,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
     void manualReviewFalseWhenScheduled() {
         IncidentReferral task = blockByIncident();
 
-        IncidentReferralResponse item = affectedReferral(RoleType.ADMIN, UUID.randomUUID());
+        IncidentReferralResponse item = affectedReferral(Role.ADMIN, UUID.randomUUID());
 
         assertThat(item.id()).isEqualTo(task.getId());
         assertThat(item.resultCode()).isEqualTo(IncidentProcessingService.RESCHEDULE_REQUIRED);
@@ -274,8 +274,8 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
         IncidentReferral task = blockByIncident();
         UUID incidentInstitutionId = incidentInstitutionId();
 
-        IncidentReferralResponse forExaminer = affectedReferral(RoleType.EXAMINER, incidentInstitutionId);
-        IncidentReferralResponse forAdmin = affectedReferral(RoleType.ADMIN, UUID.randomUUID());
+        IncidentReferralResponse forExaminer = affectedReferral(Role.EXAMINER, incidentInstitutionId);
+        IncidentReferralResponse forAdmin = affectedReferral(Role.ADMIN, UUID.randomUUID());
 
         // 자동 처리 작업은 끝났지만(SUCCEEDED) 담당자 확인이 필요하다
         assertThat(forExaminer.processingStatus()).isEqualTo(IncidentProcessingStatus.SUCCEEDED);
@@ -292,7 +292,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
         Examination examination = examinationRepository.findByReferralId(referralId).orElseThrow();
         assertThat(examinationRepository.completeIfInProgress(examination.getId(), LocalDateTime.now())).isEqualTo(1);
 
-        IncidentReferralResponse afterCompleted = affectedReferral(RoleType.EXAMINER, incidentInstitutionId);
+        IncidentReferralResponse afterCompleted = affectedReferral(Role.EXAMINER, incidentInstitutionId);
         assertThat(afterCompleted.id()).isEqualTo(task.getId());
         assertThat(afterCompleted.processingStatus()).isEqualTo(IncidentProcessingStatus.SUCCEEDED);
         assertThat(afterCompleted.resultCode()).isEqualTo(IncidentProcessingService.SKIPPED_IN_PROGRESS);
@@ -305,7 +305,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
         moveExaminationTo(ExaminationStatus.COMPLETED);
         blockByIncident();
 
-        IncidentReferralResponse item = affectedReferral(RoleType.EXAMINER, incidentInstitutionId());
+        IncidentReferralResponse item = affectedReferral(Role.EXAMINER, incidentInstitutionId());
 
         assertThat(item.resultCode()).isEqualTo(IncidentProcessingService.SKIPPED_COMPLETED);
         assertThat(item.manualReviewRequired()).isFalse();
@@ -330,7 +330,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
                 .filter(t -> t.getIncident().getId().equals(incidentId)).findFirst().orElseThrow().getId();
         assertThat(incidentProcessingService.process(taskId)).isEqualTo(Outcome.SUCCEEDED);
 
-        var page = equipmentIncidentQueryService.getIncidentReferrals(RoleType.EXAMINER, ownerInstitutionId,
+        var page = equipmentIncidentQueryService.getIncidentReferrals(Role.EXAMINER, ownerInstitutionId,
                 incidentId, new IncidentReferralSearchCondition(null, 0, 10));
 
         assertThat(page.contents()).singleElement().satisfies(item -> {
@@ -342,7 +342,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
     }
 
     // 가장 최근 장애의 영향 의뢰 목록에서 이 의뢰의 항목 하나를 조회한다
-    private IncidentReferralResponse affectedReferral(RoleType role, UUID requesterInstitutionId) {
+    private IncidentReferralResponse affectedReferral(Role role, UUID requesterInstitutionId) {
         UUID incidentId = incidentIds.getLast();
         return equipmentIncidentQueryService.getIncidentReferrals(role, requesterInstitutionId, incidentId,
                         new IncidentReferralSearchCondition(null, 0, 10)).contents().stream()
@@ -570,7 +570,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
     private Object startExamination() {
         Examination examination = examinationRepository.findByReferralId(referralId).orElseThrow();
         return examinationService.changeStatus(examination.getId(), examination.getExamInstitutionId(),
-                RoleType.EXAMINER, ExaminationStatus.IN_PROGRESS);
+                Role.EXAMINER, ExaminationStatus.IN_PROGRESS);
     }
 
     // 스파이의 기본 동작(실제 Repository 호출). 멈춘 뒤 실제 쿼리를 이어서 실행할 때 쓴다
@@ -673,7 +673,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
                 .endTime(startsAt.plusDays(1).plusHours(1))
                 .build();
         givenEquipmentOwnedBy(request);
-        return referralService.createRescheduledReservation(userId, RoleType.REQUESTER, referralId, request);
+        return referralService.createRescheduledReservation(userId, Role.REQUESTER, referralId, request);
     }
 
     private void slotResult(SlotResultType type, UUID reservationId, UUID eventId) {
