@@ -17,6 +17,7 @@
 -- - 인덱스 크기: in_progress 16kB, ended_at 304kB
 --
 -- 주의
+-- - DB마다 한 번만 실행한다. 인덱스는 DB에 남으므로 재배포·재시작 때는 다시 실행하지 않는다 (DB를 새로 만들었을 때만 다시 실행)
 -- - CREATE INDEX CONCURRENTLY는 예약 쓰기를 막지 않지만, 트랜잭션 블록(BEGIN ... COMMIT) 안에서는 실행할 수 없다. 한 문장씩 autocommit으로 실행한다
 -- - 중간에 실패·취소되면 INVALID 인덱스가 남는다. 아래 [확인]으로 보고, INVALID면 [되돌리기]로 지운 뒤 다시 실행한다
 -- - IF NOT EXISTS는 일부러 쓰지 않는다. 같은 이름의 INVALID 인덱스가 남아 있어도 성공한 것처럼 끝나기 때문이다
