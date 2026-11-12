@@ -5,6 +5,7 @@ import healoworld.slot_service.global.config.ClockConfig;
 import healoworld.slot_service.support.FixedClockConfig;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.brave.bridge.BraveCurrentTraceContext;
 import io.micrometer.tracing.brave.bridge.BravePropagator;
@@ -25,11 +26,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -204,6 +207,155 @@ class OutboxPublisherTest {
 
         assertThat(meterRegistry.find(OutboxPublishMetrics.DWELL).timer()).isNull();
         assertThat(meterRegistry.find(OutboxPublishMetrics.WAIT).timer()).isNull();
+    }
+
+    @Test
+    void 꽉_찬_묶음을_모두_보내면_쉬지_않고_다음_묶음을_보낸다() {
+        List<OutboxEvent> full = outboxEvents(OutboxPublisher.BATCH_SIZE);
+        List<OutboxEvent> rest = outboxEvents(3);
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(full, rest);
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(2)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, times(OutboxPublisher.BATCH_SIZE + 3)).send(any(ProducerRecord.class));
+    }
+
+    @Test
+    void 덜_찬_묶음을_보내면_회차를_끝낸다() {
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc())
+                .thenReturn(outboxEvents(OutboxPublisher.BATCH_SIZE - 1));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(1)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+    }
+
+    @Test
+    void 읽은_이벤트가_없으면_발행하지_않고_회차를_끝낸다() {
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of());
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(1)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, never()).send(any(ProducerRecord.class));
+    }
+
+    @Test
+    void 꽉_찬_묶음이_계속_있어도_한_회차에_최대_묶음_수까지만_보낸다() {
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc())
+                .thenAnswer(invocation -> outboxEvents(OutboxPublisher.BATCH_SIZE));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(success());
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(OutboxPublisher.MAX_BATCHES_PER_RUN))
+                .findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, times(OutboxPublisher.BATCH_SIZE * OutboxPublisher.MAX_BATCHES_PER_RUN))
+                .send(any(ProducerRecord.class));
+    }
+
+    @Test
+    void 꽉_찬_묶음_중간에_발행이_실패하면_다음_묶음을_읽지_않고_회차를_끝낸다() {
+        List<OutboxEvent> full = outboxEvents(OutboxPublisher.BATCH_SIZE);
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(full);
+        when(kafkaTemplate.send(any(ProducerRecord.class)))
+                .thenReturn(success())
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("브로커 응답 없음")));
+
+        outboxPublisher.publish();
+
+        verify(outboxEventRepository, times(1)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, times(2)).send(any(ProducerRecord.class));
+        verify(outboxEventRepository).markPublished(full.get(0).getId(), FixedClockConfig.NOW);
+        verify(outboxEventRepository).increaseRetryCount(full.get(1).getId(), FixedClockConfig.NOW);
+    }
+
+    @Test
+    void 앞_건의_ack를_기다리지_않고_묶음을_모두_보낸_뒤_결과를_확인한다() {
+        List<OutboxEvent> events = outboxEvents(3);
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(events);
+
+        // 세 건을 모두 보낸 뒤에야 ack가 온다. 앞 건의 ack를 기다렸다가 뒤 건을 보내면 첫 ack가 오지 않아 실패한다
+        List<CompletableFuture<SendResult<String, String>>> acks = new ArrayList<>();
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
+            CompletableFuture<SendResult<String, String>> ack = new CompletableFuture<>();
+            acks.add(ack);
+            if (acks.size() == events.size()) {
+                acks.forEach(a -> a.complete(null));
+            }
+            return ack;
+        });
+
+        outboxPublisher.publish();
+
+        verify(kafkaTemplate, times(3)).send(any(ProducerRecord.class));
+        events.forEach(e -> verify(outboxEventRepository).markPublished(e.getId(), FixedClockConfig.NOW));
+        verify(outboxEventRepository, never()).increaseRetryCount(any(), any());
+    }
+
+    @Test
+    void 중간_건의_ack가_실패하면_그_앞까지만_발행_완료로_표시하고_뒤_건은_보냈어도_표시하지_않는다() {
+        List<OutboxEvent> events = outboxEvents(3);
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(events);
+
+        // 두 번째 건은 보낼 때는 아직 결과가 없고, 세 건을 모두 보낸 뒤 실패한다. 세 번째 건은 성공한다
+        CompletableFuture<SendResult<String, String>> second = new CompletableFuture<>();
+        when(kafkaTemplate.send(any(ProducerRecord.class)))
+                .thenReturn(success())
+                .thenReturn(second)
+                .thenAnswer(invocation -> {
+                    second.completeExceptionally(new RuntimeException("브로커 응답 없음"));
+                    return success();
+                });
+
+        outboxPublisher.publish();
+
+        verify(kafkaTemplate, times(3)).send(any(ProducerRecord.class));
+        verify(outboxEventRepository).markPublished(events.get(0).getId(), FixedClockConfig.NOW);
+        verify(outboxEventRepository).increaseRetryCount(events.get(1).getId(), FixedClockConfig.NOW);
+        verify(outboxEventRepository, never()).markPublished(events.get(2).getId(), FixedClockConfig.NOW);
+    }
+
+    @Test
+    void 보내는_순간_예외가_나면_재시도_횟수를_올리고_뒤_이벤트는_보내지_않는다() {
+        List<OutboxEvent> events = outboxEvents(3);
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(events);
+        when(kafkaTemplate.send(any(ProducerRecord.class)))
+                .thenReturn(success())
+                .thenThrow(new RuntimeException("직렬화 실패"));
+
+        outboxPublisher.publish();
+
+        verify(kafkaTemplate, times(2)).send(any(ProducerRecord.class));
+        verify(outboxEventRepository).markPublished(events.get(0).getId(), FixedClockConfig.NOW);
+        verify(outboxEventRepository).increaseRetryCount(events.get(1).getId(), FixedClockConfig.NOW);
+        verify(outboxEventRepository, never()).markPublished(events.get(2).getId(), FixedClockConfig.NOW);
+    }
+
+    @Test
+    void ack가_오기_전에는_span을_열어_두고_ack가_오면_닫는다() {
+        OutboxEvent event = outboxEvent("SlotHeld");
+        event.assignTraceParent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+        when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
+
+        AtomicReference<Span> spanWhenSending = new AtomicReference<>();
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
+            spanWhenSending.set(tracer.currentSpan());
+            return success();
+        });
+
+        outboxPublisher.publish();
+
+        assertThat(spanWhenSending.get()).isNotNull();
+        assertThat(tracer.currentSpan()).isNull();   // 보내는 동안만 현재 범위로 둔다
+        verify(outboxEventRepository).markPublished(event.getId(), FixedClockConfig.NOW);
+    }
+
+    private List<OutboxEvent> outboxEvents(int count) {
+        return IntStream.range(0, count).mapToObj(i -> outboxEvent("SlotHeld")).toList();
     }
 
     private OutboxEvent outboxEvent(String eventType, LocalDateTime sourceOccurredAt) {
