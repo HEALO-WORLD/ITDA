@@ -9,7 +9,7 @@ import healoworld.referral_service.domain.enums.EquipmentIncidentStatus;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
 import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.dto.PagedResponse;
@@ -108,7 +108,7 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
         EquipmentIncident newest = incident(myInstitutionId, equipmentA, 3);
         incident(otherInstitutionId, equipmentA, 4);   // 다른 기관 → 보이면 안 됨
 
-        PagedResponse<EquipmentIncidentResponse> firstPage = service.getIncidents(RoleType.EXAMINER, myInstitutionId,
+        PagedResponse<EquipmentIncidentResponse> firstPage = service.getIncidents(Role.EXAMINER, myInstitutionId,
                 search(otherInstitutionId, null, 0, 10));
 
         assertThat(firstPage.contents()).extracting(EquipmentIncidentResponse::incidentId)
@@ -124,7 +124,7 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
         }
         incident(myInstitutionId, equipmentB, 20);
 
-        PagedResponse<EquipmentIncidentResponse> secondPage = service.getIncidents(RoleType.EXAMINER, myInstitutionId,
+        PagedResponse<EquipmentIncidentResponse> secondPage = service.getIncidents(Role.EXAMINER, myInstitutionId,
                 search(null, equipmentA, 1, 10));
 
         assertThat(secondPage.totalElements()).isEqualTo(12);
@@ -141,7 +141,7 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
         incident(myInstitutionId, equipmentA, 1);
         EquipmentIncident other = incident(otherInstitutionId, equipmentA, 2);
 
-        PagedResponse<EquipmentIncidentResponse> page = service.getIncidents(RoleType.ADMIN, myInstitutionId,
+        PagedResponse<EquipmentIncidentResponse> page = service.getIncidents(Role.ADMIN, myInstitutionId,
                 search(otherInstitutionId, equipmentA, 0, 10));
 
         assertThat(page.contents()).extracting(EquipmentIncidentResponse::incidentId).containsExactly(other.getId());
@@ -158,7 +158,7 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
         moveTo(task(incident), IncidentProcessingStatus.FAILED);
         task(incident(myInstitutionId, equipmentA, 2));   // 다른 장애의 작업은 세지 않음
 
-        EquipmentIncidentDetailResponse detail = service.getIncident(RoleType.EXAMINER, myInstitutionId,
+        EquipmentIncidentDetailResponse detail = service.getIncident(Role.EXAMINER, myInstitutionId,
                 incident.getId());
 
         assertThat(detail.totalReferrals()).isEqualTo(5);
@@ -176,7 +176,7 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
     void examinerCannotReadOtherInstitution() {
         EquipmentIncident other = incident(otherInstitutionId, equipmentA, 1);
 
-        assertThatThrownBy(() -> service.getIncident(RoleType.EXAMINER, myInstitutionId, other.getId()))
+        assertThatThrownBy(() -> service.getIncident(Role.EXAMINER, myInstitutionId, other.getId()))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
     }
@@ -190,9 +190,9 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
         moveTo(task(incident), IncidentProcessingStatus.SUCCEEDED);
         task(incident);
 
-        PagedResponse<IncidentReferralResponse> all = service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId,
+        PagedResponse<IncidentReferralResponse> all = service.getIncidentReferrals(Role.EXAMINER, myInstitutionId,
                 incident.getId(), new IncidentReferralSearchCondition(null, 0, 10));
-        PagedResponse<IncidentReferralResponse> onlyFailed = service.getIncidentReferrals(RoleType.EXAMINER,
+        PagedResponse<IncidentReferralResponse> onlyFailed = service.getIncidentReferrals(Role.EXAMINER,
                 myInstitutionId, incident.getId(),
                 new IncidentReferralSearchCondition(IncidentProcessingStatus.FAILED, 0, 10));
 
@@ -218,9 +218,9 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
         IncidentReferralSearchCondition onlyFailed = new IncidentReferralSearchCondition(
                 IncidentProcessingStatus.FAILED, 0, 10);
 
-        IncidentReferralResponse forExaminer = service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId,
+        IncidentReferralResponse forExaminer = service.getIncidentReferrals(Role.EXAMINER, myInstitutionId,
                 incident.getId(), onlyFailed).contents().getFirst();
-        IncidentReferralResponse forAdmin = service.getIncidentReferrals(RoleType.ADMIN, otherInstitutionId,
+        IncidentReferralResponse forAdmin = service.getIncidentReferrals(Role.ADMIN, otherInstitutionId,
                 incident.getId(), onlyFailed).contents().getFirst();
 
         assertThat(forExaminer.lastError()).isNull();
@@ -292,9 +292,9 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
         Referral r4 = referral(ReferralStatus.NEEDS_RESCHEDULE);
         link(others, r4, reservation(r4, 1, otherInstitutionId, equipmentB, true));
 
-        EquipmentIncidentSummaryResponse mySummary = service.getSummary(RoleType.EXAMINER, myInstitutionId,
+        EquipmentIncidentSummaryResponse mySummary = service.getSummary(Role.EXAMINER, myInstitutionId,
                 otherInstitutionId, now);
-        EquipmentIncidentSummaryResponse otherSummary = service.getSummary(RoleType.ADMIN, myInstitutionId,
+        EquipmentIncidentSummaryResponse otherSummary = service.getSummary(Role.ADMIN, myInstitutionId,
                 otherInstitutionId, now);
 
         // 내 기관: 중단 장비 A 1대, 누적 영향 R1·R2·R3, 재조정 R1
@@ -308,7 +308,7 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
     void summaryZeroWithoutData() {
         incident(otherInstitutionId, equipmentB, 0);   // 다른 기관 데이터만 있음
 
-        assertThat(service.getSummary(RoleType.EXAMINER, myInstitutionId, null, BASE.plusHours(1)))
+        assertThat(service.getSummary(Role.EXAMINER, myInstitutionId, null, BASE.plusHours(1)))
                 .isEqualTo(new EquipmentIncidentSummaryResponse(myInstitutionId, BASE.plusHours(1), 0, 0, 0));
     }
 
@@ -319,7 +319,7 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
         Referral r1 = referral(ReferralStatus.NEEDS_RESCHEDULE);
         link(mine, r1, reservation(r1, 1, myInstitutionId, equipmentA, true));
 
-        assertThat(service.getSummary(RoleType.EXAMINER, myInstitutionId, null, BASE.plusHours(2)))
+        assertThat(service.getSummary(Role.EXAMINER, myInstitutionId, null, BASE.plusHours(2)))
                 .isEqualTo(new EquipmentIncidentSummaryResponse(myInstitutionId, BASE.plusHours(2), 0, 1, 1));
     }
 
@@ -365,7 +365,7 @@ class EquipmentIncidentQueryServiceIntegrationTest extends PostgresContainerSupp
         examination(rescheduled.getReferralId(), rescheduled.getReservationId(), true);
         examination(pending.getReferralId(), pending.getReservationId(), true);
 
-        Map<UUID, Boolean> byTask = service.getIncidentReferrals(RoleType.EXAMINER, myInstitutionId,
+        Map<UUID, Boolean> byTask = service.getIncidentReferrals(Role.EXAMINER, myInstitutionId,
                         incident.getId(), new IncidentReferralSearchCondition(null, 0, 10)).contents().stream()
                 .collect(Collectors.toMap(IncidentReferralResponse::id, IncidentReferralResponse::manualReviewRequired));
 

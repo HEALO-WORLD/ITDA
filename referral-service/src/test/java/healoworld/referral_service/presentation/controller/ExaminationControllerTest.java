@@ -5,7 +5,7 @@ import healoworld.referral_service.application.service.ExaminationResultService;
 import healoworld.referral_service.application.service.ExaminationService;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -133,7 +133,7 @@ class ExaminationControllerTest {
 
             given(examinationQueryService.getExaminations(
                     institutionId,
-                    RoleType.EXAMINER,
+                    Role.EXAMINER,
                     pageable(0, 10)
             )).willReturn(
                     PagedResponse.from(
@@ -166,7 +166,7 @@ class ExaminationControllerTest {
             then(examinationQueryService).should()
                     .getExaminations(
                             institutionId,
-                            RoleType.EXAMINER,
+                            Role.EXAMINER,
                             pageable(0, 10)
                     );
         }
@@ -178,7 +178,7 @@ class ExaminationControllerTest {
             // given
             given(examinationQueryService.getExaminations(
                     institutionId,
-                    RoleType.EXAMINER,
+                    Role.EXAMINER,
                     pageable(0, 10)
             )).willReturn(
                     PagedResponse.from(
@@ -201,7 +201,7 @@ class ExaminationControllerTest {
             then(examinationQueryService).should()
                     .getExaminations(
                             institutionId,
-                            RoleType.EXAMINER,
+                            Role.EXAMINER,
                             pageable(0, 10)
                     );
         }
@@ -213,7 +213,7 @@ class ExaminationControllerTest {
             // given
             given(examinationQueryService.getExaminations(
                     institutionId,
-                    RoleType.REQUESTER,
+                    Role.REQUESTER,
                     pageable(0, 10)
             )).willThrow(
                     new BaseException(ErrorCode.EXAMINATION_ACCESS_DENIED)
@@ -533,7 +533,7 @@ class ExaminationControllerTest {
         }
 
         private void givenGetResultThrows(
-                RoleType role,
+                Role role,
                 ErrorCode errorCode
         ) {
             given(examinationResultService.getResultByExaminationId(
@@ -564,7 +564,7 @@ class ExaminationControllerTest {
             given(examinationResultService.getResultByExaminationId(
                     examinationId,
                     institutionId,
-                    RoleType.EXAMINER
+                    Role.EXAMINER
             )).willReturn(response);
 
             // when & then
@@ -587,7 +587,7 @@ class ExaminationControllerTest {
                     .getResultByExaminationId(
                             examinationId,
                             institutionId,
-                            RoleType.EXAMINER
+                            Role.EXAMINER
                     );
         }
 
@@ -597,7 +597,7 @@ class ExaminationControllerTest {
 
             // given
             givenGetResultThrows(
-                    RoleType.EXAMINER,
+                    Role.EXAMINER,
                     ErrorCode.EXAMINATION_RESULT_READ_ACCESS_DENIED
             );
 
@@ -614,7 +614,7 @@ class ExaminationControllerTest {
 
             // given
             givenGetResultThrows(
-                    RoleType.REQUESTER,
+                    Role.REQUESTER,
                     ErrorCode.EXAMINATION_RESULT_READ_ACCESS_DENIED
             );
 
@@ -631,7 +631,7 @@ class ExaminationControllerTest {
 
             // given
             givenGetResultThrows(
-                    RoleType.EXAMINER,
+                    Role.EXAMINER,
                     ErrorCode.EXAMINATION_NOT_FOUND
             );
 
@@ -648,7 +648,7 @@ class ExaminationControllerTest {
 
             // given
             givenGetResultThrows(
-                    RoleType.EXAMINER,
+                    Role.EXAMINER,
                     ErrorCode.EXAMINATION_RESULT_NOT_FOUND
             );
 
@@ -741,7 +741,7 @@ class ExaminationControllerTest {
             given(examinationService.changeStatus(
                     examinationId,
                     institutionId,
-                    RoleType.EXAMINER,
+                    Role.EXAMINER,
                     status
             )).willThrow(new BaseException(errorCode));
         }
@@ -765,7 +765,7 @@ class ExaminationControllerTest {
             given(examinationService.changeStatus(
                     examinationId,
                     institutionId,
-                    RoleType.EXAMINER,
+                    Role.EXAMINER,
                     ExaminationStatus.IN_PROGRESS
             )).willReturn(response);
 
@@ -800,7 +800,7 @@ class ExaminationControllerTest {
             given(examinationService.changeStatus(
                     examinationId,
                     institutionId,
-                    RoleType.EXAMINER,
+                    Role.EXAMINER,
                     ExaminationStatus.COMPLETED
             )).willReturn(response);
 

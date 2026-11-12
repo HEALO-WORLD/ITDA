@@ -1,6 +1,6 @@
 package healoworld.referral_service.global.deadletter;
 
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -34,7 +34,7 @@ public class DeadLetterService {
 
     // 최신 저장순 목록. status를 생략하면 전체 상태를 조회한다
     @Transactional(readOnly = true)
-    public PagedResponse<DeadLetterResponse> getDeadLetters(RoleType role, DeadLetterSearchCondition cond) {
+    public PagedResponse<DeadLetterResponse> getDeadLetters(Role role, DeadLetterSearchCondition cond) {
         verifyAdmin(role);
 
         Pageable pageable = cond.toPageable();
@@ -45,7 +45,7 @@ public class DeadLetterService {
     }
 
     @Transactional(readOnly = true)
-    public DeadLetterDetailResponse getDeadLetter(RoleType role, UUID deadLetterId) {
+    public DeadLetterDetailResponse getDeadLetter(Role role, UUID deadLetterId) {
         verifyAdmin(role);
 
         DeadLetterEvent event = deadLetterEventRepository.findById(deadLetterId)
@@ -53,7 +53,7 @@ public class DeadLetterService {
         return DeadLetterDetailResponse.from(event);
     }
 
-    public DeadLetterDetailResponse reprocess(UUID userId, RoleType role, UUID deadLetterId) {
+    public DeadLetterDetailResponse reprocess(UUID userId, Role role, UUID deadLetterId) {
         verifyAdmin(role);
 
         DeadLetterEvent event = getPendingForUpdate(deadLetterId);
@@ -76,7 +76,7 @@ public class DeadLetterService {
         return DeadLetterDetailResponse.from(event);
     }
 
-    public DeadLetterDetailResponse ignore(UUID userId, RoleType role, UUID deadLetterId) {
+    public DeadLetterDetailResponse ignore(UUID userId, Role role, UUID deadLetterId) {
         verifyAdmin(role);
 
         DeadLetterEvent event = getPendingForUpdate(deadLetterId);
@@ -84,8 +84,8 @@ public class DeadLetterService {
         return DeadLetterDetailResponse.from(event);
     }
 
-    private void verifyAdmin(RoleType role) {
-        if (role != RoleType.ADMIN) {
+    private void verifyAdmin(Role role) {
+        if (role != Role.ADMIN) {
             throw new BaseException(ErrorCode.ADMIN_ONLY);
         }
     }

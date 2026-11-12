@@ -9,7 +9,7 @@ import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.global.outbox.SlotCommandOutbox;
@@ -148,7 +148,7 @@ class ReservationServiceTest {
             given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
             ReservationResponse response = reservationService.getReservation(
-                    referral.getReferringInstitutionId(), reservation.getId(), RoleType.REQUESTER);
+                    referral.getReferringInstitutionId(), reservation.getId(), Role.REQUESTER);
 
             assertThat(response.getId()).isEqualTo(reservation.getId());
             assertThat(response.getReferralId()).isEqualTo(referral.getId());
@@ -161,7 +161,7 @@ class ReservationServiceTest {
             given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
             ReservationResponse response = reservationService.getReservation(
-                    reservation.getExamInstitutionId(), reservation.getId(), RoleType.EXAMINER);
+                    reservation.getExamInstitutionId(), reservation.getId(), Role.EXAMINER);
 
             assertThat(response.getId()).isEqualTo(reservation.getId());
         }
@@ -172,7 +172,7 @@ class ReservationServiceTest {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
             given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
-            ReservationResponse response = reservationService.getReservation(UUID.randomUUID(), reservation.getId(), RoleType.ADMIN);
+            ReservationResponse response = reservationService.getReservation(UUID.randomUUID(), reservation.getId(), Role.ADMIN);
 
             assertThat(response.getId()).isEqualTo(reservation.getId());
         }
@@ -183,7 +183,7 @@ class ReservationServiceTest {
             Reservation reservation = reservationIn(ReservationStatus.REQUESTED, referral);
             given(reservationRepository.findByIdWithReferral(reservation.getId())).willReturn(Optional.of(reservation));
 
-            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservation.getId(), RoleType.REQUESTER),
+            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservation.getId(), Role.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
         }
 
@@ -193,7 +193,7 @@ class ReservationServiceTest {
             UUID reservationId = UUID.randomUUID();
             given(reservationRepository.findByIdWithReferral(reservationId)).willReturn(Optional.empty());
 
-            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservationId, RoleType.REQUESTER),
+            assertErrorCode(() -> reservationService.getReservation(UUID.randomUUID(), reservationId, Role.REQUESTER),
                     ErrorCode.RESERVATION_NOT_FOUND);
         }
     }
@@ -218,7 +218,7 @@ class ReservationServiceTest {
             stored(confirmed);
             given(slotCommandOutbox.recordOutbox(confirmed, SlotCommandType.RELEASE_SLOT)).willReturn(releaseEventId);
 
-            reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
+            reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId());
 
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CANCELED);
             assertThat(confirmedReferral.getReferralStatus()).isEqualTo(ReferralStatus.CANCELED);
@@ -238,7 +238,7 @@ class ReservationServiceTest {
         void admin() {
             stored(confirmed);
 
-            reservationService.cancelReservation(OTHER_USER_ID, UUID.randomUUID(), RoleType.ADMIN, confirmed.getId());
+            reservationService.cancelReservation(OTHER_USER_ID, UUID.randomUUID(), Role.ADMIN, confirmed.getId());
 
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CANCELED);
             assertThat(savedHistory().getChangedBy()).isEqualTo(OTHER_USER_ID);
@@ -249,7 +249,7 @@ class ReservationServiceTest {
         void otherInstitution() {
             stored(confirmed);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), RoleType.REQUESTER, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), Role.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_NOT_FOUND);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
             verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
@@ -261,7 +261,7 @@ class ReservationServiceTest {
             UUID reservationId = UUID.randomUUID();
             given(reservationRepository.findReferralIdById(reservationId)).willReturn(Optional.empty());
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), RoleType.ADMIN, reservationId),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, UUID.randomUUID(), Role.ADMIN, reservationId),
                     ErrorCode.RESERVATION_NOT_FOUND);
         }
 
@@ -271,7 +271,7 @@ class ReservationServiceTest {
             startsIn(confirmed, NOW.plusHours(2).plusMinutes(1));
             stored(confirmed);
 
-            reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
+            reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId());
 
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CANCELED);
         }
@@ -282,7 +282,7 @@ class ReservationServiceTest {
             startsIn(confirmed, NOW.plusHours(2));
             stored(confirmed);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
             verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
@@ -296,7 +296,7 @@ class ReservationServiceTest {
             startsIn(confirmed, LocalDateTime.of(2026, 11, 10, 11, 30));
             stored(confirmed);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
         }
 
@@ -306,7 +306,7 @@ class ReservationServiceTest {
             startsIn(confirmed, NOW.plusHours(1).plusMinutes(59));
             stored(confirmed);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
             assertThat(confirmed.getReservationStatus()).isEqualTo(ReservationStatus.CONFIRMED);
             verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
@@ -318,7 +318,7 @@ class ReservationServiceTest {
             startsIn(confirmed, NOW.minusHours(3));
             stored(confirmed);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId()),
                     ErrorCode.RESERVATION_CANCEL_DEADLINE_PASSED);
         }
 
@@ -329,7 +329,7 @@ class ReservationServiceTest {
             startsIn(requested, NOW.plusDays(1));
             stored(requested);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, requested.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), Role.REQUESTER, requested.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
             verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
@@ -341,7 +341,7 @@ class ReservationServiceTest {
             startsIn(canceled, NOW.plusDays(1));
             stored(canceled);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, canceled.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, canceled.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
             verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
@@ -353,7 +353,7 @@ class ReservationServiceTest {
             startsIn(reservation, NOW.plusDays(1));
             stored(reservation);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), RoleType.REQUESTER, reservation.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, referral.getReferringInstitutionId(), Role.REQUESTER, reservation.getId()),
                     ErrorCode.INVALID_REFERRAL_STATUS);
             verifyNoInteractions(slotCommandOutbox, referralHistoryRepository, institutionNotificationService);
         }
@@ -363,7 +363,7 @@ class ReservationServiceTest {
         void locksInOrderAndValidatesBeforeChanges() {
             stored(confirmed);
 
-            reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId());
+            reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId());
 
             InOrder inOrder = inOrder(reservationRepository, referralRepository, incidentReservationRepository,
                     examinationRepository, slotCommandOutbox, referralHistoryRepository);
@@ -385,7 +385,7 @@ class ReservationServiceTest {
         void examinationStartedOrCompleted(ExaminationStatus status) {
             stored(confirmed, examinationOf(confirmed, status));
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId()),
                     ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
             assertNothingChanged();
         }
@@ -395,7 +395,7 @@ class ReservationServiceTest {
         void adminCannotCancelStartedExamination() {
             stored(confirmed, examinationOf(confirmed, ExaminationStatus.IN_PROGRESS));
 
-            assertErrorCode(() -> reservationService.cancelReservation(OTHER_USER_ID, UUID.randomUUID(), RoleType.ADMIN, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(OTHER_USER_ID, UUID.randomUUID(), Role.ADMIN, confirmed.getId()),
                     ErrorCode.EXAMINATION_CANCEL_NOT_ALLOWED);
             assertNothingChanged();
         }
@@ -405,7 +405,7 @@ class ReservationServiceTest {
         void noExamination() {
             stored(confirmed, null);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
             assertNothingChanged();
         }
@@ -417,7 +417,7 @@ class ReservationServiceTest {
             ReflectionTestUtils.setField(other, "reservationId", UUID.randomUUID());
             stored(confirmed, other);
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
             assertNothingChanged();
         }
@@ -428,7 +428,7 @@ class ReservationServiceTest {
             stored(confirmed);
             ReflectionTestUtils.setField(confirmedReferral, "currentReservationId", UUID.randomUUID());
 
-            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()),
+            assertErrorCode(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId()),
                     ErrorCode.INVALID_RESERVATION_STATUS);
             assertNothingChanged();
             verify(examinationRepository, never()).findByReferralIdForUpdate(any());
@@ -441,7 +441,7 @@ class ReservationServiceTest {
             given(examinationRepository.findByReferralIdForUpdate(confirmedReferral.getId()))
                     .willThrow(new PessimisticLockingFailureException("가상 잠금 대기 초과"));
 
-            assertThatThrownBy(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), RoleType.REQUESTER, confirmed.getId()))
+            assertThatThrownBy(() -> reservationService.cancelReservation(USER_ID, confirmedReferral.getReferringInstitutionId(), Role.REQUESTER, confirmed.getId()))
                     .isInstanceOf(PessimisticLockingFailureException.class);
             assertNothingChanged();
         }

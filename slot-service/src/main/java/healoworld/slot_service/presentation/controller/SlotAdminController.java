@@ -3,6 +3,7 @@ package healoworld.slot_service.presentation.controller;
 import healoworld.slot_service.application.dto.ReleaseOutcome;
 import healoworld.slot_service.application.service.SlotReleaseService;
 import healoworld.slot_service.application.service.SlotStatusHistoryService;
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.global.dto.ApiResponse;
 import healoworld.slot_service.global.dto.ErrorResponse;
@@ -59,7 +60,7 @@ public class SlotAdminController {
     public ResponseEntity<ApiResponse<SlotReleaseResponse>> release(
             @Parameter(description = "슬롯 ID") @PathVariable UUID slotId,
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") String role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @RequestBody @Valid SlotReleaseRequest request) {
 
         requireAdmin(role);
@@ -90,7 +91,7 @@ public class SlotAdminController {
     @GetMapping("/{slotId}/status-histories")
     public ResponseEntity<ApiResponse<PagedResponse<SlotStatusHistoryResponse>>> getStatusHistories(
             @Parameter(description = "슬롯 ID") @PathVariable UUID slotId,
-            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") String role,
+            @Parameter(description = "요청자 권한") @RequestHeader("X-Role") Role role,
             @ParameterObject @Valid @ModelAttribute SlotStatusHistorySearchRequest request) {
 
         requireAdmin(role);
@@ -100,8 +101,8 @@ public class SlotAdminController {
         return ResponseEntity.ok(ApiResponse.ok("슬롯 상태 이력 조회에 성공했습니다.", response));
     }
 
-    private void requireAdmin(String role) {
-        if (!"ADMIN".equals(role)) {
+    private void requireAdmin(Role role) {
+        if (role != Role.ADMIN) {
             throw new BaseException(ErrorCode.ADMIN_ONLY);
         }
     }

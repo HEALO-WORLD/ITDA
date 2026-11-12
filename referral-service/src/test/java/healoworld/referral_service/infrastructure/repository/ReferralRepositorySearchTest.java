@@ -2,7 +2,7 @@ package healoworld.referral_service.infrastructure.repository;
 
 import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.presentation.dto.request.ReferralSearchCondition;
 import healoworld.referral_service.support.RepositoryTestSupport;
 import jakarta.persistence.EntityManager;
@@ -46,7 +46,7 @@ class ReferralRepositorySearchTest extends RepositoryTestSupport {
     @Test
     @DisplayName("일반 사용자는 본인 기관의 의뢰만 조회된다")
     void userSeesOwnInstitutionOnly() {
-        Page<Referral> result = search(condition(null, null, null), INSTITUTION_A, RoleType.REQUESTER);
+        Page<Referral> result = search(condition(null, null, null), INSTITUTION_A, Role.REQUESTER);
 
         assertThat(ids(result)).containsExactlyInAnyOrder(a1Referral.getId(), a2Referral.getId());
         assertThat(result.getTotalElements()).isEqualTo(2);
@@ -55,7 +55,7 @@ class ReferralRepositorySearchTest extends RepositoryTestSupport {
     @Test
     @DisplayName("일반 사용자가 referrerId로 검색하면 본인 기관 안에서 해당 작성자 의뢰만 조회된다")
     void userFiltersByReferrer() {
-        Page<Referral> result = search(condition(USER_A1, null, null), INSTITUTION_A, RoleType.REQUESTER);
+        Page<Referral> result = search(condition(USER_A1, null, null), INSTITUTION_A, Role.REQUESTER);
 
         assertThat(ids(result)).containsExactly(a1Referral.getId());
     }
@@ -63,7 +63,7 @@ class ReferralRepositorySearchTest extends RepositoryTestSupport {
     @Test
     @DisplayName("다른 기관 작성자의 referrerId로 검색해도 다른 기관 의뢰는 노출되지 않는다")
     void userCannotSeeOtherInstitutionByReferrer() {
-        Page<Referral> result = search(condition(USER_B1, null, null), INSTITUTION_A, RoleType.REQUESTER);
+        Page<Referral> result = search(condition(USER_B1, null, null), INSTITUTION_A, Role.REQUESTER);
 
         assertThat(result.getContent()).isEmpty();
         assertThat(result.getTotalElements()).isZero();
@@ -72,8 +72,8 @@ class ReferralRepositorySearchTest extends RepositoryTestSupport {
     @Test
     @DisplayName("관리자는 모든 기관의 의뢰를 조회하고 referrerId로 필터할 수 있다")
     void admin() {
-        Page<Referral> all = search(condition(null, null, null), UUID.randomUUID(), RoleType.ADMIN);
-        Page<Referral> filtered = search(condition(USER_B1, null, null), UUID.randomUUID(), RoleType.ADMIN);
+        Page<Referral> all = search(condition(null, null, null), UUID.randomUUID(), Role.ADMIN);
+        Page<Referral> filtered = search(condition(USER_B1, null, null), UUID.randomUUID(), Role.ADMIN);
 
         assertThat(ids(all)).containsExactlyInAnyOrder(a1Referral.getId(), a2Referral.getId(), b1Referral.getId());
         assertThat(ids(filtered)).containsExactly(b1Referral.getId());
@@ -87,8 +87,8 @@ class ReferralRepositorySearchTest extends RepositoryTestSupport {
         em.flush();
         em.clear();
 
-        Page<Referral> byName = search(condition(null, null, "김"), INSTITUTION_A, RoleType.REQUESTER);
-        Page<Referral> byStatus = search(condition(null, ReferralStatus.CONFIRMED, null), INSTITUTION_A, RoleType.REQUESTER);
+        Page<Referral> byName = search(condition(null, null, "김"), INSTITUTION_A, Role.REQUESTER);
+        Page<Referral> byStatus = search(condition(null, ReferralStatus.CONFIRMED, null), INSTITUTION_A, Role.REQUESTER);
 
         assertThat(ids(byName)).containsExactly(a1Referral.getId());
         assertThat(ids(byStatus)).containsExactly(a2Referral.getId());
@@ -103,7 +103,7 @@ class ReferralRepositorySearchTest extends RepositoryTestSupport {
         em.flush();
         em.clear();
 
-        Page<Referral> result = search(condition(null, null, null), INSTITUTION_A, RoleType.REQUESTER);
+        Page<Referral> result = search(condition(null, null, null), INSTITUTION_A, Role.REQUESTER);
 
         assertThat(ids(result)).containsExactly(a2Referral.getId());
     }
@@ -113,7 +113,7 @@ class ReferralRepositorySearchTest extends RepositoryTestSupport {
                 Referral.create(institutionId, referrerId, UUID.randomUUID(), patientName, UUID.randomUUID()));
     }
 
-    private Page<Referral> search(ReferralSearchCondition cond, UUID institutionId, RoleType role) {
+    private Page<Referral> search(ReferralSearchCondition cond, UUID institutionId, Role role) {
         return referralRepository.search(cond, institutionId, role, cond.toPageable());
     }
 

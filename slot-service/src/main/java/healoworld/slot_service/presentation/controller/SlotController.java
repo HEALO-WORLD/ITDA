@@ -2,6 +2,7 @@ package healoworld.slot_service.presentation.controller;
 
 import healoworld.slot_service.application.service.SlotQueryService;
 import healoworld.slot_service.application.service.SlotService;
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.dto.ApiResponse;
 import healoworld.slot_service.global.dto.ErrorResponse;
 import healoworld.slot_service.global.dto.SliceResponse;
@@ -74,7 +75,7 @@ public class SlotController {
     public ResponseEntity<ApiResponse<SlotCreateResponse>> createSlot(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
             @Parameter(description = "요청자 기관 ID") @RequestHeader("X-Institution-Id") UUID userInstitutionId,
-            @Parameter(description = "요청자 권한 (EXAMINER, ADMIN)") @RequestHeader("X-Role") String userRole,
+            @Parameter(description = "요청자 권한 (EXAMINER, ADMIN)") @RequestHeader("X-Role") Role userRole,
             @Valid @RequestBody SlotCreateRequest request
     ) {
         SlotCreateResponse response = slotService.createSlot(
@@ -113,7 +114,7 @@ public class SlotController {
             @Parameter(description = "슬롯 ID") @PathVariable("slotId") UUID slotId,
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
             @Parameter(description = "요청자 기관 ID") @RequestHeader("X-Institution-Id") UUID userInstitutionId,
-            @Parameter(description = "요청자 권한 (REQUESTER, EXAMINER, ADMIN)") @RequestHeader("X-Role") String userRole
+            @Parameter(description = "요청자 권한 (REQUESTER, EXAMINER, ADMIN)") @RequestHeader("X-Role") Role userRole
     ) {
         SlotDetailResponse response = slotQueryService.getSlot(
                 slotId,
@@ -156,7 +157,7 @@ public class SlotController {
     public ResponseEntity<ApiResponse<List<SlotCreateResponse>>> generateSlots(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
             @Parameter(description = "요청자 기관 ID") @RequestHeader("X-Institution-Id") UUID userInstitutionId,
-            @Parameter(description = "요청자 권한 (EXAMINER, ADMIN)") @RequestHeader("X-Role") String userRole,
+            @Parameter(description = "요청자 권한 (EXAMINER, ADMIN)") @RequestHeader("X-Role") Role userRole,
             @Valid @RequestBody SlotGenerateRequest request
     ) {
         List<SlotCreateResponse> responses = slotService.generateSlots(
@@ -196,7 +197,7 @@ public class SlotController {
     public ResponseEntity<ApiResponse<SliceResponse<SlotDetailResponse>>> searchSlots(
             @Parameter(description = "요청자 ID") @RequestHeader("X-User-Id") UUID userId,
             @Parameter(description = "요청자 기관 ID") @RequestHeader("X-Institution-Id") UUID userInstitutionId,
-            @Parameter(description = "요청자 권한 (REQUESTER, EXAMINER, ADMIN)") @RequestHeader("X-Role") String userRole,
+            @Parameter(description = "요청자 권한 (REQUESTER, EXAMINER, ADMIN)") @RequestHeader("X-Role") Role userRole,
             @ParameterObject @Valid @ModelAttribute SlotSearchRequest request
     ) {
         SliceResponse<SlotDetailResponse> response =

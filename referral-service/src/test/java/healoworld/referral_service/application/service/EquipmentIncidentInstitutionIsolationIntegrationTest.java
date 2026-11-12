@@ -5,7 +5,7 @@ import healoworld.referral_service.domain.entity.Referral;
 import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.EquipmentIncidentStatus;
 import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.dto.PagedResponse;
@@ -109,17 +109,17 @@ class EquipmentIncidentInstitutionIsolationIntegrationTest extends PostgresConta
         EquipmentIncidentSummaryResponse expectedA = new EquipmentIncidentSummaryResponse(institutionA, NOW, 2, 3, 2);
         EquipmentIncidentSummaryResponse expectedB = new EquipmentIncidentSummaryResponse(institutionB, NOW, 1, 1, 1);
 
-        assertThat(service.getSummary(RoleType.EXAMINER, institutionA, null, NOW)).isEqualTo(expectedA);
-        assertThat(service.getSummary(RoleType.EXAMINER, institutionB, null, NOW)).isEqualTo(expectedB);
+        assertThat(service.getSummary(Role.EXAMINER, institutionA, null, NOW)).isEqualTo(expectedA);
+        assertThat(service.getSummary(Role.EXAMINER, institutionB, null, NOW)).isEqualTo(expectedB);
         // 요청 파라미터의 기관 ID는 EXAMINER에게 무시된다
-        assertThat(service.getSummary(RoleType.EXAMINER, institutionA, institutionB, NOW)).isEqualTo(expectedA);
-        assertThat(service.getSummary(RoleType.EXAMINER, institutionB, institutionA, NOW)).isEqualTo(expectedB);
+        assertThat(service.getSummary(Role.EXAMINER, institutionA, institutionB, NOW)).isEqualTo(expectedA);
+        assertThat(service.getSummary(Role.EXAMINER, institutionB, institutionA, NOW)).isEqualTo(expectedB);
     }
 
     @Test
     @DisplayName("집계: REQUESTER는 조회할 수 없다 (403 EQUIPMENT_INCIDENT_ACCESS_DENIED)")
     void summaryDeniedForRequester() {
-        assertThatThrownBy(() -> service.getSummary(RoleType.REQUESTER, institutionA, null, NOW))
+        assertThatThrownBy(() -> service.getSummary(Role.REQUESTER, institutionA, null, NOW))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED);
     }
@@ -127,9 +127,9 @@ class EquipmentIncidentInstitutionIsolationIntegrationTest extends PostgresConta
     @Test
     @DisplayName("목록: 상대 기관 ID를 검색 조건에 넣어도 EXAMINER A·B는 자기 기관 장애만 받는다")
     void listIsScopedPerExaminerEvenWithOtherInstitutionCondition() {
-        PagedResponse<EquipmentIncidentResponse> forA = service.getIncidents(RoleType.EXAMINER, institutionA,
+        PagedResponse<EquipmentIncidentResponse> forA = service.getIncidents(Role.EXAMINER, institutionA,
                 search(institutionB, null, 0, 10));
-        PagedResponse<EquipmentIncidentResponse> forB = service.getIncidents(RoleType.EXAMINER, institutionB,
+        PagedResponse<EquipmentIncidentResponse> forB = service.getIncidents(Role.EXAMINER, institutionB,
                 search(institutionA, null, 0, 10));
 
         assertThat(forA.contents()).extracting(EquipmentIncidentResponse::incidentId)
@@ -145,7 +145,7 @@ class EquipmentIncidentInstitutionIsolationIntegrationTest extends PostgresConta
     @Test
     @DisplayName("목록: 상대 기관 장비 ID로 필터하면 EXAMINER에게는 빈 결과다 (다른 기관 장애가 섞이지 않는다)")
     void otherInstitutionEquipmentFilterIsEmpty() {
-        PagedResponse<EquipmentIncidentResponse> result = service.getIncidents(RoleType.EXAMINER, institutionA,
+        PagedResponse<EquipmentIncidentResponse> result = service.getIncidents(Role.EXAMINER, institutionA,
                 search(null, equipmentB1, 0, 10));
 
         assertThat(result.contents()).isEmpty();
@@ -155,14 +155,14 @@ class EquipmentIncidentInstitutionIsolationIntegrationTest extends PostgresConta
     @Test
     @DisplayName("상세: A↔B 서로 상대 기관 장애를 조회하면 404 EQUIPMENT_INCIDENT_NOT_FOUND")
     void detailOfOtherInstitutionIsNotFound() {
-        assertThatThrownBy(() -> service.getIncident(RoleType.EXAMINER, institutionB, incidentA1.getId()))
+        assertThatThrownBy(() -> service.getIncident(Role.EXAMINER, institutionB, incidentA1.getId()))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
-        assertThatThrownBy(() -> service.getIncident(RoleType.EXAMINER, institutionA, incidentB1.getId()))
+        assertThatThrownBy(() -> service.getIncident(Role.EXAMINER, institutionA, incidentB1.getId()))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
         // 자기 기관 장애는 그대로 조회된다
-        assertThat(service.getIncident(RoleType.EXAMINER, institutionA, incidentA1.getId()).incidentId())
+        assertThat(service.getIncident(Role.EXAMINER, institutionA, incidentA1.getId()).incidentId())
                 .isEqualTo(incidentA1.getId());
     }
 
@@ -171,27 +171,27 @@ class EquipmentIncidentInstitutionIsolationIntegrationTest extends PostgresConta
     void referralsOfOtherInstitutionAreNotFound() {
         IncidentReferralSearchCondition all = new IncidentReferralSearchCondition(null, 0, 10);
 
-        assertThatThrownBy(() -> service.getIncidentReferrals(RoleType.EXAMINER, institutionB, incidentA2.getId(), all))
+        assertThatThrownBy(() -> service.getIncidentReferrals(Role.EXAMINER, institutionB, incidentA2.getId(), all))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
-        assertThatThrownBy(() -> service.getIncidentReferrals(RoleType.EXAMINER, institutionA, incidentB1.getId(), all))
+        assertThatThrownBy(() -> service.getIncidentReferrals(Role.EXAMINER, institutionA, incidentB1.getId(), all))
                 .isInstanceOf(BaseException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
         // 자기 기관 장애의 영향 의뢰는 그대로 조회된다 (incidentA2: rA2·rA3)
-        assertThat(service.getIncidentReferrals(RoleType.EXAMINER, institutionA, incidentA2.getId(), all).totalElements())
+        assertThat(service.getIncidentReferrals(Role.EXAMINER, institutionA, incidentA2.getId(), all).totalElements())
                 .isEqualTo(2);
     }
 
     @Test
     @DisplayName("집계·목록 분리: 장비 필터·페이지·페이지 크기로 목록이 바뀌어도 집계는 기관 전체 기준 그대로다")
     void summaryIsIndependentOfListConditions() {
-        EquipmentIncidentSummaryResponse before = service.getSummary(RoleType.EXAMINER, institutionA, null, NOW);
+        EquipmentIncidentSummaryResponse before = service.getSummary(Role.EXAMINER, institutionA, null, NOW);
 
         List<PagedResponse<EquipmentIncidentResponse>> lists = List.of(
-                service.getIncidents(RoleType.EXAMINER, institutionA, search(null, null, 0, 10)),        // 전체
-                service.getIncidents(RoleType.EXAMINER, institutionA, search(null, equipmentA1, 0, 10)), // 장비 필터
-                service.getIncidents(RoleType.EXAMINER, institutionA, search(null, null, 1, 10)),        // 페이지 이동
-                service.getIncidents(RoleType.EXAMINER, institutionA, search(null, null, 0, 30)));       // 페이지 크기
+                service.getIncidents(Role.EXAMINER, institutionA, search(null, null, 0, 10)),        // 전체
+                service.getIncidents(Role.EXAMINER, institutionA, search(null, equipmentA1, 0, 10)), // 장비 필터
+                service.getIncidents(Role.EXAMINER, institutionA, search(null, null, 1, 10)),        // 페이지 이동
+                service.getIncidents(Role.EXAMINER, institutionA, search(null, null, 0, 30)));       // 페이지 크기
 
         // 목록은 조건에 따라 달라진다
         assertThat(lists.get(0).totalElements()).isEqualTo(3);
@@ -202,7 +202,7 @@ class EquipmentIncidentInstitutionIsolationIntegrationTest extends PostgresConta
         assertThat(lists.get(3).size()).isEqualTo(30);
 
         // 집계는 목록 조건과 무관 (같은 기준 시각이면 같은 값), 목록 건수(3)와도 다른 값이다
-        EquipmentIncidentSummaryResponse after = service.getSummary(RoleType.EXAMINER, institutionA, null, NOW);
+        EquipmentIncidentSummaryResponse after = service.getSummary(Role.EXAMINER, institutionA, null, NOW);
         assertThat(after).isEqualTo(before);
         assertThat(after).isEqualTo(new EquipmentIncidentSummaryResponse(institutionA, NOW, 2, 3, 2));
     }

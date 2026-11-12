@@ -4,7 +4,7 @@ import healoworld.referral_service.domain.entity.EquipmentIncident;
 import healoworld.referral_service.domain.entity.IncidentReferral;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.IncidentProcessingStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -54,7 +54,7 @@ public class EquipmentIncidentQueryService {
     private final ExaminationRepository examinationRepository;   // 영향 의뢰의 수동 확인 여부 판단
     private final Clock clock;   // 현황 집계의 기준 시각 (한국 시간)
 
-    public PagedResponse<EquipmentIncidentResponse> getIncidents(RoleType role, UUID institutionId,
+    public PagedResponse<EquipmentIncidentResponse> getIncidents(Role role, UUID institutionId,
                                                                  EquipmentIncidentSearchCondition cond) {
         UUID scopedInstitutionId = switch (role) {
             case ADMIN -> cond.institutionId();
@@ -67,7 +67,7 @@ public class EquipmentIncidentQueryService {
         return PagedResponse.from(page);
     }
 
-    public EquipmentIncidentDetailResponse getIncident(RoleType role, UUID institutionId, UUID incidentId) {
+    public EquipmentIncidentDetailResponse getIncident(Role role, UUID institutionId, UUID incidentId) {
         EquipmentIncident incident = findReadableIncident(role, institutionId, incidentId);
         return EquipmentIncidentDetailResponse.of(incident,
                 count(incidentId, IncidentProcessingStatus.PENDING),
@@ -76,7 +76,7 @@ public class EquipmentIncidentQueryService {
                 count(incidentId, IncidentProcessingStatus.FAILED));
     }
 
-    public PagedResponse<IncidentReferralResponse> getIncidentReferrals(RoleType role, UUID institutionId,
+    public PagedResponse<IncidentReferralResponse> getIncidentReferrals(Role role, UUID institutionId,
                                                                         UUID incidentId,
                                                                         IncidentReferralSearchCondition cond) {
         findReadableIncident(role, institutionId, incidentId);
@@ -85,7 +85,7 @@ public class EquipmentIncidentQueryService {
                 : incidentReferralRepository.findByIncident_IdAndProcessingStatus(incidentId, cond.status(),
                 cond.toPageable());
         // lastError(실패 분류와 진단 정보)는 ADMIN에게만 보여준다. EXAMINER는 처리 상태·결과 코드·재시도 정보만 받는다
-        boolean includeLastError = role == RoleType.ADMIN;
+        boolean includeLastError = role == Role.ADMIN;
         Set<UUID> manualReviewTaskIds = findManualReviewTaskIds(page.getContent());
         return PagedResponse.from(page.map(task -> IncidentReferralResponse.from(task, includeLastError,
                 manualReviewTaskIds.contains(task.getId()))));
@@ -125,13 +125,13 @@ public class EquipmentIncidentQueryService {
     // - EXAMINER는 자기 기관(X-Institution-Id)으로 고정하고 요청의 institutionId는 무시한다
     // - ADMIN은 institutionId가 필수다 (없으면 기관 조건이 null이 되어 오류 없이 0이 나오므로 400으로 막는다)
     // - 세 값을 같은 기관과 같은 기준 시각으로 계산한다
-    public EquipmentIncidentSummaryResponse getSummary(RoleType role, UUID institutionId, UUID requestedInstitutionId) {
+    public EquipmentIncidentSummaryResponse getSummary(Role role, UUID institutionId, UUID requestedInstitutionId) {
         // 중단 구간(한국 시간 LocalDateTime)과 비교하는 기준 시각이므로 한국 시간으로 구한다
         return getSummary(role, institutionId, requestedInstitutionId, LocalDateTime.now(clock));
     }
 
     // 기준 시각을 지정할 수 있는 집계 (중단 구간 경계를 고정 시각으로 검증하는 테스트에서 사용)
-    EquipmentIncidentSummaryResponse getSummary(RoleType role, UUID institutionId, UUID requestedInstitutionId,
+    EquipmentIncidentSummaryResponse getSummary(Role role, UUID institutionId, UUID requestedInstitutionId,
                                                 LocalDateTime now) {
         UUID scopedInstitutionId = switch (role) {
             case ADMIN -> {
@@ -149,13 +149,13 @@ public class EquipmentIncidentQueryService {
                 referralRepository.countNeedsRescheduleByLatestBlockedInstitution(scopedInstitutionId));
     }
 
-    private EquipmentIncident findReadableIncident(RoleType role, UUID institutionId, UUID incidentId) {
-        if (role != RoleType.ADMIN && role != RoleType.EXAMINER) {
+    private EquipmentIncident findReadableIncident(Role role, UUID institutionId, UUID incidentId) {
+        if (role != Role.ADMIN && role != Role.EXAMINER) {
             throw new BaseException(ErrorCode.EQUIPMENT_INCIDENT_ACCESS_DENIED);
         }
         EquipmentIncident incident = equipmentIncidentRepository.findById(incidentId)
                 .orElseThrow(() -> new BaseException(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND));
-        if (role == RoleType.EXAMINER && !incident.getInstitutionId().equals(institutionId)) {
+        if (role == Role.EXAMINER && !incident.getInstitutionId().equals(institutionId)) {
             throw new BaseException(ErrorCode.EQUIPMENT_INCIDENT_NOT_FOUND);
         }
         return incident;

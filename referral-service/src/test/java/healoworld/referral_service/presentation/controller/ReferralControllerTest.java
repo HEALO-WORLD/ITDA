@@ -3,7 +3,7 @@ package healoworld.referral_service.presentation.controller;
 import healoworld.referral_service.application.service.ExaminationResultService;
 import healoworld.referral_service.application.service.ReferralHistoryService;
 import healoworld.referral_service.application.service.ReferralService;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.presentation.dto.response.ExaminationResultResponse;
@@ -64,7 +64,7 @@ class ReferralControllerTest {
     }
 
     // Service에서 발생한 예외가 HTTP 응답으로 변환되는지 검증하기 위한 설정
-    private void mockResultError(RoleType role, ErrorCode errorCode) {
+    private void mockResultError(Role role, ErrorCode errorCode) {
         given(examinationResultService.getResultByReferralId(
                 referralId,
                 institutionId,
@@ -96,7 +96,7 @@ class ReferralControllerTest {
         given(examinationResultService.getResultByReferralId(
                 referralId,
                 institutionId,
-                RoleType.REQUESTER
+                Role.REQUESTER
         )).willReturn(response);
 
         // when & then
@@ -126,7 +126,7 @@ class ReferralControllerTest {
     void examinerAccessDenied() throws Exception {
         // given
         mockResultError(
-                RoleType.EXAMINER,
+                Role.EXAMINER,
                 ErrorCode.EXAMINATION_RESULT_READ_ACCESS_DENIED
         );
 
@@ -142,7 +142,7 @@ class ReferralControllerTest {
                 .getResultByReferralId(
                         referralId,
                         institutionId,
-                        RoleType.EXAMINER
+                        Role.EXAMINER
                 );
     }
 
@@ -151,7 +151,7 @@ class ReferralControllerTest {
     void otherInstitutionAccessDenied() throws Exception {
         // given
         mockResultError(
-                RoleType.REQUESTER,
+                Role.REQUESTER,
                 ErrorCode.EXAMINATION_RESULT_READ_ACCESS_DENIED
         );
 
@@ -167,7 +167,7 @@ class ReferralControllerTest {
     void resultNotFound() throws Exception {
         // given
         mockResultError(
-                RoleType.REQUESTER,
+                Role.REQUESTER,
                 ErrorCode.EXAMINATION_RESULT_NOT_FOUND
         );
 

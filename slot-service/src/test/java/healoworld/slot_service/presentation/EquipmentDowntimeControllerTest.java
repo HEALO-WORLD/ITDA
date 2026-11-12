@@ -1,6 +1,7 @@
 package healoworld.slot_service.presentation;
 
 import healoworld.slot_service.application.service.EquipmentDowntimeService;
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
 import healoworld.slot_service.presentation.controller.EquipmentDowntimeController;
@@ -56,7 +57,7 @@ class EquipmentDowntimeControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(equipmentDowntimeService).createDowntime(any(), eq(USER_ID), eq(INSTITUTION_ID), eq("EXAMINER"));
+        verify(equipmentDowntimeService).createDowntime(any(), eq(USER_ID), eq(INSTITUTION_ID), eq(Role.EXAMINER));
     }
 
     @ParameterizedTest

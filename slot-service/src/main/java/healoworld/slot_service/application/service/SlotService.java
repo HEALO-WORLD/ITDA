@@ -2,6 +2,7 @@ package healoworld.slot_service.application.service;
 
 import healoworld.slot_service.application.dto.SlotTimeRange;
 import healoworld.slot_service.domain.entity.Slot;
+import healoworld.slot_service.domain.enums.Role;
 import healoworld.slot_service.domain.enums.SlotStatus;
 import healoworld.slot_service.domain.enums.SlotView;
 import healoworld.slot_service.global.dto.SliceResponse;
@@ -45,13 +46,13 @@ public class SlotService {
             SlotCreateRequest request,
             UUID userId,
             UUID userInstitutionId,
-            String userRole
+            Role userRole
     ) {
         if (userId == null || userInstitutionId == null || userRole == null) {
             throw new BaseException(ErrorCode.INVALID_INPUT);
         }
 
-        if (!"EXAMINER".equals(userRole) && !"ADMIN".equals(userRole)) {
+        if (userRole != Role.EXAMINER && userRole != Role.ADMIN) {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
 
@@ -71,7 +72,7 @@ public class SlotService {
                 startsAt.toLocalDate()
         );
 
-        if ("EXAMINER".equals(userRole)
+        if (userRole == Role.EXAMINER
                 && !userInstitutionId.equals(context.institutionId())) {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
@@ -168,7 +169,7 @@ public class SlotService {
             SlotGenerateRequest request,
             UUID userId,
             UUID userInstitutionId,
-            String userRole
+            Role userRole
     ) {
         validateCreationActor(userId, userInstitutionId, userRole);
 
@@ -222,13 +223,13 @@ public class SlotService {
     private void validateCreationActor(
             UUID userId,
             UUID institutionId,
-            String role
+            Role role
     ) {
         if (userId == null || institutionId == null || role == null) {
             throw new BaseException(ErrorCode.INVALID_INPUT);
         }
 
-        if (!"EXAMINER".equals(role) && !"ADMIN".equals(role)) {
+        if (role != Role.EXAMINER && role != Role.ADMIN) {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }
     }
@@ -236,9 +237,9 @@ public class SlotService {
     private void validateEquipmentOwnership(
             EquipmentSlotContextResponse context,
             UUID institutionId,
-            String role
+            Role role
     ) {
-        if ("EXAMINER".equals(role)
+        if (role == Role.EXAMINER
                 && !institutionId.equals(context.institutionId())) {
             throw new BaseException(ErrorCode.FORBIDDEN);
         }

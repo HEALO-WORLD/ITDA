@@ -7,7 +7,7 @@ import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.config.ClockConfig;
 import healoworld.referral_service.global.config.QuerydslConfig;
 import healoworld.referral_service.global.exception.BaseException;
@@ -282,7 +282,7 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
         reservationService.cancelReservation(
                 booking.userId(),
                 booking.requesterInstitutionId(),
-                RoleType.REQUESTER,
+                Role.REQUESTER,
                 booking.reservationId()
         );
     }
@@ -565,12 +565,12 @@ class ReservationIncidentConcurrencyIntegrationTest extends PostgresContainerSup
     // =========================================================
 
     private void startExamination(Booking booking) {
-        examinationService.changeStatus(booking.examinationId(), booking.examInstitutionId(), RoleType.EXAMINER,
+        examinationService.changeStatus(booking.examinationId(), booking.examInstitutionId(), Role.EXAMINER,
                 ExaminationStatus.IN_PROGRESS);
     }
 
     private void completeExamination(Booking booking) {
-        examinationService.changeStatus(booking.examinationId(), booking.examInstitutionId(), RoleType.EXAMINER,
+        examinationService.changeStatus(booking.examinationId(), booking.examInstitutionId(), Role.EXAMINER,
                 ExaminationStatus.COMPLETED);
     }
 

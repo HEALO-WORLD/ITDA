@@ -6,7 +6,7 @@ import healoworld.referral_service.application.service.ReferralService;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
 import healoworld.referral_service.domain.enums.ReservationStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
@@ -262,7 +262,7 @@ class ReferralApiControllerTest {
         @Test
         @DisplayName("정상 요청은 201과 새 예약을 돌려주고, 사용자·역할·의뢰 ID·본문을 Service에 넘긴다")
         void created() throws Exception {
-            given(referralService.createRescheduledReservation(eq(userId), eq(RoleType.REQUESTER), eq(referralId),
+            given(referralService.createRescheduledReservation(eq(userId), eq(Role.REQUESTER), eq(referralId),
                     any(CreateReservationRequest.class))).willReturn(reservation(2, ReservationStatus.REQUESTED));
 
             mockMvc.perform(rescheduleRequest(reservationJson()))
@@ -275,7 +275,7 @@ class ReferralApiControllerTest {
 
             ArgumentCaptor<CreateReservationRequest> captor = ArgumentCaptor.forClass(CreateReservationRequest.class);
             then(referralService).should()
-                    .createRescheduledReservation(eq(userId), eq(RoleType.REQUESTER), eq(referralId), captor.capture());
+                    .createRescheduledReservation(eq(userId), eq(Role.REQUESTER), eq(referralId), captor.capture());
             assertThat(captor.getValue().getSlotId()).isEqualTo(slotId);
             assertThat(captor.getValue().getEquipmentId()).isEqualTo(equipmentId);
         }
@@ -338,7 +338,7 @@ class ReferralApiControllerTest {
         @Test
         @DisplayName("200과 의뢰 필드를 돌려주고, 기관·의뢰 ID·역할을 Service에 넘긴다")
         void ok() throws Exception {
-            given(referralService.getReferral(institutionId, referralId, RoleType.REQUESTER))
+            given(referralService.getReferral(institutionId, referralId, Role.REQUESTER))
                     .willReturn(referral(ReferralStatus.CONFIRMED));
 
             mockMvc.perform(get(BASE + "/{referralId}", referralId)
@@ -392,7 +392,7 @@ class ReferralApiControllerTest {
         @DisplayName("쿼리 파라미터가 검색 조건으로 바인딩되고, PagedResponse 형식으로 200을 돌려준다")
         void bindsConditionAndPages() throws Exception {
             UUID referrerId = UUID.randomUUID();
-            given(referralService.getReferrals(eq(institutionId), any(ReferralSearchCondition.class), eq(RoleType.REQUESTER)))
+            given(referralService.getReferrals(eq(institutionId), any(ReferralSearchCondition.class), eq(Role.REQUESTER)))
                     .willReturn(new PagedResponse<>(List.of(referral(ReferralStatus.FAILED)), 31, 2, 30, 1));
 
             mockMvc.perform(get(BASE)
@@ -475,7 +475,7 @@ class ReferralApiControllerTest {
 
         private ReferralSearchCondition capturedCondition() {
             ArgumentCaptor<ReferralSearchCondition> captor = ArgumentCaptor.forClass(ReferralSearchCondition.class);
-            then(referralService).should().getReferrals(eq(institutionId), captor.capture(), eq(RoleType.REQUESTER));
+            then(referralService).should().getReferrals(eq(institutionId), captor.capture(), eq(Role.REQUESTER));
             return captor.getValue();
         }
     }
@@ -493,7 +493,7 @@ class ReferralApiControllerTest {
         void ok() throws Exception {
             UUID createdEvent = UUID.randomUUID();
             UUID confirmedEvent = UUID.randomUUID();
-            given(referralHistoryService.getReferralHistories(institutionId, referralId, RoleType.REQUESTER))
+            given(referralHistoryService.getReferralHistories(institutionId, referralId, Role.REQUESTER))
                     .willReturn(List.of(
                             history(createdEvent, null, ReferralStatus.PENDING, Reason.REFERRAL_CREATED, userId),
                             history(confirmedEvent, ReferralStatus.PENDING, ReferralStatus.CONFIRMED,
@@ -549,7 +549,7 @@ class ReferralApiControllerTest {
                     .andExpect(jsonPath("$.message").value("삭제가 완료되었습니다."))
                     .andExpect(jsonPath("$.data").doesNotExist());
 
-            then(referralService).should().deleteReferral(userId, referralId, RoleType.REQUESTER);
+            then(referralService).should().deleteReferral(userId, referralId, Role.REQUESTER);
         }
 
         @ParameterizedTest(name = "{0}")

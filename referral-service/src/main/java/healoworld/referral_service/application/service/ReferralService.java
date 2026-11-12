@@ -6,7 +6,7 @@ import healoworld.referral_service.domain.entity.Reservation;
 import healoworld.referral_service.domain.enums.ExaminationStatus;
 import healoworld.referral_service.domain.enums.Reason;
 import healoworld.referral_service.domain.enums.ReferralStatus;
-import healoworld.referral_service.domain.enums.RoleType;
+import healoworld.referral_service.domain.enums.Role;
 import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.global.dto.PagedResponse;
 import healoworld.referral_service.global.exception.BaseException;
@@ -91,28 +91,28 @@ public class ReferralService {
     }
 
     @Transactional(readOnly = true)
-    public ReferralResponse getReferral(UUID institutionId, UUID referralId, RoleType role) {
+    public ReferralResponse getReferral(UUID institutionId, UUID referralId, Role role) {
         Referral referral = referralRepository.findById(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
 
-        if (!(institutionId.equals(referral.getReferringInstitutionId()) || role == RoleType.ADMIN)) {
+        if (!(institutionId.equals(referral.getReferringInstitutionId()) || role == Role.ADMIN)) {
             throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
         }
         return ReferralResponse.from(referral);
     }
 
     @Transactional(readOnly = true)
-    public PagedResponse<ReferralResponse> getReferrals(UUID institutionId, ReferralSearchCondition cond, RoleType role) {
+    public PagedResponse<ReferralResponse> getReferrals(UUID institutionId, ReferralSearchCondition cond, Role role) {
         Page<ReferralResponse> page = referralRepository.search(cond, institutionId, role, cond.toPageable())
                 .map(ReferralResponse::from);
         return PagedResponse.from(page);
     }
 
-    public void deleteReferral(UUID userId, UUID referralId, RoleType role) {
+    public void deleteReferral(UUID userId, UUID referralId, Role role) {
         Referral referral = referralRepository.findById(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
 
-        if (!(userId.equals(referral.getReferrerId()) || role == RoleType.ADMIN)) {
+        if (!(userId.equals(referral.getReferrerId()) || role == Role.ADMIN)) {
             throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
         }
 
@@ -121,11 +121,11 @@ public class ReferralService {
         }
     }
 
-    public ReservationResponse createRescheduledReservation(UUID userId, RoleType role, UUID referralId, CreateReservationRequest request) {
+    public ReservationResponse createRescheduledReservation(UUID userId, Role role, UUID referralId, CreateReservationRequest request) {
         Referral referral = referralRepository.findByIdForUpdate(referralId)
                 .orElseThrow(() -> new BaseException(ErrorCode.REFERRAL_NOT_FOUND));
 
-        if (!(userId.equals(referral.getReferrerId()) || role == RoleType.ADMIN)) {
+        if (!(userId.equals(referral.getReferrerId()) || role == Role.ADMIN)) {
             throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
         }
 
