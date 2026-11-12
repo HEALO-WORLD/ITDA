@@ -13,6 +13,9 @@ import healoworld.referral_service.infrastructure.client.slot.SlotStatusResponse
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ReconciliationTarget;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,12 +26,15 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -59,6 +65,12 @@ public class ReservationReconciliationScheduler {
     private UUID staleLastId = MIN_ID;
     private UUID confirmedLastId = MIN_ID;
     private UUID endedLastId = MIN_ID;
+    // 성능 측정용 메트릭: 회차 전체·단계별 소요 시간, 회차당 대상 수
+    static final String RUN_METRIC = "reservation.reconciliation.run";
+    static final String PHASE_METRIC = "reservation.reconciliation.phase";
+    static final String TARGETS_METRIC = "reservation.reconciliation.targets";
+    private final MeterRegistry meterRegistry;
+    private final Timer runTimer;
 
     public ReservationReconciliationScheduler(
             ReservationReconciliationService reconciliationService,
@@ -66,6 +78,7 @@ public class ReservationReconciliationScheduler {
             SlotClient slotClient,
             ExaminationRepository examinationRepository,
             ReconciliationFailureRecorder failureRecorder,
+            MeterRegistry meterRegistry,
             @Value("${itda.reservation-reconciliation.scheduler.batch-size}") int batchSize,
             @Value("${itda.reservation-reconciliation.scheduler.lookback-hours}") int lookbackHours,
             @Value("${itda.reservation-reconciliation.scheduler.stale-threshold-minutes}") int staleThresholdMinutes
@@ -82,6 +95,10 @@ public class ReservationReconciliationScheduler {
         this.batchSize = batchSize;
         this.lookbackHours = lookbackHours;
         this.staleThresholdMinutes = staleThresholdMinutes;
+        this.meterRegistry = meterRegistry;
+        this.runTimer = Timer.builder(RUN_METRIC)
+                .description("정합성 점검 한 회차 전체 소요 시간")
+                .register(meterRegistry);
     }
 
     @Scheduled(
@@ -89,11 +106,24 @@ public class ReservationReconciliationScheduler {
                     "${itda.reservation-reconciliation.scheduler.fixed-delay-ms:60000}"
     )
     public void reconcileReservations() {
-        LocalDateTime now = LocalDateTime.now();
+        // 조기 종료(대상 없음·slot-service 실패)나 예외가 나도 회차 전체 시간을 기록한다
+        runTimer.record(this::reconcileOnce);
+    }
 
-        List<ReconciliationTarget> stale = reservationRepository.findStaleInProgress(now.minusMinutes(staleThresholdMinutes), staleLastId, PageRequest.of(0, batchSize));
-        List<ReconciliationTarget> confirmed = reservationRepository.findUpcomingConfirmed(now, confirmedLastId, PageRequest.of(0, batchSize));
-        List<ReconciliationTarget> ended = reservationRepository.findRecentlyEnded(now, now.minusHours(lookbackHours), endedLastId, PageRequest.of(0, batchSize));
+    private void reconcileOnce() {
+        LocalDateTime now = LocalDateTime.now();
+        // 단계별 소요 시간(ms). 회차 끝 로그 한 줄로 남긴다
+        Map<String, Long> elapsedMs = new LinkedHashMap<>();
+
+        List<ReconciliationTarget> stale = time("query_stale", elapsedMs, () ->
+                reservationRepository.findStaleInProgress(now.minusMinutes(staleThresholdMinutes), staleLastId, PageRequest.of(0, batchSize)));
+        List<ReconciliationTarget> confirmed = time("query_confirmed", elapsedMs, () ->
+                reservationRepository.findUpcomingConfirmed(now, confirmedLastId, PageRequest.of(0, batchSize)));
+        List<ReconciliationTarget> ended = time("query_ended", elapsedMs, () ->
+                reservationRepository.findRecentlyEnded(now, now.minusHours(lookbackHours), endedLastId, PageRequest.of(0, batchSize)));
+        recordTargetCount("stale", stale.size());
+        recordTargetCount("confirmed", confirmed.size());
+        recordTargetCount("ended", ended.size());
 
         List<ReconciliationTarget> targets = Stream.of(stale, confirmed, ended)
                 .flatMap(List::stream)
@@ -111,7 +141,7 @@ public class ReservationReconciliationScheduler {
         List<SlotStatusResponse> responses;
 
         try {
-            responses = slotClient.getSlotStatuses(new SlotStatusQueryRequest(slotIds));
+            responses = time("slot_api", elapsedMs, () -> slotClient.getSlotStatuses(new SlotStatusQueryRequest(slotIds)));
         } catch (RuntimeException e) {
             log.error("정합성 점검: slot-service 상태 조회 실패, 이번 회차 건너뜀. 대상 수={}", targets.size(), e);
             return;
@@ -145,10 +175,21 @@ public class ReservationReconciliationScheduler {
 
         // 2단계: 검사가 이미 시작·완료된 확정 예약은 SlotsBlocked를 주입해도 최종 확인에서 건너뛰므로, 미리 빼서
         //        회차마다 반복되는 inbox 기록·잠금 트랜잭션·개별 경고 로그를 만들지 않는다 (회차당 조회 1번)
-        Set<UUID> startedExamination = findStartedExamination(decisions);
+        recordTargetCount("decisions", decisions.size());
+        Set<UUID> startedExamination = time("precheck", elapsedMs, () -> findStartedExamination(decisions));
 
         // 3단계: 주입. 사전 확인은 잠금 없는 조회라 그 뒤에 검사가 시작될 수 있지만,
         //        SlotResultService.onSlotsBlocked()·onSlotBooked()가 의뢰 → 예약 → 검사를 잠근 뒤 다시 확인하므로 잘못 차단·확정하지 않는다
+        time("inject", elapsedMs, () -> {
+            inject(decisions, startedExamination);
+            return null;
+        });
+
+        log.info("정합성 점검 완료. 대상 수={}, 복구 판정 수={}, 단계별 소요(ms)={}",
+                targets.size(), decisions.size(), elapsedMs);
+    }
+
+    private void inject(List<Decision> decisions, Set<UUID> startedExamination) {
         for (Decision decision : decisions) {
             UUID reservationId = decision.target().reservationId();
             if (startedExamination.contains(reservationId)) {
@@ -168,10 +209,31 @@ public class ReservationReconciliationScheduler {
             }
             recordSuccessQuietly(reservationId);
         }
+    }
 
+    // 단계 하나의 소요 시간을 Timer(reservation.reconciliation.phase{phase=...})와 회차 로그용 맵에 남긴다. 예외가 나도 기록한다
+    private <T> T time(String phase, Map<String, Long> elapsedMs, Supplier<T> body) {
+        long start = System.nanoTime();
+        try {
+            return body.get();
+        } finally {
+            long nanos = System.nanoTime() - start;
+            Timer.builder(PHASE_METRIC)
+                    .description("정합성 점검 단계별 소요 시간")
+                    .tag("phase", phase)
+                    .register(meterRegistry)
+                    .record(nanos, TimeUnit.NANOSECONDS);
+            elapsedMs.put(phase, TimeUnit.NANOSECONDS.toMillis(nanos));
+        }
+    }
 
-        log.info("대상 작업 수={}", targets.size());
-
+    // 회차당 대상 수(kind=stale·confirmed·ended)와 복구 판정 수(kind=decisions)
+    private void recordTargetCount(String kind, int count) {
+        DistributionSummary.builder(TARGETS_METRIC)
+                .description("정합성 점검 회차당 대상 수")
+                .tag("kind", kind)
+                .register(meterRegistry)
+                .record(count);
     }
 
     // CONFIRMED 예약의 SlotsBlocked 후보, HELD 예약의 SlotBooked 후보 중 의뢰의 검사가 IN_PROGRESS·COMPLETED인 예약 ID

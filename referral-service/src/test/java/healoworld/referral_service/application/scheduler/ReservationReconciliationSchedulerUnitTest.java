@@ -11,6 +11,9 @@ import healoworld.referral_service.infrastructure.client.slot.SlotStatusResponse
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ReconciliationTarget;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,10 +55,14 @@ class ReservationReconciliationSchedulerUnitTest {
 
     private ReservationReconciliationScheduler scheduler;
 
+    private MeterRegistry meterRegistry;
+
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         scheduler = new ReservationReconciliationScheduler(
-                reconciliationService, reservationRepository, slotClient, examinationRepository, failureRecorder, BATCH_SIZE, 24, 10);
+                reconciliationService, reservationRepository, slotClient, examinationRepository, failureRecorder,
+                meterRegistry, BATCH_SIZE, 24, 10);
 
         // 기본값: 세 쿼리 모두 대상 없음. 테스트마다 필요한 쿼리만 덮어쓴다
         lenient().when(reservationRepository.findStaleInProgress(any(), any(), any())).thenReturn(List.of());
@@ -418,5 +425,39 @@ class ReservationReconciliationSchedulerUnitTest {
 
         verify(reconciliationService).reconcile(eq(next), eq(SlotResultType.SLOT_HELD), any());
         verify(failureRecorder).recordSuccess(next.reservationId());
+    }
+
+    // ---------- 성능 측정 메트릭 ----------
+
+    @Test
+    @DisplayName("한 회차를 돌면 회차 전체·단계별 소요 시간과 회차당 대상 수를 기록한다")
+    void recordsPhaseMetrics() {
+        ReconciliationTarget lostHeld = target(ReservationStatus.REQUESTED);
+        when(reservationRepository.findStaleInProgress(any(), any(), any())).thenReturn(List.of(lostHeld));
+        when(slotClient.getSlotStatuses(any())).thenReturn(List.of(slot(lostHeld, "HELD", lostHeld.reservationId())));
+
+        scheduler.reconcileReservations();
+
+        assertThat(meterRegistry.get(ReservationReconciliationScheduler.RUN_METRIC).timer().count()).isEqualTo(1);
+        for (String phase : List.of("query_stale", "query_confirmed", "query_ended", "slot_api", "precheck", "inject")) {
+            Timer timer = meterRegistry.get(ReservationReconciliationScheduler.PHASE_METRIC).tag("phase", phase).timer();
+            assertThat(timer.count()).as(phase).isEqualTo(1);
+        }
+        assertThat(meterRegistry.get(ReservationReconciliationScheduler.TARGETS_METRIC).tag("kind", "stale")
+                .summary().totalAmount()).isEqualTo(1);
+        assertThat(meterRegistry.get(ReservationReconciliationScheduler.TARGETS_METRIC).tag("kind", "decisions")
+                .summary().totalAmount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("대상이 없어 조기 종료해도 회차 시간과 조회 단계 시간은 기록한다")
+    void recordsMetricsWhenNoTargets() {
+        scheduler.reconcileReservations();
+
+        assertThat(meterRegistry.get(ReservationReconciliationScheduler.RUN_METRIC).timer().count()).isEqualTo(1);
+        assertThat(meterRegistry.get(ReservationReconciliationScheduler.PHASE_METRIC).tag("phase", "query_stale")
+                .timer().count()).isEqualTo(1);
+        assertThat(meterRegistry.find(ReservationReconciliationScheduler.PHASE_METRIC).tag("phase", "slot_api")
+                .timer()).isNull();
     }
 }
