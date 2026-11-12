@@ -26,6 +26,7 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private static final String RESCHEDULE_REQUIRED = "RESCHEDULE_REQUIRED";
+    private static final String RESCHEDULE_EXPIRED = "RESCHEDULE_EXPIRED";
 
     // 내 알림 목록 (referralId, isRead는 선택 필터)
     public PagedResponse<NotificationResponse> getMyNotifications(UUID userId, UUID referralId, Boolean isRead,
@@ -109,5 +110,23 @@ public class NotificationService {
         );
 
         notificationRepository.saveAndFlush(notification);
+    }
+
+    // 의뢰 행이 FOR UPDATE로 잠긴 종료 트랜잭션 안에서 호출한다.
+    // 원인 예약별 1건만 생성하고, 상태 변경·이력·알림이 함께 커밋된다.
+    @Transactional
+    public void createRescheduleExpired(Referral referral, healoworld.referral_service.domain.entity.Reservation blockedReservation) {
+        UUID userId = referral.getReferrerId();
+        UUID reservationId = blockedReservation.getId();
+        if (notificationRepository.existsByReservationIdAndRecipientUserIdAndType(
+                reservationId, userId, RESCHEDULE_EXPIRED)) {
+            return;
+        }
+        notificationRepository.saveAndFlush(Notification.create(
+                userId, referral.getId(), reservationId, null, null,
+                RESCHEDULE_EXPIRED,
+                "검사 의뢰 재조정 기한 만료",
+                "장비 장애 이후 재조정 기한 내 새 일정을 선택하지 않아 검사 의뢰가 종료되었습니다."
+        ));
     }
 }

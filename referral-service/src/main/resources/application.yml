@@ -47,6 +47,14 @@ itda:
       fixed-delay-ms: 5000
       initial-delay-ms: 5000
       batch-size: 50
+  reschedule-expiration:
+    scheduler:
+      # 기본 비활성: 기존 데이터 확인 후 명시적으로 활성화
+      enabled: ${RESCHEDULE_EXPIRATION_SCHEDULER_ENABLED:false}
+      grace-hours: ${RESCHEDULE_EXPIRATION_GRACE_HOURS:48}
+      fixed-delay-ms: 3600000
+      initial-delay-ms: 60000
+      batch-size: 50
   reservation-reconciliation:
     scheduler:
       enabled: ${RESERVATION_RECONCILIATION_SCHEDULER_ENABLED:false}

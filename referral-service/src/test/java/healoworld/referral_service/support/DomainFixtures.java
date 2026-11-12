@@ -36,6 +36,10 @@ public final class DomainFixtures {
                 referral.confirm();
                 referral.cancel();
             }
+            case EXPIRED -> {
+                referral.requestReschedule();
+                referral.expire();
+            }
         }
         return referral;
     }
