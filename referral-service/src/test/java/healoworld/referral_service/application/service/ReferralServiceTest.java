@@ -14,6 +14,8 @@ import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.client.institution.EquipmentOwnerResponse;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.client.institution.PartnershipCheckResponse;
+import healoworld.referral_service.infrastructure.client.slot.SlotClient;
+import healoworld.referral_service.infrastructure.client.slot.SlotReservationContextResponse;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralHistoryRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -82,6 +85,9 @@ class ReferralServiceTest {
     @Mock
     private ExaminationRepository examinationRepository;
 
+    @Mock
+    private SlotClient slotClient;
+
     @InjectMocks
     private ReferralService referralService;
 
@@ -90,6 +96,9 @@ class ReferralServiceTest {
 
     // 장비 ID → 소속 기관 ID. institution-service의 장비 소유 정보를 흉내 낸다 (reservationRequest()가 채운다)
     private final Map<UUID, UUID> equipmentOwners = new HashMap<>();
+
+    // 슬롯 ID → 슬롯 정보. slot-service의 슬롯 정보를 흉내 낸다 (createRequest()·rescheduleRequest()가 채운다)
+    private final Map<UUID, SlotReservationContextResponse> slots = new HashMap<>();
 
     @BeforeEach
     void setUp() {
@@ -104,6 +113,12 @@ class ReferralServiceTest {
             UUID equipmentId = invocation.getArgument(0);
             UUID owner = equipmentOwners.getOrDefault(equipmentId, UUID.randomUUID());
             return ApiResponse.ok("장비 소속 기관 조회에 성공했습니다.", new EquipmentOwnerResponse(equipmentId, owner));
+        });
+        // 기본은 요청과 같은 장비·검사 종류·일시의 슬롯. 등록되지 않은 슬롯은 다른 장비의 슬롯으로 응답한다
+        lenient().when(slotClient.getReservationContext(any())).thenAnswer(invocation -> {
+            UUID slotId = invocation.getArgument(0);
+            return slots.getOrDefault(slotId, new SlotReservationContextResponse(slotId, UUID.randomUUID(), UUID.randomUUID(),
+                    EXAM_START.toLocalDate(), EXAM_START.toLocalTime(), EXAM_START.plusHours(1).toLocalTime()));
         });
     }
 
@@ -129,6 +144,7 @@ class ReferralServiceTest {
 
             verify(institutionClient).check(request.getReferringInstitutionId(), reservationRequest.getExamInstitutionId());
             verify(institutionClient).getEquipmentOwner(reservationRequest.getEquipmentId());
+            verify(slotClient).getReservationContext(reservationRequest.getSlotId());
             ArgumentCaptor<Referral> captor = ArgumentCaptor.forClass(Referral.class);
             verify(referralRepository).saveAndFlush(captor.capture());
             Referral saved = captor.getValue();
@@ -161,7 +177,7 @@ class ReferralServiceTest {
                     .isEqualTo(existing.getId());
 
             verify(referralRepository, never()).saveAndFlush(any());
-            verifyNoInteractions(reservationService, referralHistoryRepository, institutionClient);
+            verifyNoInteractions(reservationService, referralHistoryRepository, institutionClient, slotClient);
         }
 
         @Test
@@ -233,6 +249,76 @@ class ReferralServiceTest {
 
             assertErrorCode(() -> create(USER_ID, request), ErrorCode.PARTNERSHIP_NOT_ACTIVE);
             verify(institutionClient, never()).getEquipmentOwner(any());
+        }
+
+        @ParameterizedTest(name = "{0}가 다르면 SLOT_MISMATCH")
+        @ValueSource(strings = {"equipment", "examType", "date", "startTime", "endTime"})
+        @DisplayName("슬롯의 장비·검사 종류·일시가 요청과 다르면 SLOT_MISMATCH(400), 의뢰·예약을 만들지 않는다")
+        void slotMismatch(String field) {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            SlotReservationContextResponse slot = slots.get(request.getReservation().getSlotId());
+            slots.put(slot.slotId(), differentIn(slot, field));
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.SLOT_MISMATCH);
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("요청의 검사 일자와 시작 시각의 날짜가 다르면 SLOT_MISMATCH(400)")
+        void examDateDiffersFromStartTimeDate() {
+            CreateReservationRequest reservationRequest = reservationRequestBuilder()
+                    .examDate(EXAM_START)
+                    .startTime(EXAM_START.plusDays(1))
+                    .endTime(EXAM_START.plusDays(1).plusHours(1))
+                    .build();
+            equipmentOwners.put(reservationRequest.getEquipmentId(), reservationRequest.getExamInstitutionId());
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest);
+            // 슬롯은 검사 일자(examDate) 기준으로 날짜·시간이 맞는 상태
+            SlotReservationContextResponse slot = slots.get(reservationRequest.getSlotId());
+            slots.put(slot.slotId(), new SlotReservationContextResponse(slot.slotId(), slot.equipmentId(), slot.examTypeId(),
+                    EXAM_START.toLocalDate(), slot.startTime(), slot.endTime()));
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.SLOT_MISMATCH);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("슬롯이 없거나 삭제됐으면(404) SLOT_MISMATCH(400), 의뢰·예약을 만들지 않는다")
+        void slotNotFound() {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+            given(slotClient.getReservationContext(any())).willThrow(FeignException.NotFound.class);
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.SLOT_MISMATCH);
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("슬롯 조회가 404 외의 이유로 실패하면 503(SLOT_SERVICE_UNAVAILABLE), 의뢰·예약을 만들지 않는다")
+        void slotLookupFails() {
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest());
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+            given(slotClient.getReservationContext(any())).willThrow(FeignException.class);
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.SLOT_SERVICE_UNAVAILABLE);
+            verify(referralRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("장비 소유 기관 검증에 실패하면 슬롯은 조회하지 않는다")
+        void equipmentCheckFailureSkipsSlotCheck() {
+            CreateReservationRequest reservationRequest = reservationRequest();
+            equipmentOwners.put(reservationRequest.getEquipmentId(), UUID.randomUUID());
+            CreateReferralRequest request = createRequest(UUID.randomUUID(), reservationRequest);
+            given(referralRepository.findByIdempotencyKey(request.getIdempotencyKey())).willReturn(Optional.empty());
+
+            assertErrorCode(() -> create(USER_ID, request), ErrorCode.EQUIPMENT_NOT_IN_EXAM_INSTITUTION);
+            verifyNoInteractions(slotClient);
         }
 
         @Test
@@ -457,7 +543,7 @@ class ReferralServiceTest {
         @DisplayName("SCHEDULED 검사가 있는 의뢰는 재예약을 받는다")
         void scheduledExaminationAllowsReschedule() {
             Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
-            CreateReservationRequest request = reservationRequest();
+            CreateReservationRequest request = rescheduleRequest(referral);
             given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
             given(examinationRepository.findByReferralId(referral.getId()))
                     .willReturn(Optional.of(examination(referral, ExaminationStatus.SCHEDULED)));
@@ -480,7 +566,7 @@ class ReferralServiceTest {
         @DisplayName("본인의 재조정 필요 의뢰는 새 예약을 만들고 PENDING으로 돌아간다")
         void success() {
             Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
-            CreateReservationRequest request = reservationRequest();
+            CreateReservationRequest request = rescheduleRequest(referral);
             Reservation newReservation = reservation(referral, 2);
             given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
             given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(newReservation);
@@ -511,7 +597,7 @@ class ReferralServiceTest {
         @DisplayName("관리자는 다른 사람의 의뢰도 재예약할 수 있다")
         void admin() {
             Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, OTHER_USER_ID);
-            CreateReservationRequest request = reservationRequest();
+            CreateReservationRequest request = rescheduleRequest(referral);
             given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
             given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(reservation(referral, 2));
             updates.register(referral);
@@ -602,10 +688,48 @@ class ReferralServiceTest {
         }
 
         @Test
+        @DisplayName("새 슬롯의 검사 종류가 의뢰의 검사 종류와 다르면 SLOT_MISMATCH(400), 예약을 만들지 않는다")
+        void slotOfOtherExamType() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            CreateReservationRequest request = reservationRequest();
+            registerSlot(request, UUID.randomUUID());
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, Role.REQUESTER, referral.getId(), request), ErrorCode.SLOT_MISMATCH);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+            assertThat(referral.getReferralStatus()).isEqualTo(ReferralStatus.NEEDS_RESCHEDULE);
+        }
+
+        @Test
+        @DisplayName("새 슬롯이 없거나 삭제됐으면(404) SLOT_MISMATCH(400), 예약을 만들지 않는다")
+        void slotNotFound() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+            given(slotClient.getReservationContext(any())).willThrow(FeignException.NotFound.class);
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, Role.REQUESTER, referral.getId(), rescheduleRequest(referral)), ErrorCode.SLOT_MISMATCH);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
+        @DisplayName("슬롯 조회가 404 외의 이유로 실패하면 503(SLOT_SERVICE_UNAVAILABLE), 예약을 만들지 않는다")
+        void slotLookupFails() {
+            Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
+            given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
+            given(slotClient.getReservationContext(any())).willThrow(FeignException.class);
+
+            assertErrorCode(() -> referralService.createRescheduledReservation(
+                    USER_ID, Role.REQUESTER, referral.getId(), rescheduleRequest(referral)), ErrorCode.SLOT_SERVICE_UNAVAILABLE);
+            verifyNoInteractions(reservationService, referralHistoryRepository);
+        }
+
+        @Test
         @DisplayName("새 예약을 만든 뒤 의뢰 UPDATE가 0행이면 예외로 새 예약까지 롤백되게 하고 이력을 남기지 않는다")
         void rescheduleUpdateMissed() {
             Referral referral = referralIn(ReferralStatus.NEEDS_RESCHEDULE, USER_ID);
-            CreateReservationRequest request = reservationRequest();
+            CreateReservationRequest request = rescheduleRequest(referral);
             given(referralRepository.findByIdForUpdate(referral.getId())).willReturn(Optional.of(referral));
             given(reservationService.createReservation(any(UUID.class), eq(referral), eq(request))).willReturn(reservation(referral, 2));
             // 시뮬레이터에 등록하지 않은 의뢰라 UPDATE가 0행이 된다
@@ -634,10 +758,48 @@ class ReferralServiceTest {
         return request;
     }
 
+    // 픽스처와 같은 값의 예약 요청 빌더 (일부 값만 바꿔서 쓸 때)
+    private CreateReservationRequest.CreateReservationRequestBuilder reservationRequestBuilder() {
+        return CreateReservationRequest.builder()
+                .slotId(UUID.randomUUID())
+                .examInstitutionId(UUID.randomUUID())
+                .equipmentId(UUID.randomUUID())
+                .examDate(EXAM_START)
+                .startTime(EXAM_START)
+                .endTime(EXAM_START.plusHours(1));
+    }
+
+    // 재예약 요청을 만들고, 의뢰의 검사 종류로 요청과 같은 슬롯을 등록한다
+    private CreateReservationRequest rescheduleRequest(Referral referral) {
+        CreateReservationRequest request = reservationRequest();
+        registerSlot(request, referral.getExamTypeId());
+        return request;
+    }
+
+    // 요청과 같은 장비·검사 종류·일시의 슬롯을 등록한다
+    private void registerSlot(CreateReservationRequest request, UUID examTypeId) {
+        slots.put(request.getSlotId(), new SlotReservationContextResponse(request.getSlotId(), request.getEquipmentId(), examTypeId,
+                request.getExamDate().toLocalDate(), request.getStartTime().toLocalTime(), request.getEndTime().toLocalTime()));
+    }
+
+    // 슬롯 정보 중 한 항목만 다르게 바꾼다
+    private SlotReservationContextResponse differentIn(SlotReservationContextResponse slot, String field) {
+        return new SlotReservationContextResponse(
+                slot.slotId(),
+                field.equals("equipment") ? UUID.randomUUID() : slot.equipmentId(),
+                field.equals("examType") ? UUID.randomUUID() : slot.examTypeId(),
+                field.equals("date") ? slot.date().plusDays(1) : slot.date(),
+                field.equals("startTime") ? slot.startTime().plusMinutes(30) : slot.startTime(),
+                field.equals("endTime") ? slot.endTime().plusMinutes(30) : slot.endTime());
+    }
+
+    // 의뢰 생성 요청을 만들고, 요청과 같은 슬롯을 등록한다
     private CreateReferralRequest createRequest(UUID idempotencyKey, CreateReservationRequest reservationRequest) {
+        UUID examTypeId = UUID.randomUUID();
+        registerSlot(reservationRequest, examTypeId);
         return CreateReferralRequest.builder()
                 .referringInstitutionId(UUID.randomUUID())
-                .examTypeId(UUID.randomUUID())
+                .examTypeId(examTypeId)
                 .patientName("홍길동")
                 .idempotencyKey(idempotencyKey)
                 .reservation(reservationRequest)

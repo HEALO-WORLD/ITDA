@@ -13,6 +13,8 @@ import healoworld.referral_service.global.exception.BaseException;
 import healoworld.referral_service.global.exception.ErrorCode;
 import healoworld.referral_service.infrastructure.client.institution.EquipmentOwnerResponse;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
+import healoworld.referral_service.infrastructure.client.slot.SlotClient;
+import healoworld.referral_service.infrastructure.client.slot.SlotReservationContextResponse;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReservationRepository;
@@ -44,6 +46,7 @@ public class ReferralService {
     private final ReservationRepository reservationRepository;
     private final InstitutionClient institutionClient;
     private final ExaminationRepository examinationRepository;
+    private final SlotClient slotClient;
 
     public ReferralResponse createReferral(UUID userId, UUID institutionId, CreateReferralRequest createReferralRequest) {
         Optional<Referral> referral = referralRepository.findByIdempotencyKey(createReferralRequest.getIdempotencyKey());
@@ -70,8 +73,7 @@ public class ReferralService {
         }
 
         validateEquipment(createReferralRequest.getReservation().getEquipmentId(), createReferralRequest.getReservation().getExamInstitutionId());
-
-        validateSlot();
+        validateSlot(createReferralRequest.getExamTypeId(), createReferralRequest.getReservation());
 
         Referral createdReferral = Referral.create(createReferralRequest.getReferringInstitutionId(), userId, createReferralRequest.getExamTypeId(), createReferralRequest.getPatientName(), createReferralRequest.getIdempotencyKey());
         try {
@@ -116,7 +118,7 @@ public class ReferralService {
             throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
         }
 
-        if (referralRepository.softDeleteIf(referralId, userId, LocalDateTime.now(), List.of(ReferralStatus.FAILED, ReferralStatus.CANCELED)) == 0) {
+        if (referralRepository.softDeleteIf(referralId, userId, LocalDateTime.now(), List.of(ReferralStatus.FAILED, ReferralStatus.CANCELED, ReferralStatus.EXPIRED)) == 0) {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
         }
     }
@@ -145,6 +147,7 @@ public class ReferralService {
         }
 
         validateEquipment(request.getEquipmentId(), request.getExamInstitutionId());
+        validateSlot(referral.getExamTypeId(), request);
 
         UUID outboxEventId = UUID.randomUUID();
         Reservation reservation = reservationService.createReservation(outboxEventId, referral, request);
@@ -182,7 +185,27 @@ public class ReferralService {
         }
     }
 
-    private void validateSlot() {
+    private void validateSlot(UUID examTypeId, CreateReservationRequest request) {
+        SlotReservationContextResponse slot;
+        try {
+            slot = slotClient.getReservationContext(request.getSlotId());
+        } catch (FeignException.NotFound e) {
+            log.info("슬롯 없음. slot={}", request.getSlotId());
+            throw new BaseException(ErrorCode.SLOT_MISMATCH);
+        } catch (FeignException e) {
+            log.warn("슬롯 정보 확인 실패. slot={}", request.getSlotId(), e);
+            throw new BaseException(ErrorCode.SLOT_SERVICE_UNAVAILABLE);
+        }
 
+        // 요청은 LocalDateTime, 슬롯은 LocalDate·LocalTime이라 날짜와 시간으로 나눠 비교한다
+        boolean matches = request.getEquipmentId().equals(slot.equipmentId())
+                && examTypeId.equals(slot.examTypeId())
+                && request.getExamDate().toLocalDate().equals(slot.date())
+                && request.getStartTime().toLocalDate().equals(slot.date())
+                && request.getStartTime().toLocalTime().equals(slot.startTime())
+                && request.getEndTime().toLocalTime().equals(slot.endTime());
+        if (!matches) {
+            throw new BaseException(ErrorCode.SLOT_MISMATCH);
+        }
     }
 }
