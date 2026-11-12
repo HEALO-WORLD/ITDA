@@ -25,6 +25,8 @@ import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.infrastructure.client.institution.EquipmentOwnerResponse;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.client.institution.PartnershipCheckResponse;
+import healoworld.referral_service.infrastructure.client.slot.SlotClient;
+import healoworld.referral_service.infrastructure.client.slot.SlotReservationContextResponse;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentLockRepository;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentRepository;
 import healoworld.referral_service.infrastructure.repository.ExaminationRepository;
@@ -139,6 +141,8 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
 
     // 재예약 시 협력 관계 확인 (institution-service)
     @MockitoBean private InstitutionClient institutionClient;
+    // 재예약 슬롯 검증 (slot-service)
+    @MockitoBean private SlotClient slotClient;
 
     private final UUID userId = UUID.randomUUID();
     private final UUID institutionId = UUID.randomUUID();
@@ -656,6 +660,14 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
         }
     }
 
+    // 재예약 요청과 같은 장비·검사 종류(의뢰 기준)·일시의 슬롯으로 응답하게 한다
+    private void givenSlotMatches(CreateReservationRequest request) {
+        UUID examTypeId = referralRepository.findById(referralId).orElseThrow().getExamTypeId();
+        given(slotClient.getReservationContext(request.getSlotId()))
+                .willReturn(new SlotReservationContextResponse(request.getSlotId(), request.getEquipmentId(), examTypeId,
+                        request.getExamDate().toLocalDate(), request.getStartTime().toLocalTime(), request.getEndTime().toLocalTime()));
+    }
+
     // 재예약 요청의 장비를 요청한 검사기관 소속으로 응답하게 한다
     private void givenEquipmentOwnedBy(CreateReservationRequest request) {
         given(institutionClient.getEquipmentOwner(request.getEquipmentId()))
@@ -673,6 +685,7 @@ class IncidentExaminationRescheduleIntegrationTest extends PostgresContainerSupp
                 .endTime(startsAt.plusDays(1).plusHours(1))
                 .build();
         givenEquipmentOwnedBy(request);
+        givenSlotMatches(request);
         return referralService.createRescheduledReservation(userId, Role.REQUESTER, referralId, request);
     }
 

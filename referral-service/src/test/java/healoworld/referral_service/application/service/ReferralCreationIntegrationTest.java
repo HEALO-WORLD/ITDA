@@ -13,6 +13,8 @@ import healoworld.referral_service.global.outbox.SlotCommandOutbox;
 import healoworld.referral_service.infrastructure.client.institution.EquipmentOwnerResponse;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.client.institution.PartnershipCheckResponse;
+import healoworld.referral_service.infrastructure.client.slot.SlotClient;
+import healoworld.referral_service.infrastructure.client.slot.SlotReservationContextResponse;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
 import healoworld.referral_service.presentation.dto.request.CreateReferralRequest;
 import healoworld.referral_service.presentation.dto.request.CreateReservationRequest;
@@ -48,6 +50,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -105,6 +108,10 @@ class ReferralCreationIntegrationTest extends PostgresContainerSupport {
     // 협력 관계·장비 소유 확인 (institution-service)
     @MockitoBean private InstitutionClient institutionClient;
 
+    // 슬롯 검증 (slot-service). request()가 만든 슬롯을 slots에 등록해 두고 그대로 응답한다
+    @MockitoBean private SlotClient slotClient;
+    private final Map<UUID, SlotReservationContextResponse> slots = new ConcurrentHashMap<>();
+
     // 마지막 단계(생성 이력)에서 실패를 일으켜 전체 롤백을 확인한다. 테스트마다 스텁이 초기화된다
     @MockitoSpyBean private ReferralHistoryService referralHistoryService;
 
@@ -123,6 +130,7 @@ class ReferralCreationIntegrationTest extends PostgresContainerSupport {
         given(institutionClient.check(any(), any())).willReturn(new PartnershipCheckResponse(true));
         given(institutionClient.getEquipmentOwner(any())).willAnswer(inv -> ApiResponse.ok("장비 소속 기관 조회에 성공했습니다.",
                 new EquipmentOwnerResponse(inv.getArgument(0), examInstitutionId)));
+        given(slotClient.getReservationContext(any())).willAnswer(inv -> slots.get(inv.<UUID>getArgument(0)));
     }
 
     @AfterEach
@@ -389,17 +397,21 @@ class ReferralCreationIntegrationTest extends PostgresContainerSupport {
     }
 
     private CreateReferralRequest request(UUID idempotencyKey, String patientName) {
+        UUID slotId = UUID.randomUUID();
+        UUID examTypeId = UUID.randomUUID();
         CreateReservationRequest reservation = CreateReservationRequest.builder()
-                .slotId(UUID.randomUUID())
+                .slotId(slotId)
                 .examInstitutionId(examInstitutionId)
                 .equipmentId(equipmentId)
                 .examDate(startsAt)
                 .startTime(startsAt)
                 .endTime(startsAt.plusHours(1))
                 .build();
+        slots.put(slotId, new SlotReservationContextResponse(slotId, equipmentId, examTypeId,
+                startsAt.toLocalDate(), startsAt.toLocalTime(), startsAt.plusHours(1).toLocalTime()));
         return CreateReferralRequest.builder()
                 .referringInstitutionId(institutionId)
-                .examTypeId(UUID.randomUUID())
+                .examTypeId(examTypeId)
                 .patientName(patientName)
                 .idempotencyKey(idempotencyKey)
                 .reservation(reservation)
