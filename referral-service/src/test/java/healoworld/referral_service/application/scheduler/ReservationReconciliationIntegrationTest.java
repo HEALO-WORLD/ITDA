@@ -132,7 +132,8 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
     }
 
     // 공유 DB에 다른 테스트가 남긴 예약이 있어도 이번 대상이 한 회차에 다 들어오도록 넉넉하게 잡는다
-    private static final int BATCH_SIZE = 10_000;
+    // (스케줄러가 허용하는 최대값: 쿼리 3종 × batchSize ≤ slot-service 조회 한도)
+    private static final int BATCH_SIZE = ReservationReconciliationScheduler.SLOT_STATUS_QUERY_MAX_IDS / 3;
     private static final int STALE_THRESHOLD_MINUTES = 10;
     private static final int LOOKBACK_HOURS = 24;
 

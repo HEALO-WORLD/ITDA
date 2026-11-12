@@ -58,6 +58,11 @@ public class ReservationReconciliationScheduler {
     private static final int SKIPPED_LOG_ID_LIMIT = 20;
     // 사전 확인에서 걸러진 수동 확인 대상의 오류 코드 (잠금 아래 최종 확인이 던지는 업무 예외와 같은 코드)
     private static final String MANUAL_REVIEW_EXAMINATION_STARTED = ErrorCode.EXAMINATION_RESERVATION_NOT_CHANGEABLE.name();
+    // 회차당 대상 조회 쿼리 수 (stale·confirmed·ended). 세 결과의 slotId를 slot-service에 한 번에 보낸다
+    private static final int TARGET_QUERY_COUNT = 3;
+    // slot-service 슬롯 상태 조회 한 번에 보낼 수 있는 최대 slotId 수 (slot-service SlotStatusQueryRequest.MAX_SLOT_IDS와 맞춘다)
+    // batchSize × TARGET_QUERY_COUNT가 이를 넘으면 slot-service가 400을 돌려 매 회차 점검이 실패하므로 기동 시 막는다
+    static final int SLOT_STATUS_QUERY_MAX_IDS = 1000;
     private final int batchSize;
     private final int lookbackHours;
     private final int staleThresholdMinutes;
@@ -85,6 +90,11 @@ public class ReservationReconciliationScheduler {
     ) {
         if (batchSize < 1) {
             throw new IllegalArgumentException("batchSize는 1 이상이어야 합니다.");
+        }
+        if ((long) batchSize * TARGET_QUERY_COUNT > SLOT_STATUS_QUERY_MAX_IDS) {
+            throw new IllegalArgumentException(
+                    "batchSize는 " + SLOT_STATUS_QUERY_MAX_IDS / TARGET_QUERY_COUNT + " 이하여야 합니다. "
+                            + "회차당 slot-service 조회 한도(" + SLOT_STATUS_QUERY_MAX_IDS + "건)를 넘습니다.");
         }
 
         this.reconciliationService = reconciliationService;

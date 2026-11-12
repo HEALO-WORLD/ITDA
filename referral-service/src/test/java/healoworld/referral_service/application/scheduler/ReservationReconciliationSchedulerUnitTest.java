@@ -29,6 +29,8 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -83,6 +85,22 @@ class ReservationReconciliationSchedulerUnitTest {
     private static SlotStatusResponse slot(ReconciliationTarget target, String status, UUID reservationId) {
         LocalDateTime heldUntil = "HELD".equals(status) ? LocalDateTime.now().plusMinutes(3) : null;
         return new SlotStatusResponse(target.slotId(), status, reservationId, heldUntil);
+    }
+
+    @Test
+    @DisplayName("batchSize × 쿼리 3종이 slot-service 조회 한도를 넘으면 기동 시 실패한다")
+    void rejectsBatchSizeOverSlotQueryLimit() {
+        int maxBatchSize = ReservationReconciliationScheduler.SLOT_STATUS_QUERY_MAX_IDS / 3;
+
+        assertThatCode(() -> new ReservationReconciliationScheduler(
+                reconciliationService, reservationRepository, slotClient, examinationRepository, failureRecorder,
+                meterRegistry, maxBatchSize, 24, 10))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> new ReservationReconciliationScheduler(
+                reconciliationService, reservationRepository, slotClient, examinationRepository, failureRecorder,
+                meterRegistry, maxBatchSize + 1, 24, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("slot-service 조회 한도");
     }
 
     @Test

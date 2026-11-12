@@ -51,7 +51,7 @@ itda:
     scheduler:
       enabled: ${RESERVATION_RECONCILIATION_SCHEDULER_ENABLED:false}
       fixed-delay-ms: 60000
-      batch-size: 50
+      batch-size: 200            # 쿼리 3종 × batch-size가 slot-service 조회 한도(1000) 이하여야 한다 (최대 333)
       stale-threshold-minutes: 10
       lookback-hours: 24
       max-attempts: 3            # 일시 오류 시 최초 실행 포함 최대 시도 횟수 (넘으면 수동 확인 대상)
