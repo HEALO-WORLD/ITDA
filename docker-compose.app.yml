@@ -127,6 +127,9 @@ services:
       <<: *app-env
       INCIDENT_PROCESSING_SCHEDULER_ENABLED: "true"
       RESERVATION_RECONCILIATION_SCHEDULER_ENABLED: "true"
+      # 과거 재조정 데이터 점검 후 운영자가 명시적으로 활성화
+      RESCHEDULE_EXPIRATION_SCHEDULER_ENABLED: ${RESCHEDULE_EXPIRATION_SCHEDULER_ENABLED:-false}
+      RESCHEDULE_EXPIRATION_GRACE_HOURS: ${RESCHEDULE_EXPIRATION_GRACE_HOURS:-48}
     depends_on: *app-depends
     healthcheck:
       test: [ "CMD", "curl", "-fs", "http://localhost:8083/actuator/health" ]

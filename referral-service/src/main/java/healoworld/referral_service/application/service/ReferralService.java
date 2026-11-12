@@ -118,7 +118,7 @@ public class ReferralService {
             throw new BaseException(ErrorCode.REFERRAL_NOT_FOUND);
         }
 
-        if (referralRepository.softDeleteIf(referralId, userId, LocalDateTime.now(), List.of(ReferralStatus.FAILED, ReferralStatus.CANCELED)) == 0) {
+        if (referralRepository.softDeleteIf(referralId, userId, LocalDateTime.now(), List.of(ReferralStatus.FAILED, ReferralStatus.CANCELED, ReferralStatus.EXPIRED)) == 0) {
             throw new BaseException(ErrorCode.INVALID_REFERRAL_STATUS);
         }
     }

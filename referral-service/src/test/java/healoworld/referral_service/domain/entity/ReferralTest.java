@@ -198,7 +198,7 @@ class ReferralTest {
     @DisplayName("delete")
     class Delete {
         @ParameterizedTest
-        @EnumSource(value = ReferralStatus.class, names = {"FAILED", "CANCELED"})
+        @EnumSource(value = ReferralStatus.class, names = {"FAILED", "CANCELED", "EXPIRED"})
         @DisplayName("FAILED, CANCELED 상태면 soft delete된다")
         void success(ReferralStatus status) {
             Referral referral = referralIn(status, USER_ID);
@@ -210,7 +210,7 @@ class ReferralTest {
         }
 
         @ParameterizedTest
-        @EnumSource(value = ReferralStatus.class, names = {"FAILED", "CANCELED"}, mode = EXCLUDE)
+        @EnumSource(value = ReferralStatus.class, names = {"FAILED", "CANCELED", "EXPIRED"}, mode = EXCLUDE)
         @DisplayName("진행 중인 의뢰는 삭제할 수 없다")
         void invalidStatus(ReferralStatus status) {
             Referral referral = referralIn(status, USER_ID);
