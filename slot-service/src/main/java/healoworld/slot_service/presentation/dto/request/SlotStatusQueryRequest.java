@@ -14,6 +14,7 @@ public record SlotStatusQueryRequest(
         @Size(max = SlotStatusQueryRequest.MAX_SLOT_IDS, message = "슬롯 ID는 한 번에 1000개까지 조회할 수 있습니다.")
         List<@NotNull(message = "슬롯 ID는 비어 있을 수 없습니다.") UUID> slotIds
 ) {
-    // Referral 정합성 점검은 회차당 대상 조회 3종 × batch-size(기본 50)만큼 보낸다. 그보다 넉넉하되 무제한은 막는다
+    // Referral 정합성 점검은 회차당 대상 조회 3종 × batch-size(기본 200 → 최대 600)만큼 보낸다. 그보다 넉넉하되 무제한은 막는다
+    // 값을 바꾸면 Referral ReservationReconciliationScheduler.SLOT_STATUS_QUERY_MAX_IDS도 같이 맞춘다
     public static final int MAX_SLOT_IDS = 1000;
 }
