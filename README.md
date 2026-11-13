@@ -166,19 +166,19 @@ Kafka 이벤트 처리, Saga 보상 및 장애 복구 과정을 포함한 상세
 의뢰기관·검사기관 사용자는 Next.js 프론트엔드에서 업무를 처리하며, 백엔드는 Spring Cloud Gateway를 중심으로 Institution, Slot, Referral Service를 분리했습니다.
 서비스 간 동기 조회는 OpenFeign, 예약 및 장비 장애 관련 비동기 이벤트는 Kafka를 사용합니다.
 
-[![IT:DA 전체 시스템 구성도](images/system-architecture.png)](images/system-architecture.png)
+[![IT:DA 전체 시스템 구성도](images/readme/system-architecture.png)](images/readme/system-architecture.png)
 
-*그림 1. 전체 시스템 구성 — 프론트엔드, API Gateway, 서비스 분리 및 Kafka·데이터베이스·모니터링 구성. [원본 확대](images/system-architecture.png)*
+*그림 1. 전체 시스템 구성 — 프론트엔드, API Gateway, 서비스 분리 및 Kafka·데이터베이스·모니터링 구성. [원본 확대](images/readme/system-architecture.png)*
 
 ### 4.2 인프라 배포 구조
 
 프론트엔드는 Vercel에, 백엔드는 서울 리전 (`ap-northeast-2`)의 EC2 단일 인스턴스에 Docker Compose로 배포합니다. 프론트엔드의 서버 측 API 요청은 CloudFront
 (HTTPS)를 거쳐 EC2의 Gateway (HTTP 8080)로 전달됩니다.
 
-[![IT:DA Vercel 및 AWS EC2 인프라 설계도](images/infrastructure-architecture.png)](images/infrastructure-architecture.png)
+[![IT:DA Vercel 및 AWS EC2 인프라 설계도](images/readme/infrastructure-architecture.png)](images/readme/infrastructure-architecture.png)
 
 *그림 2. 인프라 배포 설계 — Vercel, CloudFront, EC2 내 서비스·컨테이너 및 배포·모니터링
-요소. [원본 확대](images/infrastructure-architecture.png)*
+요소. [원본 확대](images/readme/infrastructure-architecture.png)*
 
 - **서비스 분리:** Institution, Slot, Referral Service별 논리 데이터베이스 (`institution_db`, `slot_db`, `referral_db`)를 분리합니다. 개발·배포
   Compose에서는 PostgreSQL 컨테이너 하나를 공유합니다.
@@ -201,36 +201,40 @@ Kafka 이벤트 처리, Saga 보상 및 장애 복구 과정을 포함한 상세
 
 서비스별 데이터 모델과 예약·의뢰·검사 상태 이력 및 비동기 이벤트 저장 구조를 함께 확인할 수 있습니다. 큰 이미지이므로 클릭해 원본 크기로 확인하는 것을 권장합니다.
 
-[![IT:DA 전체 데이터베이스 ERD](images/database-erd.png)](images/database-erd.png)
+[![IT:DA 전체 데이터베이스 ERD](images/readme/database-erd.png)](images/readme/database-erd.png)
 
-*그림 3. 전체 ERD — 기관, 슬롯, 의뢰·예약·검사, 알림, 이벤트 저장 테이블 및 연관관계. [원본 확대](images/database-erd.png)*
+*그림 3. 전체 ERD — 기관, 슬롯, 의뢰·예약·검사, 알림, 이벤트 저장 테이블 및 연관관계. [원본 확대](images/readme/database-erd.png)*
 
 **[ERD Cloud에서 상세 보기](https://www.erdcloud.com/d/RGJ34Gzm2mHLBqr73)**
 
 ## 5. 프로젝트 구조
 
-```
+```text
 ITDA/
 ├── eureka-server/             # 서비스 등록 및 탐색
 ├── gateway-service/           # API 라우팅, JWT 인증 및 통합 Swagger
-├── institution-service/       # 회원, 기관, 협약, 장비 관리
+├── institution-service/       # 회원, 인증, 기관, 협약, 장비 관리
 ├── slot-service/              # 검사 슬롯, HOLD, 장비 중단 관리
 ├── referral-service/          # 검사 의뢰, 예약, 검사 및 후속 처리
 ├── docs/
-│   ├── images/                # 시스템 구성도·인프라 설계도·ERD 이미지
-│   └── SCENARIOS.md           # 상세 업무 시나리오
+│   ├── SCENARIOS.md           # 정상·장애·복구 업무 시나리오
+│   └── PERFORMANCE_TEST.md    # 부하 테스트 및 성능·동시성 검증
+├── images/
+│   ├── readme/                # 시스템 구성도·인프라 구성도·ERD
+│   └── performance/           # Grafana 및 성능 테스트 결과 이미지
 ├── docker/
 │   ├── postgres/init.sql      # 서비스별 데이터베이스 초기화
 │   ├── prometheus/            # 메트릭 수집 설정
 │   └── grafana/               # 대시보드 및 데이터소스 설정
 ├── load-test/
-│   ├── k6/                    # 예약 SAGA 부하 테스트
-│   └── sql/                   # 테스트 데이터 및 SQL 스크립트
+│   ├── k6/                    # 예약 Saga 및 슬롯 부하 테스트
+│   ├── sql/                   # 테스트 데이터 및 결과 검증 SQL
+│   └── run-slot.sh            # 슬롯 단독 부하 테스트 실행 스크립트
 ├── .github/workflows/
 │   ├── ci.yml                 # PR 빌드·테스트
-│   └── deploy.yml             # main push 시 AWS SSM 기반 EC2 자동 배포
+│   └── deploy.yml             # AWS SSM 기반 EC2 자동 배포
 ├── .env.example               # 환경변수 예시
-├── docker-compose.yml         # 데이터베이스 및 메시징·모니터링 환경
+├── docker-compose.yml         # DB·메시징·모니터링 환경
 ├── docker-compose.app.yml     # MSA 애플리케이션 실행 환경
 └── README.md
 ```
@@ -378,6 +382,24 @@ curl http://localhost:8083/actuator/health
 Testcontainers 기반 통합 테스트는 Docker 환경이 필요할 수 있습니다.
 
 **주요 테스트:** 예약 동시성, 상태 전이, Kafka 중복 처리, 장비 장애 대응, 재조정 만료, 정합성 복구, 인증 및 권한 검증
+
+### 7.2 부하 테스트 및 성능 검증
+
+k6를 이용해 예약 Saga의 부하 테스트를 수행하고,
+Prometheus·Grafana를 통해 서비스 응답 시간,
+Kafka 이벤트 처리 지연 및 자원 사용량을 분석했습니다.
+
+또한 동일 슬롯에 대한 동시 요청을 검증하여
+조건부 UPDATE 적용 후 중복 선점이 발생하지 않는지 확인했습니다.
+
+**주요 검증 항목**
+
+- 예약 요청 처리량 및 HTTP 응답 시간
+- Kafka 이벤트 체류 시간과 Outbox 발행 대기
+- 슬롯 HOLD 성공·충돌 및 예약 확정 결과
+- 동일 슬롯 동시 선점 방지 및 데이터 정합성
+
+**[부하 테스트 및 성능 검증 상세 결과 보기](docs/PERFORMANCE_TEST.md)**
 
 ## 8. 배포 및 운영
 
