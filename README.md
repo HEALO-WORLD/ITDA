@@ -146,18 +146,18 @@ Kafka 이벤트 처리, Saga 보상 및 장애 복구 과정을 포함한 상세
 
 ## 3. 기술 스택
 
-| 구분       | 기술                                              |
-|------------|---------------------------------------------------|
-| Backend    | Java 21, Spring Boot 4.1.2, Spring Cloud 2025.1.4 |
-| MSA        | Spring Cloud Gateway, Netflix Eureka, OpenFeign   |
-| Database   | PostgreSQL 18, Redis 8.10.3                       |
-| Messaging  | Apache Kafka 4.4.0, Spring Kafka                  |
-| Security   | Spring Security, JWT (JJWT 0.12.7)                |
-| Monitoring | Prometheus 3.15.1, Grafana 13.2.4, Micrometer     |
-| Test       | JUnit, Testcontainers, k6                         |
-| Infra      | Docker, Docker Compose, AWS EC2                   |
-| CI/CD      | GitHub Actions                                    |
-| Frontend   | Next.js, React, Typescript, Vercel                |
+| 구분       | 기술                                                      |
+|------------|-----------------------------------------------------------|
+| Backend    | Java 21, Spring Boot 4.1.2, Spring Cloud 2025.1.4         |
+| MSA        | Spring Cloud Gateway, Netflix Eureka, OpenFeign           |
+| Database   | PostgreSQL 18, Redis 8.10.3                               |
+| Messaging  | Apache Kafka 4.4.0, Spring Kafka                          |
+| Security   | Spring Security, JWT (JJWT 0.12.7)                        |
+| Monitoring | Prometheus 3.15.1, Grafana 13.2.4, Micrometer             |
+| Test       | JUnit, Testcontainers, k6                                 |
+| Infra      | Docker, Docker Compose, AWS EC2                           |
+| CI/CD      | GitHub Actions, AWS IAM (OIDC), AWS Systems Manager (SSM) |
+| Frontend   | Next.js, React, Typescript, Vercel                        |
 
 ## 4. 시스템 아키텍처
 
@@ -352,8 +352,8 @@ curl http://localhost:8083/actuator/health
 
 #### Swagger API 문서
 
-- **제공 범위:** Institution, Slot, Referral Service의 REST API 명세
-- **OpenAPI:** `https://healo-world.github.io/ITDA`
+- Institution, Slot, Referral Service의 REST API 명세
+- **OpenAPI:** [API 명세서 바로가기](https://healo-world.github.io/ITDA)
 - **로컬 Swagger UI:** `http://localhost:8080/swagger-ui.html`
 - **활성화 방법:** `.env`에서 `SWAGGER_ENABLED=true` 설정
 
