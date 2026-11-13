@@ -49,13 +49,13 @@ IT:DA는 협력 의료기관 간 CT·MRI 등 검사 의뢰부터 예약, 검사 
 IT:DA는 5인 팀 프로젝트로, 의료기관 간 검사 의뢰 및 예약 업무를 중심으로 서비스를 분리하여 개발했습니다. 각자 담당 도메인을 구현하고, 서비스 간 API·이벤트 연동과 통합 테스트를 통해 전체 업무 흐름을
 완성했습니다.
 
-| 팀원       | 담당 영역                   | 주요 역할                                                                                     |
-|------------|-----------------------------|-----------------------------------------------------------------------------------------------|
-| **신다울** | 인증·인가 및 사용자 관리    | JWT 기반 로그인·토큰 관리, 사용자 인증·인가 및 역할별 접근 제어                               |
-| **윤보영** | 장비 및 슬롯 관리           | 검사 장비·운영시간 관리, 슬롯 생성 및 조회 기능 구현                                          |
-| **장수현** | 슬롯 동시성 제어 및 인프라  | 슬롯 HOLD 및 중복 예약 방지, Docker 기반 MSA 실행 환경 구성                                   |
-| **조민영** | 검사 의뢰 및 예약           | 의뢰·예약 도메인 구현, Kafka 기반 예약 SAGA 및 상태 관리                                      |
-| **김효진** | 장비 장애 대응 및 검사 관리 | 장비 중단 등록 및 영향 예약 처리, 검사 시작·진행 상태 관리 및 결과 등록, 알림·재조정 API 연동 |
+| 팀원       | 담당 영역                      | 주요 역할                                                                                     |
+|------------|--------------------------------|-----------------------------------------------------------------------------------------------|
+| **신다울** | 인증·인가 및 사용자 관리       | JWT 기반 로그인·토큰 관리, 사용자 인증·인가 및 역할별 접근 제어                               |
+| **윤보영** | 장비 및 슬롯 관리              | 검사 장비·운영시간 관리, 슬롯 생성 및 조회 기능 구현                                          |
+| **장수현** | 슬롯 동시성 제어 및 인프라     | 슬롯 HOLD 및 중복 예약 방지, Docker 기반 MSA 실행 환경 구성                                   |
+| **조민영** | 검사 의뢰 및 예약 및 장애 알림 | 의뢰·예약 도메인 구현, Kafka 기반 예약 SAGA 및 상태 관리                                      |
+| **김효진** | 장비 장애 대응 및 검사 관리    | 장비 중단 등록 및 영향 예약 처리, 검사 시작·진행 상태 관리 및 결과 등록, 알림·재조정 API 연동 |
 
 ## 2. 주요 기능 및 업무 흐름
 
@@ -114,26 +114,28 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    A{"중단 기단 연장?"} --> |"예"| B["추가 슬롯 차단"]
+    A{"중단 기단 연장?"} -->|" 예 "| B["추가 슬롯 차단"]
     B --> C["예약 재조정"]
     B --> D{"담당자 복구 확인"}
-		E["중단 시작"] --> F["장비 상태 반영"]
-		F --> D
-    A --> |"아니요"| D
-		D --> |"미복구"| G["중단 유지"]
-		D --> |"복구"| H["복구 기록"]
-		H --> I["장비 상태 갱신"]
-		I --> J["가능한 슬롯 개방"]
-		G --> A
+    E["중단 시작"] --> F["장비 상태 반영"]
+    F --> D
+    A -->|" 아니요 "| D
+    D -->|" 미복구 "| G["중단 유지"]
+    D -->|" 복구 "| H["복구 기록"]
+    H --> I["장비 상태 갱신"]
+    I --> J["가능한 슬롯 개방"]
+    G --> A
 
-	
+
 ```
 
 예정 종료 시각이 지나도 담당자가 복구를 확인할 때까지 장비 중단 상태와 예약 차단이 유지됩니다.
 
 - **중단 연장** — 종료 시각을 연장하면 추가된 구간의 슬롯을 차단합니다. 새로 영향을 받는 기존 예약은 **2.3 장비 장애 및 예약 재조정** 절차로 이어집니다.
-- **복구 확인** — 실제 복구 시각, 담당자, 사유를 기록하고 장비 상태를 다시 계산합니다. 중단으로 차단된 슬롯 중 시작 시각이 아직 지나지 않았고, 연결된 예약이 없으며, 다른 미복구 중단과도 겹치지 않는 슬롯만 `AVAILABLE`로 전환합니다.
-- **기존 예약과 의뢰** — 복구 후에도 기존 예약은 `BLOCKED`, 의뢰는 `NEEDS_RESCHEDULE` 상태를 유지하며 2.3의 재조정 절차를 따릅니다. 예약 연결이 남아 있는 `BOOKED` 슬롯은 그대로 유지됩니다.
+- **복구 확인** — 실제 복구 시각, 담당자, 사유를 기록하고 장비 상태를 다시 계산합니다. 중단으로 차단된 슬롯 중 시작 시각이 아직 지나지 않았고, 연결된 예약이 없으며, 다른 미복구 중단과도 겹치지 않는
+  슬롯만 `AVAILABLE`로 전환합니다.
+- **기존 예약과 의뢰** — 복구 후에도 기존 예약은 `BLOCKED`, 의뢰는 `NEEDS_RESCHEDULE` 상태를 유지하며 2.3의 재조정 절차를 따릅니다. 예약 연결이 남아 있는 `BOOKED` 슬롯은
+  그대로 유지됩니다.
 
 ### 2.5 예약 실패·보상 및 이벤트 복구
 
@@ -178,7 +180,7 @@ Kafka 이벤트 처리, Saga 보상 및 장애 복구 과정을 포함한 상세
 | Database   | PostgreSQL 18, Redis 8.10.3                               |
 | Messaging  | Apache Kafka 4.4.0, Spring Kafka                          |
 | Security   | Spring Security, JWT (JJWT 0.12.7)                        |
-| Monitoring | Prometheus 3.15.1, Grafana 13.2.4, Micrometer             |
+| Monitoring | Prometheus 3.15.1, Grafana 13.2.4, Micrometer, Slack      |
 | Test       | JUnit, Testcontainers, k6                                 |
 | Infra      | Docker, Docker Compose, AWS EC2                           |
 | CI/CD      | GitHub Actions, AWS IAM (OIDC), AWS Systems Manager (SSM) |
@@ -191,19 +193,19 @@ Kafka 이벤트 처리, Saga 보상 및 장애 복구 과정을 포함한 상세
 의뢰기관·검사기관 사용자는 Next.js 프론트엔드에서 업무를 처리하며, 백엔드는 Spring Cloud Gateway를 중심으로 Institution, Slot, Referral Service를 분리했습니다.
 서비스 간 동기 조회는 OpenFeign, 예약 및 장비 장애 관련 비동기 이벤트는 Kafka를 사용합니다.
 
-[![IT:DA 전체 시스템 구성도](images/system-architecture.png)](images/system-architecture.png)
+[![IT:DA 전체 시스템 구성도](images/readme/system-architecture.png)](images/readme/system-architecture.png)
 
-*그림 1. 전체 시스템 구성 — 프론트엔드, API Gateway, 서비스 분리 및 Kafka·데이터베이스·모니터링 구성. [원본 확대](images/system-architecture.png)*
+*그림 1. 전체 시스템 구성 — 프론트엔드, API Gateway, 서비스 분리 및 Kafka·데이터베이스·모니터링 구성. [원본 확대](images/readme/system-architecture.png)*
 
 ### 4.2 인프라 배포 구조
 
 프론트엔드는 Vercel에, 백엔드는 서울 리전 (`ap-northeast-2`)의 EC2 단일 인스턴스에 Docker Compose로 배포합니다. 프론트엔드의 서버 측 API 요청은 CloudFront
 (HTTPS)를 거쳐 EC2의 Gateway (HTTP 8080)로 전달됩니다.
 
-[![IT:DA Vercel 및 AWS EC2 인프라 설계도](images/infrastructure-architecture.png)](images/infrastructure-architecture.png)
+[![IT:DA Vercel 및 AWS EC2 인프라 설계도](images/readme/infrastructure-architecture.png)](images/readme/infrastructure-architecture.png)
 
 *그림 2. 인프라 배포 설계 — Vercel, CloudFront, EC2 내 서비스·컨테이너 및 배포·모니터링
-요소. [원본 확대](images/infrastructure-architecture.png)*
+요소. [원본 확대](images/readme/infrastructure-architecture.png)*
 
 - **서비스 분리:** Institution, Slot, Referral Service별 논리 데이터베이스 (`institution_db`, `slot_db`, `referral_db`)를 분리합니다. 개발·배포
   Compose에서는 PostgreSQL 컨테이너 하나를 공유합니다.
@@ -226,37 +228,48 @@ Kafka 이벤트 처리, Saga 보상 및 장애 복구 과정을 포함한 상세
 
 서비스별 데이터 모델과 예약·의뢰·검사 상태 이력 및 비동기 이벤트 저장 구조를 함께 확인할 수 있습니다. 큰 이미지이므로 클릭해 원본 크기로 확인하는 것을 권장합니다.
 
-[![IT:DA 전체 데이터베이스 ERD](images/database-erd.png)](images/database-erd.png)
+[![IT:DA 전체 데이터베이스 ERD](images/readme/database-erd.png)](images/readme/database-erd.png)
 
-*그림 3. 전체 ERD — 기관, 슬롯, 의뢰·예약·검사, 알림, 이벤트 저장 테이블 및 연관관계. [원본 확대](images/database-erd.png)*
+*그림 3. 전체 ERD — 기관, 슬롯, 의뢰·예약·검사, 알림, 이벤트 저장 테이블 및 연관관계. [원본 확대](images/readme/database-erd.png)*
 
 **[ERD Cloud에서 상세 보기](https://www.erdcloud.com/d/RGJ34Gzm2mHLBqr73)**
 
 ## 5. 프로젝트 구조
 
-```
+```text
 ITDA/
-├── eureka-server/             # 서비스 등록 및 탐색
-├── gateway-service/           # API 라우팅, JWT 인증 및 통합 Swagger
-├── institution-service/       # 회원, 기관, 협약, 장비 관리
-├── slot-service/              # 검사 슬롯, HOLD, 장비 중단 관리
-├── referral-service/          # 검사 의뢰, 예약, 검사 및 후속 처리
+├── eureka-server/              # 서비스 등록 및 탐색
+├── gateway-service/            # API 라우팅, JWT 인증 및 통합 Swagger
+├── institution-service/        # 회원·기관·협약·장비 관리
+│   └── src/main/java/healoworld/institution_service/
+│       ├── presentation/       # Controller 및 API 요청·응답
+│       ├── application/        # 서비스 로직 및 유스케이스
+│       ├── domain/             # 엔티티 및 도메인 규칙
+│       ├── infrastructure/     # DB 및 외부 시스템 연동
+│       ├── config/             # 서비스 설정
+│       └── global/             # 공통 예외 및 응답 처리
+├── slot-service/               # 검사 슬롯, HOLD, 장비 중단 관리
+├── referral-service/           # 검사 의뢰, 예약, 검사 및 후속 처리
 ├── docs/
-│   ├── images/                # 시스템 구성도·인프라 설계도·ERD 이미지
-│   └── SCENARIOS.md           # 상세 업무 시나리오
+│   ├── SCENARIOS.md            # 정상·장애·복구 업무 시나리오
+│   └── PERFORMANCE_TEST.md     # 부하 테스트 및 성능·동시성 검증
+├── images/
+│   ├── readme/                 # 시스템 구성도·인프라 구성도·ERD
+│   └── performance/            # Grafana 및 성능 테스트 결과 이미지
 ├── docker/
-│   ├── postgres/init.sql      # 서비스별 데이터베이스 초기화
-│   ├── prometheus/            # 메트릭 수집 설정
-│   └── grafana/               # 대시보드 및 데이터소스 설정
+│   ├── postgres/init.sql       # 서비스별 데이터베이스 초기화
+│   ├── prometheus/             # 메트릭 수집 설정
+│   └── grafana/                # 대시보드 및 데이터소스 설정
 ├── load-test/
-│   ├── k6/                    # 예약 SAGA 부하 테스트
-│   └── sql/                   # 테스트 데이터 및 SQL 스크립트
+│   ├── k6/                     # 예약 Saga 및 슬롯 부하 테스트
+│   ├── sql/                    # 테스트 데이터 및 결과 검증 SQL
+│   └── run-slot.sh             # 슬롯 단독 부하 테스트 실행 스크립트
 ├── .github/workflows/
-│   ├── ci.yml                 # PR 빌드·테스트
-│   └── deploy.yml             # main push 시 AWS SSM 기반 EC2 자동 배포
-├── .env.example               # 환경변수 예시
-├── docker-compose.yml         # 데이터베이스 및 메시징·모니터링 환경
-├── docker-compose.app.yml     # MSA 애플리케이션 실행 환경
+│   ├── ci.yml                  # PR 빌드·테스트
+│   └── deploy.yml              # AWS SSM 기반 EC2 자동 배포
+├── .env.example                # 환경변수 예시
+├── docker-compose.yml          # DB·메시징·모니터링 환경
+├── docker-compose.app.yml      # MSA 애플리케이션 실행 환경
 └── README.md
 ```
 
@@ -404,6 +417,24 @@ Testcontainers 기반 통합 테스트는 Docker 환경이 필요할 수 있습�
 
 **주요 테스트:** 예약 동시성, 상태 전이, Kafka 중복 처리, 장비 장애 대응, 재조정 만료, 정합성 복구, 인증 및 권한 검증
 
+### 7.2 부하 테스트 및 성능 검증
+
+k6를 이용해 예약 Saga의 부하 테스트를 수행하고,
+Prometheus·Grafana를 통해 서비스 응답 시간,
+Kafka 이벤트 처리 지연 및 자원 사용량을 분석했습니다.
+
+또한 동일 슬롯에 대한 동시 요청을 검증하여
+조건부 UPDATE 적용 후 중복 선점이 발생하지 않는지 확인했습니다.
+
+**주요 검증 항목**
+
+- 예약 요청 처리량 및 HTTP 응답 시간
+- Kafka 이벤트 체류 시간과 Outbox 발행 대기
+- 슬롯 HOLD 성공·충돌 및 예약 확정 결과
+- 동일 슬롯 동시 선점 방지 및 데이터 정합성
+
+**[부하 테스트 및 성능 검증 상세 결과 보기](docs/PERFORMANCE_TEST.md)**
+
 ## 8. 배포 및 운영
 
 ### 8.1 배포 구성
@@ -414,18 +445,19 @@ Testcontainers 기반 통합 테스트는 Docker 환경이 필요할 수 있습�
 | API 진입      | AWS CloudFront → Gateway                           |
 | 백엔드        | AWS EC2, Docker Compose                            |
 | 데이터·메시징 | PostgreSQL, Redis, Kafka                           |
-| 모니터링      | Prometheus, Grafana, Kafka UI                      |
+| 모니터링      | Prometheus, Grafana, Kafka UI , Slack              |
 | 배포          | GitHub Actions → AWS SSM → EC2 (main push 시 자동) |
 
 ### 8.2 운영 관리
 
 - **서비스 운영:** Docker Compose 기반 컨테이너 관리 및 헬스체크
-- **모니터링:** Prometheus, Grafana를 통한 서비스 상태 및 주요 지표 확인
+- **모니터링 및 장애 알림:** Prometheus·Grafana로 서비스 상태와 주요 성능 지표를 모니터링하고, 임계값 초과 시 Slack 알림 전송
 - **메시지 장애 대응:** DLT 조회 및 실패 메시지 재처리
-- **접근 제어:** Gateway 중심 인증 및 내부 서비스 외부 접근 제한
-- **재조정 만료:** 기본 비활성화된 스케줄러를 대상 데이터·백업·배포 상태 확인 후 활성화하여 만료 이력과 알림을 점검
+- **접근 제어:** Gateway 중심 인증 및 내부 서비스 접근 제한
+- **재조정 만료:** 스케줄러 활성화 전 운영 데이터를 검증하고, 만료 처리 결과와 이력·알림 점검
 
-**주의:** 운영 중인 DB·Kafka 볼륨과 수동 DDL, 서비스 기동 순서를 확인해야 합니다. 위 명령이 기존 DB 마이그레이션을 대체하는 것은 아닙니다.
+**주의:** 운영 중인 DB·Kafka 볼륨과 수동 DDL, 서비스 기동 순서를 확인해야 합니다. 위 명령이 기존 DB
+마이그레이션을 대체하는 것은 아닙니다.
 
 ### 8.3 CI/CD
 
