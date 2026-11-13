@@ -1,6 +1,8 @@
 package healoworld.referral_service.global.outbox;
 
 import brave.Tracing;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.brave.bridge.BraveCurrentTraceContext;
@@ -19,10 +21,13 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,6 +54,7 @@ class OutboxPublisherTest {
     private KafkaTemplate<String, String> kafkaTemplate;
     private Tracing tracing;
     private Tracer tracer;
+    private SimpleMeterRegistry meterRegistry;
     private OutboxPublisher publisher;
 
     // send가 불릴 때의 현재 span (발행이 어느 trace 안에서 일어났는지)
@@ -61,7 +67,9 @@ class OutboxPublisherTest {
         kafkaTemplate = mock(KafkaTemplate.class);
         tracing = Tracing.newBuilder().traceId128Bit(true).propagationFactory(new W3CPropagation()).build();
         tracer = new BraveTracer(tracing.tracer(), new BraveCurrentTraceContext(tracing.currentTraceContext()));
-        publisher = new OutboxPublisher(outboxEventRepository, kafkaTemplate, tracer, new BravePropagator(tracing));
+        meterRegistry = new SimpleMeterRegistry();
+        publisher = new OutboxPublisher(outboxEventRepository, kafkaTemplate, tracer, new BravePropagator(tracing),
+                new OutboxPublishMetrics(meterRegistry));
     }
 
     @AfterEach
@@ -81,7 +89,7 @@ class OutboxPublisherTest {
     }
 
     @Test
-    @DisplayName("미발행 이벤트를 조회 순서대로 보내고, 하나씩 브로커 응답을 받은 뒤 발행 완료로 기록한다")
+    @DisplayName("미발행 이벤트를 조회 순서대로 모두 보낸 뒤, 브로커 응답을 같은 순서로 확인하며 발행 완료로 기록한다")
     void publishesInOrderAndMarksEach() {
         OutboxEvent first = event("HoldRequested");
         OutboxEvent second = event("BookSlot");
@@ -92,10 +100,114 @@ class OutboxPublisherTest {
 
         InOrder inOrder = inOrder(kafkaTemplate, outboxEventRepository);
         inOrder.verify(kafkaTemplate).send(recordOf(first));
-        inOrder.verify(outboxEventRepository).markPublished(eq(first.getId()), any());
         inOrder.verify(kafkaTemplate).send(recordOf(second));
+        inOrder.verify(outboxEventRepository).markPublished(eq(first.getId()), any());
         inOrder.verify(outboxEventRepository).markPublished(eq(second.getId()), any());
         verify(outboxEventRepository, never()).increaseRetryCount(any(), any());
+    }
+
+    @Test
+    @DisplayName("앞 이벤트의 브로커 응답을 기다리지 않고 묶음을 모두 보낸 뒤 결과를 확인한다")
+    void sendsWholeBatchBeforeWaitingForAcks() {
+        List<OutboxEvent> events = events(3);
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).willReturn(events);
+        // 세 건을 모두 보낸 뒤에야 응답이 온다. 앞 건의 응답을 기다렸다가 뒤 건을 보내면 첫 응답이 오지 않아 실패한다
+        List<CompletableFuture<SendResult<String, String>>> acks = new ArrayList<>();
+        given(kafkaTemplate.send(any(ProducerRecord.class))).willAnswer(inv -> {
+            CompletableFuture<SendResult<String, String>> ack = new CompletableFuture<>();
+            acks.add(ack);
+            if (acks.size() == events.size()) {
+                acks.forEach(a -> a.complete(null));
+            }
+            return ack;
+        });
+
+        publisher.publish();
+
+        verify(kafkaTemplate, times(3)).send(any(ProducerRecord.class));
+        events.forEach(e -> verify(outboxEventRepository).markPublished(eq(e.getId()), any()));
+        verify(outboxEventRepository, never()).increaseRetryCount(any(), any());
+    }
+
+    @Test
+    @DisplayName("중간 이벤트의 응답이 실패하면 그 앞까지만 발행 완료로 기록하고, 뒤 이벤트는 보냈어도 기록하지 않는다")
+    void midBatchAckFailureMarksOnlyPreceding() {
+        List<OutboxEvent> events = events(3);
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).willReturn(events);
+        // 두 번째 건은 보낼 때는 아직 결과가 없고, 세 건을 모두 보낸 뒤 실패한다. 세 번째 건은 성공한다
+        CompletableFuture<SendResult<String, String>> second = new CompletableFuture<>();
+        given(kafkaTemplate.send(any(ProducerRecord.class)))
+                .willReturn(CompletableFuture.completedFuture(null))
+                .willReturn(second)
+                .willAnswer(inv -> {
+                    second.completeExceptionally(new IllegalStateException("broker down"));
+                    return CompletableFuture.completedFuture(null);
+                });
+
+        publisher.publish();
+
+        verify(kafkaTemplate, times(3)).send(any(ProducerRecord.class));
+        verify(outboxEventRepository).markPublished(eq(events.get(0).getId()), any());
+        verify(outboxEventRepository).increaseRetryCount(eq(events.get(1).getId()), any());
+        verify(outboxEventRepository, never()).markPublished(eq(events.get(2).getId()), any());
+    }
+
+    @Test
+    @DisplayName("100건이 꽉 찬 묶음을 모두 보내면 쉬지 않고 다음 묶음을 보낸다")
+    void fullBatchContinuesWithNextBatch() {
+        List<OutboxEvent> full = events(OutboxPublisher.BATCH_SIZE);
+        List<OutboxEvent> rest = events(3);
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).willReturn(full, rest);
+        brokerAccepts();
+
+        publisher.publish();
+
+        verify(outboxEventRepository, times(2)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, times(OutboxPublisher.BATCH_SIZE + 3)).send(any(ProducerRecord.class));
+    }
+
+    @Test
+    @DisplayName("덜 찬 묶음을 보내면 회차를 끝낸다")
+    void partialBatchEndsRound() {
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc())
+                .willReturn(events(OutboxPublisher.BATCH_SIZE - 1));
+        brokerAccepts();
+
+        publisher.publish();
+
+        verify(outboxEventRepository, times(1)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+    }
+
+    @Test
+    @DisplayName("꽉 찬 묶음이 계속 있어도 한 회차에 최대 묶음 수까지만 보낸다 (다른 스케줄 작업이 기다리지 않게)")
+    void stopsAtMaxBatchesPerRun() {
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc())
+                .willAnswer(inv -> events(OutboxPublisher.BATCH_SIZE));
+        brokerAccepts();
+
+        publisher.publish();
+
+        verify(outboxEventRepository, times(OutboxPublisher.MAX_BATCHES_PER_RUN))
+                .findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, times(OutboxPublisher.BATCH_SIZE * OutboxPublisher.MAX_BATCHES_PER_RUN))
+                .send(any(ProducerRecord.class));
+    }
+
+    @Test
+    @DisplayName("꽉 찬 묶음 중간에 발행이 실패하면 다음 묶음을 읽지 않고 회차를 끝낸다")
+    void failureInFullBatchEndsRound() {
+        List<OutboxEvent> full = events(OutboxPublisher.BATCH_SIZE);
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).willReturn(full);
+        given(kafkaTemplate.send(any(ProducerRecord.class)))
+                .willReturn(CompletableFuture.completedFuture(null))
+                .willReturn(CompletableFuture.failedFuture(new IllegalStateException("broker down")));
+
+        publisher.publish();
+
+        verify(outboxEventRepository, times(1)).findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+        verify(kafkaTemplate, times(2)).send(any(ProducerRecord.class));
+        verify(outboxEventRepository).markPublished(eq(full.get(0).getId()), any());
+        verify(outboxEventRepository).increaseRetryCount(eq(full.get(1).getId()), any());
     }
 
     @Test
@@ -145,6 +257,23 @@ class OutboxPublisherTest {
         verify(outboxEventRepository).increaseRetryCount(eq(first.getId()), any());
         verify(outboxEventRepository, never()).markPublished(any(), any());
         verify(kafkaTemplate, never()).send(recordOf(second));
+    }
+
+    @Test
+    @DisplayName("앞 이벤트를 보낸 뒤 send가 예외를 던지면 앞 이벤트만 발행 완료이고, 뒤 이벤트는 보내지 않는다")
+    void sendThrowingAfterFirstMarksOnlyFirst() {
+        List<OutboxEvent> events = events(3);
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).willReturn(events);
+        given(kafkaTemplate.send(any(ProducerRecord.class)))
+                .willReturn(CompletableFuture.completedFuture(null))
+                .willThrow(new IllegalStateException("serialization failed"));
+
+        publisher.publish();
+
+        verify(kafkaTemplate, times(2)).send(any(ProducerRecord.class));
+        verify(outboxEventRepository).markPublished(eq(events.get(0).getId()), any());
+        verify(outboxEventRepository).increaseRetryCount(eq(events.get(1).getId()), any());
+        verify(outboxEventRepository, never()).markPublished(eq(events.get(2).getId()), any());
     }
 
     @Test
@@ -212,6 +341,50 @@ class OutboxPublisherTest {
         verify(outboxEventRepository).markPublished(eq(event.getId()), any());
     }
 
+    // ---------- 발행 대기 메트릭 ----------
+
+    @Test
+    @DisplayName("발행에 성공하면 이벤트 종류별로 Outbox 대기 시간을 한 번 기록한다")
+    void recordsWaitOnSuccess() {
+        OutboxEvent event = event("BookSlot");
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).willReturn(List.of(event));
+        brokerAccepts();
+
+        publisher.publish();
+
+        Timer timer = meterRegistry.find(OutboxPublishMetrics.WAIT).tag("type", "BookSlot").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("발행에 실패하면 Outbox 대기 시간을 기록하지 않는다")
+    void doesNotRecordWaitOnFailure() {
+        OutboxEvent event = event("BookSlot");
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).willReturn(List.of(event));
+        given(kafkaTemplate.send(any(ProducerRecord.class)))
+                .willReturn(CompletableFuture.failedFuture(new IllegalStateException("broker down")));
+
+        publisher.publish();
+
+        assertThat(meterRegistry.find(OutboxPublishMetrics.WAIT).timer()).isNull();
+    }
+
+    @Test
+    @DisplayName("Outbox 대기 시간은 행 저장(created_at)부터 발행 완료까지이고, 음수면(시계 차이) 기록하지 않는다")
+    void waitIsCreatedAtToPublishedAt() {
+        OutboxPublishMetrics metrics = new OutboxPublishMetrics(meterRegistry);
+        OutboxEvent event = event("HoldRequested");
+        LocalDateTime createdAt = event.getCreatedAt();
+
+        metrics.recordWait(event, createdAt.plusNanos(300_000_000));
+        metrics.recordWait(event, createdAt.minusSeconds(1));
+
+        Timer timer = meterRegistry.find(OutboxPublishMetrics.WAIT).tag("type", "HoldRequested").timer();
+        assertThat(timer.count()).isEqualTo(1);
+        assertThat(timer.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(300);
+    }
+
     // ---------- 도우미 ----------
 
     // 브로커가 모든 메시지를 받는다. send 시점의 현재 span을 기록한다
@@ -238,6 +411,10 @@ class OutboxPublisherTest {
     private static String header(ProducerRecord<String, String> record, String name) {
         Header header = record.headers().lastHeader(name);
         return header == null ? null : new String(header.value(), StandardCharsets.UTF_8);
+    }
+
+    private static List<OutboxEvent> events(int count) {
+        return IntStream.range(0, count).mapToObj(i -> event("BookSlot")).toList();
     }
 
     private static OutboxEvent event(String eventType) {
