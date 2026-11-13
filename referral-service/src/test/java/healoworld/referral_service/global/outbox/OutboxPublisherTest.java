@@ -1,6 +1,8 @@
 package healoworld.referral_service.global.outbox;
 
 import brave.Tracing;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.brave.bridge.BraveCurrentTraceContext;
@@ -19,10 +21,12 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,6 +53,7 @@ class OutboxPublisherTest {
     private KafkaTemplate<String, String> kafkaTemplate;
     private Tracing tracing;
     private Tracer tracer;
+    private SimpleMeterRegistry meterRegistry;
     private OutboxPublisher publisher;
 
     // send가 불릴 때의 현재 span (발행이 어느 trace 안에서 일어났는지)
@@ -61,7 +66,9 @@ class OutboxPublisherTest {
         kafkaTemplate = mock(KafkaTemplate.class);
         tracing = Tracing.newBuilder().traceId128Bit(true).propagationFactory(new W3CPropagation()).build();
         tracer = new BraveTracer(tracing.tracer(), new BraveCurrentTraceContext(tracing.currentTraceContext()));
-        publisher = new OutboxPublisher(outboxEventRepository, kafkaTemplate, tracer, new BravePropagator(tracing));
+        meterRegistry = new SimpleMeterRegistry();
+        publisher = new OutboxPublisher(outboxEventRepository, kafkaTemplate, tracer, new BravePropagator(tracing),
+                new OutboxPublishMetrics(meterRegistry));
     }
 
     @AfterEach
@@ -210,6 +217,50 @@ class OutboxPublisherTest {
 
         assertThat(spansAtSend).containsExactly((Span) null);
         verify(outboxEventRepository).markPublished(eq(event.getId()), any());
+    }
+
+    // ---------- 발행 대기 메트릭 ----------
+
+    @Test
+    @DisplayName("발행에 성공하면 이벤트 종류별로 Outbox 대기 시간을 한 번 기록한다")
+    void recordsWaitOnSuccess() {
+        OutboxEvent event = event("BookSlot");
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).willReturn(List.of(event));
+        brokerAccepts();
+
+        publisher.publish();
+
+        Timer timer = meterRegistry.find(OutboxPublishMetrics.WAIT).tag("type", "BookSlot").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("발행에 실패하면 Outbox 대기 시간을 기록하지 않는다")
+    void doesNotRecordWaitOnFailure() {
+        OutboxEvent event = event("BookSlot");
+        given(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).willReturn(List.of(event));
+        given(kafkaTemplate.send(any(ProducerRecord.class)))
+                .willReturn(CompletableFuture.failedFuture(new IllegalStateException("broker down")));
+
+        publisher.publish();
+
+        assertThat(meterRegistry.find(OutboxPublishMetrics.WAIT).timer()).isNull();
+    }
+
+    @Test
+    @DisplayName("Outbox 대기 시간은 행 저장(created_at)부터 발행 완료까지이고, 음수면(시계 차이) 기록하지 않는다")
+    void waitIsCreatedAtToPublishedAt() {
+        OutboxPublishMetrics metrics = new OutboxPublishMetrics(meterRegistry);
+        OutboxEvent event = event("HoldRequested");
+        LocalDateTime createdAt = event.getCreatedAt();
+
+        metrics.recordWait(event, createdAt.plusNanos(300_000_000));
+        metrics.recordWait(event, createdAt.minusSeconds(1));
+
+        Timer timer = meterRegistry.find(OutboxPublishMetrics.WAIT).tag("type", "HoldRequested").timer();
+        assertThat(timer.count()).isEqualTo(1);
+        assertThat(timer.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(300);
     }
 
     // ---------- 도우미 ----------
