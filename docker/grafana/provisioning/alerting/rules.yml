@@ -150,6 +150,8 @@ groups:
 
       # 처리되지 않은 DLT 메시지가 남아 있는 동안 경고를 유지한다. 관리자 API로 재처리·무시해 0이 되면 복구된다
       # (적재 순간만 보는 increase() 방식은 5분 뒤 처리 여부와 무관하게 복구로 떠서 쓰지 않는다)
+      # 앱이 꺼지면 게이지 시계열이 사라져 복구로 뜨므로, last_over_time으로 마지막 수집 값을 24시간 유지한다
+      # (꺼진 동안의 장애는 서비스 다운 경고가 알린다. 24시간 넘게 꺼져 있으면 그때는 복구로 뜬다)
       - uid: itda-dead-letter-pending
         title: DLT 미처리 메시지
         condition: B
@@ -162,7 +164,7 @@ groups:
               instant: true
               range: false
               expr: |-
-                  max by (application) (dead_letter_pending)
+                  max by (application) (last_over_time(dead_letter_pending[24h]))
           - refId: B
             datasourceUid: __expr__
             model:
