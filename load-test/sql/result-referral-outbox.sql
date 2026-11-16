@@ -4,7 +4,7 @@
 --   created_at:   referral이 SlotHeld를 처리하고 Outbox에 BookSlot을 기록한 시각
 --   published_at: Outbox 발행(브로커 확인) 시각
 -- referral Outbox에는 원인 이벤트 시각(source_occurred_at)이 없어, k6 전송 → Outbox 기록 구간은 재지 않는다
--- 0번 결과가 0건이 된 뒤(모두 발행된 뒤)에 1~3번을 본다
+-- 0번 결과가 0건이 된 뒤(모두 발행된 뒤)에 1~4번을 본다
 
 -- 0) 아직 발행되지 않은 이벤트. 0이 될 때까지 기다린다
 SELECT count(*) AS unpublished
@@ -67,3 +67,14 @@ SELECT b.t::time AS from_time,
           FROM e WHERE published_at >= b.t AND published_at < b.t + interval '10 s')                                 AS wait_p95_s
 FROM bucket b
 ORDER BY b.t;
+
+-- 4) SlotHeld 수신 처리량 (10초 구간): 예약이 HELD로 바뀐 시각(updated_at)으로 센다
+--    Outbox를 거치지 않은 수신 처리 속도다. k6가 보낸 속도(fixed 40, ramp 20→180/초)보다 낮으면 수신에서 밀린 것이다
+--    회차 전체 수신이 끝나는 시점은 run-referral-outbox.sh 기록의 consume_drain을 본다
+SELECT date_bin('10 seconds', updated_at, TIMESTAMP '2000-01-01')::time AS from_time,
+       round(count(*) / 10.0, 1)                                         AS held_per_s
+FROM p_reservations
+WHERE equipment_id = 'f0000000-0000-0000-0000-00000000e004'
+  AND id::text >= 'f2000000-0000-0000-0000-0000000003e8'
+  AND reservation_status = 'HELD'
+GROUP BY 1 ORDER BY 1;
