@@ -1,14 +1,15 @@
 package healoworld.slot_service.global.deadletter;
 
 import healoworld.slot_service.global.config.KafkaConfig;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -37,8 +38,14 @@ class DeadLetterConsumerTest {
     @Mock
     private DeadLetterEventRepository deadLetterEventRepository;
 
-    @InjectMocks
+    private SimpleMeterRegistry meterRegistry;
     private DeadLetterConsumer deadLetterConsumer;
+
+    @BeforeEach
+    void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
+        deadLetterConsumer = new DeadLetterConsumer(deadLetterEventRepository, meterRegistry);
+    }
 
     @Test
     @DisplayName("DLT 레코드 자체의 위치가 아니라 헤더의 원래 위치와 실패 정보를 PENDING으로 저장한다")
@@ -89,6 +96,7 @@ class DeadLetterConsumerTest {
         deadLetterConsumer.consume(dltRecord(originalLocationHeaders()));
 
         verify(deadLetterEventRepository, never()).save(any());
+        assertThat(savedCount(ORIGINAL_TOPIC)).isZero();
     }
 
     @Test
@@ -101,6 +109,30 @@ class DeadLetterConsumerTest {
         deadLetterConsumer.consume(dltRecord(headers));
 
         verifyNoInteractions(deadLetterEventRepository);
+        assertThat(savedCount(ORIGINAL_TOPIC)).isZero();
+    }
+
+    @Test
+    @DisplayName("저장하면 원래 토픽 태그로 DLT 저장 카운터를 1 올린다")
+    void countsSavedByOriginalTopic() {
+        deadLetterConsumer.consume(dltRecord(originalLocationHeaders()));
+
+        assertThat(savedCount(ORIGINAL_TOPIC)).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("처리되지 않은(PENDING) 메시지 수를 게이지로 노출한다")
+    void exposesPendingCountGauge() {
+        given(deadLetterEventRepository.countByDeadLetterStatus(DeadLetterStatus.PENDING)).willReturn(3L);
+
+        assertThat(meterRegistry.get(DeadLetterConsumer.PENDING_METRIC).gauge().value()).isEqualTo(3.0);
+    }
+
+    @Test
+    @DisplayName("받는 원래 토픽의 DLT 저장 카운터를 시작할 때 0으로 등록한다 (첫 1건도 경고의 increase()에 잡히도록)")
+    void preRegistersSavedCounters() {
+        assertThat(DeadLetterConsumer.ORIGINAL_TOPICS).allSatisfy(topic ->
+                assertThat(savedCount(topic)).isZero());
     }
 
     @Test
@@ -145,6 +177,10 @@ class DeadLetterConsumerTest {
         return new ConsumerRecord<>(DLT_TOPIC, 0, 7L, ConsumerRecord.NO_TIMESTAMP,
                 TimestampType.NO_TIMESTAMP_TYPE,
                 ConsumerRecord.NULL_SIZE, ConsumerRecord.NULL_SIZE, KEY, PAYLOAD, headers, Optional.empty());
+    }
+
+    private double savedCount(String originalTopic) {
+        return meterRegistry.get(DeadLetterConsumer.SAVED_METRIC).tag("original_topic", originalTopic).counter().count();
     }
 
     private DeadLetterEvent captureSaved() {
