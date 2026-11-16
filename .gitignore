@@ -9,6 +9,9 @@
 /docs/openapi/*
 !/docs/openapi/*.json
 
+# 시나리오 문서
+!/docs/SCENARIOS.md
+
 ### 환경변수 (비밀번호) ###
 .env
 !.env.example

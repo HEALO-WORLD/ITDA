@@ -118,6 +118,10 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      # 경고 메시지의 대시보드·규칙 링크 기준 주소. 배포 서버는 .env에서 실제 접속 주소로 덮어쓴다
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      # Slack 연락 지점(provisioning/alerting/contact-points.yml)이 읽는 Webhook 주소
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning

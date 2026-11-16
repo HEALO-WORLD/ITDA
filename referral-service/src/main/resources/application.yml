@@ -59,7 +59,7 @@ itda:
     scheduler:
       enabled: ${RESERVATION_RECONCILIATION_SCHEDULER_ENABLED:false}
       fixed-delay-ms: 60000
-      batch-size: 50
+      batch-size: 200            # 쿼리 3종 × batch-size가 slot-service 조회 한도(1000) 이하여야 한다 (최대 333)
       stale-threshold-minutes: 10
       lookback-hours: 24
       max-attempts: 3            # 일시 오류 시 최초 실행 포함 최대 시도 횟수 (넘으면 수동 확인 대상)
@@ -89,6 +89,8 @@ management:
     distribution:
       percentiles-histogram:
         "[http.server.requests]": true   # p95/p99 계산용 bucket 메트릭 노출
+        "[reservation.reconciliation.run]": true     # 정합성 점검 회차 전체 소요 시간
+        "[reservation.reconciliation.phase]": true   # 정합성 점검 단계별 소요 시간
 
 # 공통 로그 설정 (모든 서비스 동일, 서비스별 상세 레벨은 아래에 추가)
 logging:

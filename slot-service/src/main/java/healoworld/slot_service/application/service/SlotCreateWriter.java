@@ -1,6 +1,7 @@
 package healoworld.slot_service.application.service;
 
 import healoworld.slot_service.application.dto.SlotTimeRange;
+import healoworld.slot_service.domain.entity.EquipmentDowntime;
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.global.exception.BaseException;
 import healoworld.slot_service.global.exception.ErrorCode;
@@ -64,6 +65,9 @@ public class SlotCreateWriter {
         slotCreationLockRepository.lock(equipmentId, date);
 
         Instant now = clock.instant();
+        boolean batch = ranges.size() > 1;
+        List<SlotTimeRange> existingSlots = batch ? slotRepository.findActiveTimeRanges(equipmentId, date) : List.of();
+        List<EquipmentDowntime> downtimes = batch ? equipmentDowntimeRepository.findUnrecoveredStartingBefore(equipmentId, date.plusDays(1).atStartOfDay()) : List.of();
         LocalTime previousEnd = null;
         List<Slot> slots = new ArrayList<>();
 
@@ -88,22 +92,25 @@ public class SlotCreateWriter {
                 throw new BaseException(ErrorCode.SLOT_START_NOT_FUTURE);
             }
 
-            if (slotRepository.existsOverlappingSlot(
-                    equipmentId,
-                    date,
-                    range.startTime(),
-                    range.endTime()
-            )) {
+            boolean overlapsSlot = batch
+                    ? existingSlots.stream().anyMatch(existing ->
+                            existing.startTime().isBefore(range.endTime())
+                                    && existing.endTime().isAfter(range.startTime()))
+                    : slotRepository.existsOverlappingSlot(equipmentId, date, range.startTime(), range.endTime());
+            if (overlapsSlot) {
                 throw new BaseException(ErrorCode.SLOT_TIME_OVERLAP);
             }
 
-            // 장비 중단 등록도 같은 장비·날짜의 advisory lock을 잡으므로, 잠금 획득 후의 이 조회는
-            // 먼저 커밋된 중단을 반드시 본다 (READ COMMITTED에서는 쿼리마다 새 스냅샷을 쓴다)
-            if (equipmentDowntimeRepository.existsBlockingOverlap(
-                    equipmentId,
-                    date.atTime(range.startTime()),
-                    date.atTime(range.endTime()), LocalDateTime.now(clock)
-            )) {
+            // 장비 중단 변경과 생성은 장비 잠금으로 조율된다. 시작한 미복구 중단은 예정 종료 후에도 차단한다.
+            LocalDateTime start = date.atTime(range.startTime());
+            LocalDateTime end = date.atTime(range.endTime());
+            LocalDateTime checkedAt = LocalDateTime.now(clock);
+            boolean overlapsDowntime = batch
+                    ? downtimes.stream().anyMatch(downtime -> downtime.getStartedAt().isBefore(end)
+                            && (downtime.getEndedAt().isAfter(start)
+                                || !downtime.getStartedAt().isAfter(checkedAt)))
+                    : equipmentDowntimeRepository.existsBlockingOverlap(equipmentId, start, end, checkedAt);
+            if (overlapsDowntime) {
                 throw new BaseException(ErrorCode.SLOT_IN_DOWNTIME);
             }
 
