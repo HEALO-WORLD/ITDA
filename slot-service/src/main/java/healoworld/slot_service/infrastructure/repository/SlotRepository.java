@@ -2,6 +2,7 @@ package healoworld.slot_service.infrastructure.repository;
 
 import healoworld.slot_service.domain.entity.Slot;
 import healoworld.slot_service.domain.enums.SlotStatus;
+import healoworld.slot_service.application.dto.SlotTimeRange;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
@@ -48,6 +49,18 @@ public interface SlotRepository extends JpaRepository<Slot, UUID> {
             @Param("date") LocalDate date,
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime
+    );
+
+    @Query("""
+        select new healoworld.slot_service.application.dto.SlotTimeRange(s.startTime, s.endTime)
+        from Slot s
+        where s.equipmentId = :equipmentId
+        and s.date = :date
+        and s.deletedAt is null
+        """)
+    List<SlotTimeRange> findActiveTimeRanges(
+            @Param("equipmentId") UUID equipmentId,
+            @Param("date") LocalDate date
     );
 
     @Query("""

@@ -57,4 +57,16 @@ public interface EquipmentDowntimeRepository extends JpaRepository<EquipmentDown
     boolean existsBlockingOverlap(@Param("equipmentId") UUID equipmentId,
                                   @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
                                   @Param("now") LocalDateTime now);
+
+    @Query("""
+        select d from EquipmentDowntime d
+        where d.equipmentId = :equipmentId
+        and d.deletedAt is null
+        and d.recoveredAt is null
+        and d.startedAt < :before
+        """)
+    List<EquipmentDowntime> findUnrecoveredStartingBefore(
+            @Param("equipmentId") UUID equipmentId,
+            @Param("before") LocalDateTime before
+    );
 }
