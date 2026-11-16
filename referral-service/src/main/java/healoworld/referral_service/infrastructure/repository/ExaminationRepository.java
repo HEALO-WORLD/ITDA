@@ -56,7 +56,7 @@ public interface ExaminationRepository extends JpaRepository<Examination, UUID> 
     List<UUID> findReservationIdsWithStartedExamination(@Param("reservationIds") Collection<UUID> reservationIds);
 
     // 검사기관별 검사 목록 조회
-    // - 취소(CANCELED)되거나 삭제(soft delete)된 의뢰의 검사는 제외한다.
+    // - 취소(CANCELED)·만료(EXPIRED)되거나 삭제(soft delete)된 의뢰의 검사는 제외한다.
     //   예약 취소 후에도 검사는 SCHEDULED로 남기 때문에, 제외하지 않으면 취소된 검사가 '검사 대기'로 보이고
     //   삭제된 의뢰는 목록 조립 시 의뢰를 찾지 못해 조회가 실패한다
     // - 필터를 쿼리에 두어 페이지 내용과 전체 건수(countQuery)가 같은 조건으로 계산되게 한다
@@ -65,7 +65,9 @@ public interface ExaminationRepository extends JpaRepository<Examination, UUID> 
              where e.examInstitutionId = :examInstitutionId
                and exists (select 1 from Referral r
                             where r.id = e.referralId
-                              and r.referralStatus <> healoworld.referral_service.domain.enums.ReferralStatus.CANCELED
+                              and r.referralStatus not in (
+                                  healoworld.referral_service.domain.enums.ReferralStatus.CANCELED,
+                                  healoworld.referral_service.domain.enums.ReferralStatus.EXPIRED)
                               and r.deletedAt is null)
             """,
             countQuery = """
@@ -73,7 +75,9 @@ public interface ExaminationRepository extends JpaRepository<Examination, UUID> 
              where e.examInstitutionId = :examInstitutionId
                and exists (select 1 from Referral r
                             where r.id = e.referralId
-                              and r.referralStatus <> healoworld.referral_service.domain.enums.ReferralStatus.CANCELED
+                              and r.referralStatus not in (
+                                  healoworld.referral_service.domain.enums.ReferralStatus.CANCELED,
+                                  healoworld.referral_service.domain.enums.ReferralStatus.EXPIRED)
                               and r.deletedAt is null)
             """)
     Page<Examination> findByExamInstitutionId(

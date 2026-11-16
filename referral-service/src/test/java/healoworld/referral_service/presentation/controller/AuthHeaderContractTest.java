@@ -34,6 +34,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
+import healoworld.referral_service.infrastructure.client.slot.SlotClient;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Optional;
@@ -96,6 +97,10 @@ class AuthHeaderContractTest {
 
     @MockitoBean
     private InstitutionClient institutionClient;
+
+    // ReferralService의 슬롯 검증용 (이 테스트의 재예약 요청은 권한 확인에서 끝나 호출되지 않는다)
+    @MockitoBean
+    private SlotClient slotClient;
 
     // ReferralService의 재예약 검사 상태 검증용 (ReservationService의 취소 검사 상태 확인에도 쓰인다)
     @MockitoBean

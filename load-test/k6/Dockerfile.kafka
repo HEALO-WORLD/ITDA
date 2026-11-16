@@ -1,0 +1,19 @@
+# xk6-kafka가 들어간 k6 이미지 (slot-commands.js용)
+# 빌드 (프로젝트 루트에서):  docker build -f load-test/k6/Dockerfile.kafka -t itda-k6-kafka load-test/k6
+# 확인:                      docker run --rm itda-k6-kafka version   (Extensions에 xk6-kafka가 보여야 한다)
+# 빌드한 머신과 같은 CPU 구조(EC2는 arm64)로 만들어지므로 서버에서 쓸 때는 서버에서 빌드한다
+#
+# 버전은 고정한다. 개선 전과 후를 같은 k6로 재야 한다
+# xk6-kafka는 k6 v1 모듈(go.k6.io/k6)용이라 k6 본체도 v1이어야 한다.
+# (K6_VERSION은 grafana/xk6 이미지가 쓰는 환경변수라 이름을 다르게 둔다)
+# k6 v2로 빌드하면 빌드는 성공하지만 실행할 때 "unknown dependency : k6/x/kafka"가 난다
+ARG K6_CORE_VERSION=v1.8.2
+ARG XK6_KAFKA_VERSION=v1.3.0
+
+FROM grafana/xk6:latest AS build
+ARG K6_CORE_VERSION
+ARG XK6_KAFKA_VERSION
+RUN xk6 build ${K6_CORE_VERSION} --with github.com/mostafa/xk6-kafka@${XK6_KAFKA_VERSION} --output /tmp/k6
+
+FROM grafana/k6:1.8.2
+COPY --from=build /tmp/k6 /usr/bin/k6

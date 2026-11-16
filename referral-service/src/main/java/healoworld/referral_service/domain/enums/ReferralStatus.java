@@ -6,5 +6,6 @@ public enum ReferralStatus {
     FAILED,
     CANCELED,
     // COMPLETED
-    NEEDS_RESCHEDULE
+    NEEDS_RESCHEDULE,
+    EXPIRED
 }

@@ -17,10 +17,10 @@ VALUES ('f0000000-0000-0000-0000-0000000000c1'::uuid,
         'ACTIVE', now(), now(), now(), now())
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO p_equipments (id, institution_id, name, modality, status, created_at, updated_at)
+INSERT INTO p_equipments (id, institution_id, name, modality, status, manual_status, downtime_revision, created_at, updated_at)
 VALUES ('f0000000-0000-0000-0000-00000000e001'::uuid,
         'f0000000-0000-0000-0000-0000000000b1'::uuid,
-        'LOADTEST-CT', 'CT', 'OPERATIONAL', now(), now())
+        'LOADTEST-CT', 'CT', 'OPERATIONAL', 'OPERATIONAL', 0, now(), now())
 ON CONFLICT (id) DO NOTHING;
 
 COMMIT;

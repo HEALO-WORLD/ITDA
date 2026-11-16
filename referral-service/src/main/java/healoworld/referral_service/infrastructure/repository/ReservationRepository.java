@@ -42,6 +42,17 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
     Optional<Reservation> findPreviousConfirmed(@Param("referralId") UUID referralId,
                                                 @Param("attemptNo") int attemptNo);
 
+    // 의뢰의 최신 BLOCKED 예약 (중단 시각·원래 검사 시작 시각 기반 만료 기한 계산).
+    @Query("""
+            select r from Reservation r
+             where r.referral.id = :referralId
+               and r.reservationStatus = healoworld.referral_service.domain.enums.ReservationStatus.BLOCKED
+               and r.endedAt is not null
+             order by r.attemptNo desc, r.createdAt desc, r.id desc
+             limit 1
+            """)
+    Optional<Reservation> findLatestBlocked(@Param("referralId") UUID referralId);
+
     @Query("select r.referral.id from Reservation r where r.id = :id")
     Optional<UUID> findReferralIdById(@Param("id") UUID id);
 

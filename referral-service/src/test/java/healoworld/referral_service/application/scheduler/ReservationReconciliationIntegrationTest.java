@@ -132,7 +132,8 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
     }
 
     // 공유 DB에 다른 테스트가 남긴 예약이 있어도 이번 대상이 한 회차에 다 들어오도록 넉넉하게 잡는다
-    private static final int BATCH_SIZE = 10_000;
+    // (스케줄러가 허용하는 최대값: 쿼리 3종 × batchSize ≤ slot-service 조회 한도)
+    private static final int BATCH_SIZE = ReservationReconciliationScheduler.SLOT_STATUS_QUERY_MAX_IDS / 3;
     private static final int STALE_THRESHOLD_MINUTES = 10;
     private static final int LOOKBACK_HOURS = 24;
 
@@ -163,7 +164,7 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
     void setUp() {
         startedAt = LocalDateTime.now();
         scheduler = new ReservationReconciliationScheduler(reconciliationService, reservationRepository, slotClient,
-                examinationRepository, failureRecorder, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
+                examinationRepository, failureRecorder, meterRegistry, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
         // slot-service는 테스트에서 등록한 슬롯만 알려준다. 다른 테스트가 남긴 예약은 "슬롯 없음"으로 건너뛴다
         when(slotClient.getSlotStatuses(any())).thenAnswer(invocation -> List.copyOf(slotResponses));
     }
@@ -322,7 +323,7 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
     void finalLockCheckStillGuardsAfterPreCheck() {
         // 사전 확인 시점에는 검사가 시작 전이었던 상황: 사전 조회가 아무것도 돌려주지 않는 Repository로 스케줄러를 만든다
         ReservationReconciliationScheduler staleView = new ReservationReconciliationScheduler(reconciliationService,
-                reservationRepository, slotClient, mock(ExaminationRepository.class), failureRecorder,
+                reservationRepository, slotClient, mock(ExaminationRepository.class), failureRecorder, meterRegistry,
                 BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
         Booking booking = confirmedBooking();
         examination(booking, booking.reservationId(), ExaminationStatus.IN_PROGRESS);
@@ -491,7 +492,7 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
     @DisplayName("사전 확인을 통과해도(검사가 그 뒤 시작된 경우) SlotBooked 최종 확인(잠금)이 확정을 막고, 업무 예외라 즉시 수동 확인 대상이 되며 다음 회차에 재시도하지 않는다")
     void finalLockCheckStopsSlotBookedAndStopsRetry(ExaminationStatus examinationStatus, String link) {
         ReservationReconciliationScheduler staleView = new ReservationReconciliationScheduler(reconciliationService,
-                reservationRepository, slotClient, mock(ExaminationRepository.class), failureRecorder,
+                reservationRepository, slotClient, mock(ExaminationRepository.class), failureRecorder, meterRegistry,
                 BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
         Booking booking = booking(Reservation::hold, referral -> {
         });
@@ -520,7 +521,7 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
         ReservationReconciliationService failing = mock(ReservationReconciliationService.class);
         doThrow(new QueryTimeoutException("timeout")).when(failing).reconcile(any(), any(), any());
         ReservationReconciliationScheduler flaky = new ReservationReconciliationScheduler(failing, reservationRepository,
-                slotClient, examinationRepository, failureRecorder, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
+                slotClient, examinationRepository, failureRecorder, meterRegistry, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
         Booking booking = booking(Reservation::hold, referral -> {
         });
         markStale(booking);
@@ -560,7 +561,7 @@ class ReservationReconciliationIntegrationTest extends PostgresContainerSupport 
                 })
                 .when(flakyOnce).reconcile(any(), any(), any());
         ReservationReconciliationScheduler flaky = new ReservationReconciliationScheduler(flakyOnce, reservationRepository,
-                slotClient, examinationRepository, failureRecorder, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
+                slotClient, examinationRepository, failureRecorder, meterRegistry, BATCH_SIZE, LOOKBACK_HOURS, STALE_THRESHOLD_MINUTES);
         Booking booking = booking(Reservation::hold, referral -> {
         });
         markStale(booking);

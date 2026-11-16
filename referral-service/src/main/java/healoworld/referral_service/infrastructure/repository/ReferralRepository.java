@@ -21,6 +21,41 @@ public interface ReferralRepository extends JpaRepository<Referral, UUID>, Refer
     @Query("select r from Referral r where r.id = :id")
     Optional<Referral> findByIdForUpdate(@Param("id") UUID id);
 
+    // PostgreSQL: 가장 최근 차단 예약을 기준으로 만료 후보 조회.
+    // 재예약 시도가 FAILED로 끝난 경우에도 최초 차단 시간을 기준으로 판단한다.
+    // 단, 진행 중인 예약·검사가 있는 의뢰는 제외한다. 최종 판정은 행 잠금 후 재검증한다.
+    @Query(value = """
+            select rf.id
+              from p_referrals rf
+              join p_reservations current_rs on current_rs.id = rf.current_reservation_id
+              join lateral (
+                select greatest(b.start_time, b.ended_at) as deadline_base
+                  from p_reservations b
+                 where b.referral_id = rf.id
+                   and b.reservation_status = 'BLOCKED'
+                   and b.ended_at is not null
+                   and b.deleted_at is null
+                 order by b.attempt_no desc, b.created_at desc nulls last, b.id desc
+                 limit 1
+              ) blocked on true
+             where rf.referral_status = 'NEEDS_RESCHEDULE'
+               and rf.deleted_at is null
+               and current_rs.deleted_at is null
+               and current_rs.reservation_status in ('BLOCKED', 'FAILED')
+               and blocked.deadline_base <= :cutoff
+               and not exists (
+                   select 1 from p_examinations e
+                    where e.referral_id = rf.id
+                      and (e.status <> 'SCHEDULED'
+                           or e.started_at is not null
+                           or e.completed_at is not null
+                           or exists (select 1 from p_examination_results er where er.examination_id = e.id))
+               )
+             order by rf.id
+            """, nativeQuery = true)
+    java.util.List<UUID> findRescheduleExpirationCandidates(@Param("cutoff") LocalDateTime cutoff,
+                                                              org.springframework.data.domain.Pageable pageable);
+
     // 아래 조건부 UPDATE는 WHERE의 현재 상태가 맞을 때만 바꾸고, 바꾼 행 수(0 또는 1)를 돌려준다.
     // 메서드 이름이 정하는 상태는 쿼리에 고정하고, 호출하는 곳마다 달라지는 값만 파라미터로 받는다.
     // 벌크 UPDATE는 Auditing을 거치지 않으므로 updatedAt·updatedBy를 직접 넣는다.

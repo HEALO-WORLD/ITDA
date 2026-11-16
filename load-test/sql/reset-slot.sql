@@ -2,6 +2,11 @@
 -- 부하 테스트 데이터는 장비 ID f0000000-...-e001로만 구분한다. 다른 데이터는 건드리지 않는다
 -- 슬롯 ID는 번호로 정한다: n번 슬롯 = f1000000-0000-0000-0000-<n을 12자리 16진수로>
 -- 날짜·시간: 2026-12-15부터 하루 20칸, 08:00부터 30분 간격 (k6 스크립트와 같은 규칙)
+-- 슬롯 수: 기본 10,000개. 늘리려면 psql에 -v slots=30000을 주고, k6에도 -e SLOTS=30000을 같이 준다
+\if :{?slots}
+\else
+\set slots 10000
+\endif
 BEGIN;
 
 DELETE FROM p_slot_status_histories
@@ -20,7 +25,7 @@ SELECT ('f1000000-0000-0000-0000-' || lpad(to_hex(n), 12, '0'))::uuid,
        TIME '08:00' + make_interval(mins => (n % 20) * 30),
        TIME '08:30' + make_interval(mins => (n % 20) * 30),
        'AVAILABLE', now(), now()
-FROM generate_series(0, 9999) AS n;
+FROM generate_series(0, :slots - 1) AS n;
 
 COMMIT;
 

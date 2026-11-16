@@ -16,6 +16,8 @@ import healoworld.referral_service.global.dto.ApiResponse;
 import healoworld.referral_service.infrastructure.client.institution.EquipmentOwnerResponse;
 import healoworld.referral_service.infrastructure.client.institution.InstitutionClient;
 import healoworld.referral_service.infrastructure.client.institution.PartnershipCheckResponse;
+import healoworld.referral_service.infrastructure.client.slot.SlotClient;
+import healoworld.referral_service.infrastructure.client.slot.SlotReservationContextResponse;
 import healoworld.referral_service.infrastructure.repository.EquipmentIncidentLockRepository;
 import healoworld.referral_service.infrastructure.repository.IncidentReferralRepository;
 import healoworld.referral_service.infrastructure.repository.ReferralRepository;
@@ -113,6 +115,8 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
 
     // 재예약 시 협력 관계 확인 (institution-service)
     @MockitoBean private InstitutionClient institutionClient;
+    // 재예약 슬롯 검증 (slot-service)
+    @MockitoBean private SlotClient slotClient;
 
     private final UUID userId = UUID.randomUUID();
     private final UUID institutionId = UUID.randomUUID();
@@ -231,7 +235,7 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
         blockByIncident();
         deleteFirstReservation();
 
-        // Mock stubbing(given)은 스레드에 안전하지 않으므로 요청 생성과 장비 소속 stubbing은 스레드 시작 전에 끝낸다
+        // Mock stubbing(given)은 스레드에 안전하지 않으므로 요청 생성과 장비 소속·슬롯 stubbing은 스레드 시작 전에 끝낸다
         List<CreateReservationRequest> requests = List.of(rescheduleRequest(), rescheduleRequest());
 
         CountDownLatch ready = new CountDownLatch(1);
@@ -547,6 +551,7 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
                 .endTime(retryStartsAt().plusHours(1))
                 .build();
         givenEquipmentOwnedBy(request);
+        givenSlotMatches(request);
         return referralService.createRescheduledReservation(userId, Role.REQUESTER, referralId, request).getId();
     }
 
@@ -602,6 +607,14 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
         assertThat(reservationRepository.findById(firstReservationId)).isEmpty();   // JPA 조회에서는 보이지 않음
     }
 
+    // 재예약 요청과 같은 장비·검사 종류(의뢰 기준)·일시의 슬롯으로 응답하게 한다
+    private void givenSlotMatches(CreateReservationRequest request) {
+        UUID examTypeId = referralRepository.findById(referralId).orElseThrow().getExamTypeId();
+        given(slotClient.getReservationContext(request.getSlotId()))
+                .willReturn(new SlotReservationContextResponse(request.getSlotId(), request.getEquipmentId(), examTypeId,
+                        request.getExamDate().toLocalDate(), request.getStartTime().toLocalTime(), request.getEndTime().toLocalTime()));
+    }
+
     // 재예약 요청의 장비를 요청한 검사기관 소속으로 응답하게 한다
     private void givenEquipmentOwnedBy(CreateReservationRequest request) {
         given(institutionClient.getEquipmentOwner(request.getEquipmentId()))
@@ -613,7 +626,7 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
         return reschedule(rescheduleRequest());
     }
 
-    // 재예약 요청을 만들고 그 장비가 요청한 검사기관 소속이라고 응답하도록 stubbing한다
+    // 재예약 요청을 만들고, 그 장비가 요청한 검사기관 소속이고 슬롯이 요청과 일치한다고 응답하도록 stubbing한다
     private CreateReservationRequest rescheduleRequest() {
         CreateReservationRequest request = CreateReservationRequest.builder()
                 .slotId(UUID.randomUUID())
@@ -624,6 +637,7 @@ class ReservationAttemptNoReuseIntegrationTest extends PostgresContainerSupport 
                 .endTime(startsAt.plusDays(1).plusHours(1))
                 .build();
         givenEquipmentOwnedBy(request);
+        givenSlotMatches(request);
         return request;
     }
 

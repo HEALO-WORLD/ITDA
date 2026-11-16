@@ -79,6 +79,13 @@ public class Referral extends BaseEntity {
         this.referralStatus = ReferralStatus.CANCELED;
     }
 
+    // 장비 장애 이후 재조정 기한을 넘긴 의뢰만 자동 만료한다.
+    // 기존 예약(BLOCKED/FAILED)은 이력 보존을 위해 변경하지 않는다.
+    public void expire() {
+        validateReferralStatus(ReferralStatus.NEEDS_RESCHEDULE);
+        this.referralStatus = ReferralStatus.EXPIRED;
+    }
+
     // 장비 장애 등으로 재조정이 필요할 때 변경
     public void requestReschedule() {
         validateReferralStatus(ReferralStatus.PENDING, ReferralStatus.CONFIRMED);
@@ -108,7 +115,7 @@ public class Referral extends BaseEntity {
 
     // soft delete
     public void delete(UUID userId) {
-        validateReferralStatus(ReferralStatus.FAILED, ReferralStatus.CANCELED);
+        validateReferralStatus(ReferralStatus.FAILED, ReferralStatus.CANCELED, ReferralStatus.EXPIRED);
         softDelete(userId);
     }
 
