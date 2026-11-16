@@ -19,7 +19,10 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
+import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -101,6 +104,18 @@ class SlotResultKafkaFlowIntegrationTest extends PostgresContainerSupport {
 
     private final List<UUID> referralIds = new ArrayList<>();
     private final List<UUID> eventIds = new ArrayList<>();
+
+    @Autowired private KafkaListenerEndpointRegistry listenerRegistry;
+
+    @Test
+    @DisplayName("slot-results 리스너는 설정한 수(기본 3, 파티션 수)만큼 동시에 처리하고, 소비 그룹은 설정값 그대로다")
+    void slotResultListenerRunsConcurrently() {
+        MessageListenerContainer container = listenerRegistry.getListenerContainer(SlotResultConsumer.LISTENER_ID);
+
+        assertThat(container).isInstanceOf(ConcurrentMessageListenerContainer.class);
+        assertThat(((ConcurrentMessageListenerContainer<?, ?>) container).getConcurrency()).isEqualTo(3);
+        assertThat(container.getGroupId()).isEqualTo("referral-service-kafka-flow-test");
+    }
 
     @AfterEach
     void cleanUp() {
