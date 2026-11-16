@@ -21,7 +21,11 @@ public class SlotResultConsumer {
     private final SlotResultService slotResultService;
     private final JsonMapper jsonMapper;
 
-    @KafkaListener(topics = "slot-results")
+    static final String LISTENER_ID = "slotResultListener";
+
+    // id는 테스트에서 컨테이너를 찾기 위한 것이다. idIsGroup = false라 소비 그룹은 spring.kafka.consumer.group-id 그대로다
+    @KafkaListener(id = LISTENER_ID, idIsGroup = false, topics = "slot-results",
+            concurrency = "${itda.kafka.slot-results.concurrency:3}")
     public void consume(@Header("eventId") String id,
                              @Header("eventType") String eventType,
                              @Payload String payload) {
