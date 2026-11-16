@@ -17,6 +17,9 @@ public interface DeadLetterEventRepository extends JpaRepository<DeadLetterEvent
     // 상태 필터 목록 (idx_dead_letter_status_created 인덱스 사용)
     Page<DeadLetterEvent> findByDeadLetterStatus(DeadLetterStatus deadLetterStatus, Pageable pageable);
 
+    // 미처리 건수 게이지(dead_letter.pending)가 수집 때마다 호출한다 (idx_dead_letter_status_created 인덱스 사용)
+    long countByDeadLetterStatus(DeadLetterStatus deadLetterStatus);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select d from DeadLetterEvent d where d.id = :id")
     Optional<DeadLetterEvent> findByIdForUpdate(@Param("id") UUID id);

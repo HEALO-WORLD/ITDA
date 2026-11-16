@@ -1,0 +1,35 @@
+# Slack 연락 지점과 메시지 템플릿
+# Webhook 주소는 비밀값이라 저장소에 두지 않고 Grafana 컨테이너 환경 변수(SLACK_WEBHOOK_URL)로 받는다
+# 주의: Grafana가 provisioning 파일 안의 $NAME을 환경 변수로 치환하므로, 템플릿에서는 $labels 대신 .Labels처럼 점 표기만 쓴다
+apiVersion: 1
+
+templates:
+  - orgId: 1
+    name: itda-slack
+    template: |
+      {{ define "itda.slack.title" -}}
+      [{{ if eq .Status "firing" }}경고 {{ len .Alerts.Firing }}건{{ else }}복구{{ end }}] {{ .CommonLabels.alertname }}
+      {{- end }}
+
+      {{ define "itda.slack.text" -}}
+      {{ range .Alerts -}}
+      {{ if eq .Status "firing" }}:red_circle:{{ else }}:white_check_mark:{{ end }} *{{ or .Labels.application .Labels.job "-" }}*{{ if .Labels.original_topic }} ({{ .Labels.original_topic }}){{ end }}
+      • 조건: {{ .Annotations.summary }}
+      • 현재 값: {{ or .Annotations.value "-" }}
+      {{ if .DashboardURL }}• 대시보드: {{ .DashboardURL }}
+      {{ end }}• 규칙: {{ .GeneratorURL }}
+
+      {{ end -}}
+      {{- end }}
+
+contactPoints:
+  - orgId: 1
+    name: slack
+    receivers:
+      - uid: itda-slack
+        type: slack
+        settings:
+          url: ${SLACK_WEBHOOK_URL}
+          title: '{{ template "itda.slack.title" . }}'
+          text: '{{ template "itda.slack.text" . }}'
+        disableResolveMessage: false   # 복구 알림도 보낸다
