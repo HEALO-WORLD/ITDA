@@ -1,0 +1,241 @@
+﻿session_id,user_id,login_id,name,org_id,org_name,session_seq,start_time,start_offset_sec,time_window,auth_action,behavior_pattern,behavior_desc,target_lab_id,target_lab_name,exam_type,target_day_rule,target_slot_time,slot_type,slot_label,search_count,create_count,status_check_count,post_action,post_action_delay_sec,think_time_sec,expected_api_calls
+S0001,REF028,loadtest_ref_028,공채다,ORG028,바른길이비인후과의원,1,09:00:14,32414,open_peak,login,normal,정상 흐름,LAB05,다솜영상의학과,뇌 MRI,BIZ+7,13:30,normal,일반 슬롯,1,1,2,none,0,1,6
+S0002,REF063,loadtest_ref_063,권수아,ORG063,소나무가정의학과의원,1,09:00:17,32417,open_peak,login,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+5,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,3,6
+S0003,REF066,loadtest_ref_066,길윤혜,ORG066,소나무이비인후과의원,1,09:00:26,32426,open_peak,login,normal,정상 흐름,LAB01,가람영상의학센터,뇌 MRI,BIZ+3,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,1,6
+S0004,REF026,loadtest_ref_026,표아우,ORG026,도담가정의학과의원,1,09:00:29,32429,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,뇌 MRI,BIZ+1,08:00,popular,MRI 오전 첫 타임,2,1,2,none,0,1,7
+S0005,REF053,loadtest_ref_053,옥동민,ORG053,누리봄내과의원,1,09:00:29,32429,open_peak,login,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,BIZ+10,15:30,normal,일반 슬롯,1,1,2,none,0,1,6
+S0006,REF037,loadtest_ref_037,서혜승,ORG037,가온가정의학과의원,1,09:00:33,32433,open_peak,login,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,NEXT_SAT,09:00,popular,토요일 오전 슬롯,1,1,2,none,0,2,6
+S0007,REF071,loadtest_ref_071,이서은,ORG071,늘빛소아청소년과의원,1,09:00:33,32433,open_peak,login,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB01,가람영상의학센터,뇌 MRI,BIZ+6,16:30,normal,일반 슬롯,1,2,2,none,0,1,7
+S0008,REF055,loadtest_ref_055,금가준,ORG055,푸른숲내과의원,1,09:00:42,32442,open_peak,login,normal,정상 흐름,LAB07,푸른영상의학과,뇌 MRI,BIZ+5,11:00,normal,일반 슬롯,1,1,2,none,0,1,6
+S0009,REF043,loadtest_ref_043,조유보,ORG043,맑은샘가정의학과의원,1,09:00:49,32449,open_peak,login,normal,정상 흐름,LAB06,온빛영상센터,척추 MRI,BIZ+7,11:30,normal,일반 슬롯,1,1,2,none,0,2,6
+S0010,REF033,loadtest_ref_033,인승하,ORG033,사랑채가정의학과의원,1,09:00:57,32457,open_peak,login,search_retry,"원하는 날짜가 없어 슬롯 검색을 여러 번 반복, 확정 후 일정이 맞지 않아 취소",LAB01,가람영상의학센터,뇌 MRI,BIZ+3,08:00,normal,일반 슬롯,3,1,2,cancel,230,1,9
+S0011,REF078,loadtest_ref_078,곽연경,ORG078,든든가정의학과의원,1,09:00:57,32457,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,척추 MRI,BIZ+5,08:00,popular,MRI 오전 첫 타임,2,1,2,none,0,2,7
+S0012,REF017,loadtest_ref_017,석라준,ORG017,밝은미소가정의학과의원,1,09:01:06,32466,open_peak,login,normal,정상 흐름,LAB03,새솔영상의학과,복부 CT,BIZ+10,16:30,normal,일반 슬롯,1,1,2,none,0,3,6
+S0013,REF002,loadtest_ref_002,구라현,ORG002,하늘빛이비인후과의원,1,09:01:11,32471,open_peak,login,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,NEXT_SAT,09:00,popular,토요일 오전 슬롯,1,1,2,none,0,2,6
+S0014,REF056,loadtest_ref_056,현보영,ORG056,가온이비인후과의원,1,09:01:12,32472,open_peak,login,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB08,미르영상의학과,척추 MRI,BIZ+7,11:00,normal,일반 슬롯,1,2,2,none,0,3,7
+S0015,REF070,loadtest_ref_070,반도민,ORG070,고운소아청소년과의원,1,09:01:12,32472,open_peak,login,status_poll,확정이 늦어 상태 조회를 반복,LAB02,한빛MRI센터,척추 MRI,BIZ+6,15:30,normal,일반 슬롯,1,1,6,none,0,2,10
+S0016,REF036,loadtest_ref_036,지정승,ORG036,다온내과의원,1,09:01:13,32473,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB01,가람영상의학센터,흉부 CT,NEXT_SAT,08:00,popular,토요일 오전 슬롯,4,1,2,none,0,1,9
+S0017,REF076,loadtest_ref_076,구재라,ORG076,참좋은소아청소년과의원,1,09:01:13,32473,open_peak,login,normal,정상 흐름,LAB10,바른영상센터,뇌 MRI,BIZ+5,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,2,6
+S0018,REF047,loadtest_ref_047,도미주,ORG047,하늘빛가정의학과의원,1,09:01:15,32475,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB01,가람영상의학센터,뇌 MRI,BIZ+5,08:00,popular,MRI 오전 첫 타임,3,1,2,none,0,2,8
+S0019,REF038,loadtest_ref_038,신주석,ORG038,가온내과의원,1,09:01:28,32488,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB08,미르영상의학과,척추 MRI,BIZ+1,08:00,popular,MRI 오전 첫 타임,4,1,2,none,0,3,9
+S0020,REF031,loadtest_ref_031,박유소,ORG031,다온소아청소년과의원,1,09:01:34,32494,open_peak,login,search_retry,"원하는 날짜가 없어 슬롯 검색을 여러 번 반복, 확정 후 일정이 맞지 않아 취소",LAB08,미르영상의학과,척추 MRI,BIZ+1,08:00,popular,MRI 오전 첫 타임,2,1,2,cancel,210,3,8
+S0021,REF068,loadtest_ref_068,유유호,ORG068,참좋은내과의원,1,09:01:39,32499,open_peak,login,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB09,새봄검진센터,흉부 CT,NEXT_SAT,08:30,popular,토요일 오전 슬롯,1,1,2,rebook,7,1,10
+S0022,REF008,loadtest_ref_008,마훈영,ORG008,꿈나무가정의학과의원,1,09:01:40,32500,open_peak,login,status_poll,확정이 늦어 상태 조회를 반복,LAB08,미르영상의학과,척추 MRI,BIZ+2,08:00,popular,MRI 오전 첫 타임,1,1,4,none,0,3,8
+S0023,REF023,loadtest_ref_023,양가석,ORG023,바른길가정의학과의원,1,09:01:41,32501,open_peak,login,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+2,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,1,6
+S0024,REF073,loadtest_ref_073,배진라,ORG073,새봄내과의원,1,09:01:44,32504,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB08,미르영상의학과,흉부 CT,NEXT_SAT,08:00,popular,토요일 오전 슬롯,2,1,2,none,0,3,7
+S0025,REF060,loadtest_ref_060,구보재,ORG060,푸른숲소아청소년과의원,1,09:01:46,32506,open_peak,login,status_poll,확정이 늦어 상태 조회를 반복,LAB06,온빛영상센터,복부 CT,BIZ+4,08:00,normal,일반 슬롯,1,1,4,none,0,1,8
+S0026,REF003,loadtest_ref_003,주가원,ORG003,한결내과의원,1,09:01:47,32507,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB03,새솔영상의학과,복부 CT,BIZ+10,12:00,normal,일반 슬롯,3,1,2,none,0,1,8
+S0027,REF042,loadtest_ref_042,제정하,ORG042,참좋은이비인후과의원,1,09:01:48,32508,open_peak,login,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB03,새솔영상의학과,복부 CT,BIZ+8,15:30,normal,일반 슬롯,1,2,2,none,0,2,7
+S0028,REF027,loadtest_ref_027,선다승,ORG027,온누리소아청소년과의원,1,09:01:50,32510,open_peak,login,normal,정상 흐름,LAB07,푸른영상의학과,뇌 MRI,BIZ+2,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,1,6
+S0029,REF020,loadtest_ref_020,탁혜나,ORG020,도담내과의원,1,09:03:28,32608,open_peak,login,normal,정상 흐름,LAB07,푸른영상의학과,뇌 MRI,BIZ+5,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,2,6
+S0030,REF044,loadtest_ref_044,구진미,ORG044,맑은샘이비인후과의원,1,09:05:02,32702,open_peak,login,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,BIZ+9,14:00,normal,일반 슬롯,1,1,2,none,0,1,6
+S0031,REF069,loadtest_ref_069,손다승,ORG069,도담소아청소년과의원,1,09:06:19,32779,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB10,바른영상센터,뇌 MRI,BIZ+9,17:00,normal,일반 슬롯,3,1,2,none,0,3,8
+S0032,REF030,loadtest_ref_030,한호주,ORG030,꿈나무소아청소년과의원,1,09:06:22,32782,open_peak,login,normal,정상 흐름,LAB02,한빛MRI센터,뇌 MRI,BIZ+10,14:00,normal,일반 슬롯,1,1,2,none,0,1,6
+S0033,REF005,loadtest_ref_005,왕도하,ORG005,사랑채소아청소년과의원,1,09:08:17,32897,open_peak,login,normal,정상 흐름,LAB07,푸른영상의학과,뇌 MRI,BIZ+3,12:00,normal,일반 슬롯,1,1,2,none,0,1,6
+S0034,REF007,loadtest_ref_007,오윤준,ORG007,참좋은가정의학과의원,1,09:08:34,32914,open_peak,login,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB02,한빛MRI센터,척추 MRI,BIZ+3,08:00,popular,MRI 오전 첫 타임,1,2,2,none,0,3,7
+S0035,REF072,loadtest_ref_072,홍진승,ORG072,푸른숲이비인후과의원,1,09:09:28,32968,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,뇌 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,4,1,2,none,0,3,9
+S0036,REF058,loadtest_ref_058,변희연,ORG058,밝은미소내과의원,1,09:12:07,33127,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB08,미르영상의학과,척추 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,2,1,2,none,0,2,7
+S0037,REF065,loadtest_ref_065,연진라,ORG065,고운이비인후과의원,1,09:12:34,33154,open_peak,login,normal,정상 흐름,LAB06,온빛영상센터,복부 CT,BIZ+6,16:00,normal,일반 슬롯,1,1,2,none,0,2,6
+S0038,REF028,loadtest_ref_028,공채다,ORG028,바른길이비인후과의원,2,09:12:40,33160,open_peak,reuse,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,BIZ+8,15:30,normal,일반 슬롯,1,1,2,none,0,3,5
+S0039,REF077,loadtest_ref_077,허우윤,ORG077,든든내과의원,1,09:12:41,33161,open_peak,login,status_poll,확정이 늦어 상태 조회를 반복,LAB01,가람영상의학센터,뇌 MRI,BIZ+1,08:00,popular,MRI 오전 첫 타임,1,1,6,none,0,1,10
+S0040,REF015,loadtest_ref_015,원경경,ORG015,밝은미소이비인후과의원,1,09:12:55,33175,open_peak,login,status_poll,확정이 늦어 상태 조회를 반복,LAB10,바른영상센터,뇌 MRI,BIZ+3,08:00,popular,MRI 오전 첫 타임,1,1,5,none,0,2,9
+S0041,REF050,loadtest_ref_050,천재정,ORG050,꿈나무이비인후과의원,1,09:13:57,33237,open_peak,login,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,BIZ+3,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,1,6
+S0042,REF029,loadtest_ref_029,민태라,ORG029,한결소아청소년과의원,1,09:14:53,33293,open_peak,login,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,BIZ+5,13:00,normal,일반 슬롯,1,1,2,none,0,1,6
+S0043,REF032,loadtest_ref_032,최혜윤,ORG032,든든이비인후과의원,1,09:15:05,33305,open_peak,login,normal,정상 흐름,LAB07,푸른영상의학과,복부 CT,BIZ+4,15:30,normal,일반 슬롯,1,1,2,none,0,2,6
+S0044,REF019,loadtest_ref_019,심다아,ORG019,하늘빛소아청소년과의원,1,09:15:47,33347,open_peak,login,normal,"정상 흐름, 확정 후 일정이 맞지 않아 취소",LAB10,바른영상센터,뇌 MRI,BIZ+7,16:00,normal,일반 슬롯,1,1,2,cancel,213,2,7
+S0045,REF060,loadtest_ref_060,구보재,ORG060,푸른숲소아청소년과의원,2,09:16:13,33373,open_peak,reuse,normal,정상 흐름,LAB02,한빛MRI센터,뇌 MRI,BIZ+6,13:30,normal,일반 슬롯,1,1,2,none,0,1,5
+S0046,REF025,loadtest_ref_025,한석수,ORG025,다온가정의학과의원,1,09:16:15,33375,open_peak,login,normal,정상 흐름,LAB01,가람영상의학센터,흉부 CT,BIZ+5,13:00,normal,일반 슬롯,1,1,2,none,0,1,6
+S0047,REF064,loadtest_ref_064,황연재,ORG064,온누리가정의학과의원,1,09:16:16,33376,open_peak,login,normal,정상 흐름,LAB07,푸른영상의학과,뇌 MRI,BIZ+2,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,3,6
+S0048,REF016,loadtest_ref_016,연진도,ORG016,맑은샘소아청소년과의원,1,09:16:37,33397,open_peak,login,normal,정상 흐름,LAB07,푸른영상의학과,복부 CT,NEXT_SAT,08:00,popular,토요일 오전 슬롯,1,1,2,none,0,3,6
+S0049,REF061,loadtest_ref_061,고석영,ORG061,푸른숲가정의학과의원,1,09:16:41,33401,open_peak,login,status_poll,확정이 늦어 상태 조회를 반복,LAB02,한빛MRI센터,척추 MRI,BIZ+6,17:00,normal,일반 슬롯,1,1,5,none,0,1,9
+S0050,REF010,loadtest_ref_010,기아지,ORG010,늘빛가정의학과의원,1,09:16:49,33409,open_peak,login,status_poll,확정이 늦어 상태 조회를 반복,LAB02,한빛MRI센터,뇌 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,1,6,none,0,1,10
+S0051,REF054,loadtest_ref_054,진동연,ORG054,바른길소아청소년과의원,1,09:17:06,33426,open_peak,login,normal,"정상 흐름, 확정 후 일정이 맞지 않아 취소",LAB03,새솔영상의학과,흉부 CT,BIZ+5,14:00,normal,일반 슬롯,1,1,2,cancel,107,3,7
+S0052,REF080,loadtest_ref_080,배윤은,ORG080,꿈나무내과의원,1,09:17:07,33427,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB03,새솔영상의학과,복부 CT,BIZ+10,12:00,normal,일반 슬롯,2,1,2,none,0,3,7
+S0053,REF057,loadtest_ref_057,우훈수,ORG057,온누리내과의원,1,09:17:29,33449,open_peak,login,normal,정상 흐름,LAB05,다솜영상의학과,뇌 MRI,BIZ+9,11:00,normal,일반 슬롯,1,1,2,none,0,3,6
+S0054,REF026,loadtest_ref_026,표아우,ORG026,도담가정의학과의원,2,09:17:30,33450,open_peak,reuse,double_click,"예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송), 확정 후 일정이 맞지 않아 취소",LAB09,새봄검진센터,흉부 CT,BIZ+6,16:00,normal,일반 슬롯,1,2,2,cancel,591,1,7
+S0055,REF056,loadtest_ref_056,현보영,ORG056,가온이비인후과의원,2,09:17:44,33464,open_peak,reuse,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB10,바른영상센터,뇌 MRI,NEXT_SAT,09:00,popular,토요일 오전 슬롯,1,1,2,rebook,18,1,9
+S0056,REF041,loadtest_ref_041,손승가,ORG041,새봄이비인후과의원,1,09:18:03,33483,open_peak,login,normal,정상 흐름,LAB05,다솜영상의학과,뇌 MRI,BIZ+2,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,1,6
+S0057,REF055,loadtest_ref_055,금가준,ORG055,푸른숲내과의원,2,09:20:10,33610,open_peak,reuse,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+2,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,2,5
+S0058,REF073,loadtest_ref_073,배진라,ORG073,새봄내과의원,2,09:20:24,33624,open_peak,reuse,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB08,미르영상의학과,척추 MRI,BIZ+5,08:00,popular,MRI 오전 첫 타임,2,1,2,none,0,3,6
+S0059,REF017,loadtest_ref_017,석라준,ORG017,밝은미소가정의학과의원,2,09:20:59,33659,open_peak,reuse,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,척추 MRI,BIZ+2,15:00,normal,일반 슬롯,3,1,2,none,0,1,7
+S0060,REF069,loadtest_ref_069,손다승,ORG069,도담소아청소년과의원,2,09:23:19,33799,open_peak,reuse,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB01,가람영상의학센터,뇌 MRI,NEXT_SAT,08:30,popular,토요일 오전 슬롯,2,1,2,none,0,3,6
+S0061,REF059,loadtest_ref_059,어성훈,ORG059,새봄가정의학과의원,1,09:24:08,33848,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB07,푸른영상의학과,뇌 MRI,BIZ+4,12:00,normal,일반 슬롯,3,1,2,none,0,2,8
+S0062,REF043,loadtest_ref_043,조유보,ORG043,맑은샘가정의학과의원,2,09:24:55,33895,open_peak,reuse,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,3,5
+S0063,REF072,loadtest_ref_072,홍진승,ORG072,푸른숲이비인후과의원,2,09:25:02,33902,open_peak,reuse,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB08,미르영상의학과,흉부 CT,BIZ+7,12:30,normal,일반 슬롯,3,1,2,none,0,1,7
+S0064,REF048,loadtest_ref_048,홍영다,ORG048,햇살이비인후과의원,1,09:25:11,33911,open_peak,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB07,푸른영상의학과,복부 CT,NEXT_SAT,09:00,popular,토요일 오전 슬롯,2,1,2,none,0,2,7
+S0065,REF079,loadtest_ref_079,맹혜진,ORG079,누리봄소아청소년과의원,1,09:25:48,33948,open_peak,login,status_poll,확정이 늦어 상태 조회를 반복,LAB02,한빛MRI센터,뇌 MRI,NEXT_SAT,09:00,popular,토요일 오전 슬롯,1,1,4,none,0,1,8
+S0066,REF011,loadtest_ref_011,임동수,ORG011,가온소아청소년과의원,1,09:26:29,33989,open_peak,login,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB07,푸른영상의학과,복부 CT,BIZ+10,16:00,normal,일반 슬롯,1,1,2,rebook,17,2,10
+S0067,REF020,loadtest_ref_020,탁혜나,ORG020,도담내과의원,2,09:26:29,33989,open_peak,reuse,status_poll,확정이 늦어 상태 조회를 반복,LAB06,온빛영상센터,척추 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,1,4,none,0,2,7
+S0068,REF060,loadtest_ref_060,구보재,ORG060,푸른숲소아청소년과의원,3,09:27:02,34022,open_peak,reuse,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB05,다솜영상의학과,뇌 MRI,BIZ+6,08:00,normal,일반 슬롯,1,1,2,rebook,30,3,9
+S0069,REF018,loadtest_ref_018,길가경,ORG018,햇살소아청소년과의원,1,09:27:05,34025,open_peak,login,normal,정상 흐름,LAB06,온빛영상센터,척추 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,2,6
+S0070,REF054,loadtest_ref_054,진동연,ORG054,바른길소아청소년과의원,2,09:28:11,34091,open_peak,reuse,normal,정상 흐름,LAB06,온빛영상센터,복부 CT,BIZ+3,09:00,normal,일반 슬롯,1,1,2,none,0,3,5
+S0071,REF021,loadtest_ref_021,원경혜,ORG021,든든소아청소년과의원,1,09:29:20,34160,open_peak,login,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB01,가람영상의학센터,척추 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,1,2,rebook,18,3,10
+S0072,REF016,loadtest_ref_016,연진도,ORG016,맑은샘소아청소년과의원,2,09:29:58,34198,open_peak,reuse,normal,정상 흐름,LAB06,온빛영상센터,척추 MRI,BIZ+1,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,2,5
+S0073,REF015,loadtest_ref_015,원경경,ORG015,밝은미소이비인후과의원,2,09:33:37,34417,normal,reuse,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB09,새봄검진센터,복부 CT,BIZ+10,15:00,normal,일반 슬롯,1,1,2,rebook,27,5,9
+S0074,REF073,loadtest_ref_073,배진라,ORG073,새봄내과의원,3,09:40:37,34837,normal,reuse,normal,정상 흐름,LAB03,새솔영상의학과,복부 CT,BIZ+3,11:30,normal,일반 슬롯,1,1,2,none,0,8,5
+S0075,REF006,loadtest_ref_006,추지영,ORG006,소나무소아청소년과의원,1,09:40:46,34846,normal,login,status_poll,확정이 늦어 상태 조회를 반복,LAB04,늘품영상검진센터,복부 CT,BIZ+10,08:30,normal,일반 슬롯,1,1,6,none,0,2,10
+S0076,REF062,loadtest_ref_062,민성다,ORG062,사랑채내과의원,1,09:42:22,34942,normal,login,status_poll,"확정이 늦어 상태 조회를 반복, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB03,새솔영상의학과,흉부 CT,BIZ+5,16:30,normal,일반 슬롯,1,1,5,rebook,23,3,13
+S0077,REF053,loadtest_ref_053,옥동민,ORG053,누리봄내과의원,2,09:45:29,35129,normal,reuse,status_poll,확정이 늦어 상태 조회를 반복,LAB10,바른영상센터,흉부 CT,BIZ+7,13:30,normal,일반 슬롯,1,1,6,none,0,8,9
+S0078,REF010,loadtest_ref_010,기아지,ORG010,늘빛가정의학과의원,2,09:49:50,35390,normal,reuse,normal,"정상 흐름, 확정 후 일정이 맞지 않아 취소",LAB05,다솜영상의학과,뇌 MRI,BIZ+9,09:00,normal,일반 슬롯,1,1,2,cancel,408,4,6
+S0079,REF035,loadtest_ref_035,연나원,ORG035,온누리이비인후과의원,1,09:51:46,35506,normal,login,normal,정상 흐름,LAB01,가람영상의학센터,복부 CT,BIZ+3,12:30,normal,일반 슬롯,1,1,2,none,0,7,6
+S0080,REF039,loadtest_ref_039,오라지,ORG039,누리봄가정의학과의원,1,09:53:08,35588,normal,login,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB08,미르영상의학과,흉부 CT,BIZ+3,11:00,normal,일반 슬롯,1,2,2,none,0,8,7
+S0081,REF064,loadtest_ref_064,황연재,ORG064,온누리가정의학과의원,2,10:00:15,36015,normal,reuse,normal,정상 흐름,LAB02,한빛MRI센터,뇌 MRI,BIZ+7,08:30,normal,일반 슬롯,1,1,2,none,0,5,5
+S0082,REF038,loadtest_ref_038,신주석,ORG038,가온내과의원,2,10:02:04,36124,normal,reissue,normal,정상 흐름,LAB06,온빛영상센터,척추 MRI,BIZ+5,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,2,6
+S0083,REF014,loadtest_ref_014,나진혜,ORG014,한결이비인후과의원,1,10:06:46,36406,normal,login,search_retry,"원하는 날짜가 없어 슬롯 검색을 여러 번 반복, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB01,가람영상의학센터,뇌 MRI,BIZ+8,17:30,normal,일반 슬롯,4,1,2,rebook,13,3,13
+S0084,REF037,loadtest_ref_037,서혜승,ORG037,가온가정의학과의원,2,10:09:32,36572,normal,reissue,normal,정상 흐름,LAB10,바른영상센터,뇌 MRI,BIZ+7,15:30,normal,일반 슬롯,1,1,2,none,0,4,6
+S0085,REF034,loadtest_ref_034,안나정,ORG034,다온이비인후과의원,1,10:17:20,37040,normal,login,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+10,10:00,normal,일반 슬롯,1,1,2,none,0,6,6
+S0086,REF045,loadtest_ref_045,황하혜,ORG045,고운내과의원,1,10:19:25,37165,normal,login,status_poll,확정이 늦어 상태 조회를 반복,LAB06,온빛영상센터,복부 CT,BIZ+1,10:30,normal,일반 슬롯,1,1,4,none,0,4,8
+S0087,REF030,loadtest_ref_030,한호주,ORG030,꿈나무소아청소년과의원,2,10:21:26,37286,normal,reissue,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,NEXT_SAT,08:00,popular,토요일 오전 슬롯,1,1,2,none,0,6,6
+S0088,REF044,loadtest_ref_044,구진미,ORG044,맑은샘이비인후과의원,2,10:22:40,37360,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB02,한빛MRI센터,척추 MRI,BIZ+10,09:00,normal,일반 슬롯,1,2,2,none,0,8,7
+S0089,REF043,loadtest_ref_043,조유보,ORG043,맑은샘가정의학과의원,3,10:25:45,37545,normal,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB04,늘품영상검진센터,흉부 CT,BIZ+10,08:30,normal,일반 슬롯,1,1,5,none,0,3,9
+S0090,REF017,loadtest_ref_017,석라준,ORG017,밝은미소가정의학과의원,3,10:29:10,37750,normal,reissue,normal,정상 흐름,LAB03,새솔영상의학과,흉부 CT,BIZ+7,14:30,normal,일반 슬롯,1,1,2,none,0,6,6
+S0091,REF045,loadtest_ref_045,황하혜,ORG045,고운내과의원,2,10:34:00,38040,normal,reuse,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB08,미르영상의학과,흉부 CT,BIZ+5,08:30,normal,일반 슬롯,4,1,2,none,0,7,8
+S0092,REF057,loadtest_ref_057,우훈수,ORG057,온누리내과의원,2,10:36:50,38210,normal,reissue,double_click,"예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송), 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB05,다솜영상의학과,뇌 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,2,2,rebook,20,7,11
+S0093,REF041,loadtest_ref_041,손승가,ORG041,새봄이비인후과의원,2,10:37:22,38242,normal,reissue,normal,정상 흐름,LAB07,푸른영상의학과,복부 CT,BIZ+10,11:30,normal,일반 슬롯,1,1,2,none,0,4,6
+S0094,REF033,loadtest_ref_033,인승하,ORG033,사랑채가정의학과의원,2,10:38:45,38325,normal,reissue,normal,정상 흐름,LAB08,미르영상의학과,흉부 CT,BIZ+3,13:30,normal,일반 슬롯,1,1,2,none,0,4,6
+S0095,REF067,loadtest_ref_067,임현우,ORG067,맑은샘내과의원,1,10:38:59,38339,normal,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB07,푸른영상의학과,뇌 MRI,BIZ+1,16:00,normal,일반 슬롯,2,1,2,none,0,6,7
+S0096,REF001,loadtest_ref_001,용훈원,ORG001,밝은미소소아청소년과의원,1,10:39:40,38380,normal,login,normal,정상 흐름,LAB01,가람영상의학센터,뇌 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,2,6
+S0097,REF058,loadtest_ref_058,변희연,ORG058,밝은미소내과의원,2,10:54:18,39258,normal,reissue,normal,정상 흐름,LAB08,미르영상의학과,흉부 CT,BIZ+4,13:30,normal,일반 슬롯,1,1,2,none,0,4,6
+S0098,REF066,loadtest_ref_066,길윤혜,ORG066,소나무이비인후과의원,2,10:55:09,39309,normal,reissue,normal,정상 흐름,LAB10,바른영상센터,뇌 MRI,BIZ+10,11:00,normal,일반 슬롯,1,1,2,none,0,5,6
+S0099,REF005,loadtest_ref_005,왕도하,ORG005,사랑채소아청소년과의원,2,10:56:09,39369,normal,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB10,바른영상센터,뇌 MRI,BIZ+1,11:30,normal,일반 슬롯,4,1,2,none,0,6,9
+S0100,REF070,loadtest_ref_070,반도민,ORG070,고운소아청소년과의원,2,10:58:14,39494,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB01,가람영상의학센터,뇌 MRI,BIZ+8,15:30,normal,일반 슬롯,1,2,2,none,0,3,7
+S0101,REF010,loadtest_ref_010,기아지,ORG010,늘빛가정의학과의원,3,11:11:02,40262,normal,reissue,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB10,바른영상센터,뇌 MRI,BIZ+3,08:00,popular,MRI 오전 첫 타임,1,1,2,rebook,17,8,10
+S0102,REF061,loadtest_ref_061,고석영,ORG061,푸른숲가정의학과의원,2,11:11:38,40298,normal,reissue,normal,정상 흐름,LAB03,새솔영상의학과,복부 CT,BIZ+9,09:30,normal,일반 슬롯,1,1,2,none,0,2,6
+S0103,REF007,loadtest_ref_007,오윤준,ORG007,참좋은가정의학과의원,2,11:15:00,40500,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB05,다솜영상의학과,뇌 MRI,BIZ+7,17:00,normal,일반 슬롯,1,2,2,none,0,3,7
+S0104,REF074,loadtest_ref_074,하아유,ORG074,누리봄이비인후과의원,1,11:20:55,40855,normal,login,normal,정상 흐름,LAB04,늘품영상검진센터,복부 CT,BIZ+4,13:00,normal,일반 슬롯,1,1,2,none,0,8,6
+S0105,REF051,loadtest_ref_051,문윤동,ORG051,새봄소아청소년과의원,1,11:23:16,40996,normal,login,status_poll,확정이 늦어 상태 조회를 반복,LAB10,바른영상센터,뇌 MRI,BIZ+7,14:30,normal,일반 슬롯,1,1,5,none,0,6,9
+S0106,REF059,loadtest_ref_059,어성훈,ORG059,새봄가정의학과의원,2,11:28:31,41311,normal,reissue,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB09,새봄검진센터,흉부 CT,BIZ+3,08:00,normal,일반 슬롯,1,1,2,rebook,15,2,10
+S0107,REF021,loadtest_ref_021,원경혜,ORG021,든든소아청소년과의원,2,11:29:21,41361,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB07,푸른영상의학과,뇌 MRI,NEXT_SAT,08:30,popular,토요일 오전 슬롯,1,2,2,none,0,3,7
+S0108,REF052,loadtest_ref_052,하지보,ORG052,하늘빛내과의원,1,11:32:37,41557,normal,login,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+5,10:30,normal,일반 슬롯,1,1,2,none,0,5,6
+S0109,REF041,loadtest_ref_041,손승가,ORG041,새봄이비인후과의원,3,11:40:47,42047,normal,reissue,normal,정상 흐름,LAB07,푸른영상의학과,뇌 MRI,BIZ+8,15:00,normal,일반 슬롯,1,1,2,none,0,7,6
+S0110,REF013,loadtest_ref_013,하수재,ORG013,늘빛내과의원,1,11:46:16,42376,normal,login,status_poll,"확정이 늦어 상태 조회를 반복, 확정 후 일정이 맞지 않아 취소",LAB02,한빛MRI센터,뇌 MRI,BIZ+8,09:00,normal,일반 슬롯,1,1,6,cancel,504,8,11
+S0111,REF045,loadtest_ref_045,황하혜,ORG045,고운내과의원,3,11:47:21,42441,normal,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB01,가람영상의학센터,척추 MRI,BIZ+1,16:30,normal,일반 슬롯,3,1,2,none,0,3,8
+S0112,REF046,loadtest_ref_046,류호현,ORG046,고운가정의학과의원,1,11:48:58,42538,normal,login,status_poll,확정이 늦어 상태 조회를 반복,LAB02,한빛MRI센터,뇌 MRI,BIZ+1,08:00,popular,MRI 오전 첫 타임,1,1,5,none,0,8,9
+S0113,REF012,loadtest_ref_012,엄서서,ORG012,사랑채이비인후과의원,1,11:54:56,42896,normal,login,normal,정상 흐름,LAB02,한빛MRI센터,뇌 MRI,BIZ+7,09:30,normal,일반 슬롯,1,1,2,none,0,5,6
+S0114,REF071,loadtest_ref_071,이서은,ORG071,늘빛소아청소년과의원,2,11:55:11,42911,normal,reissue,status_poll,"확정이 늦어 상태 조회를 반복, 확정 후 일정이 맞지 않아 취소",LAB01,가람영상의학센터,척추 MRI,BIZ+2,12:00,normal,일반 슬롯,1,1,6,cancel,544,3,11
+S0115,REF079,loadtest_ref_079,맹혜진,ORG079,누리봄소아청소년과의원,2,12:02:02,43322,lunch,reissue,normal,정상 흐름,LAB03,새솔영상의학과,복부 CT,BIZ+5,15:00,normal,일반 슬롯,1,1,2,none,0,4,6
+S0116,REF075,loadtest_ref_075,채미은,ORG075,한결가정의학과의원,1,12:03:02,43382,lunch,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB01,가람영상의학센터,복부 CT,BIZ+3,08:00,normal,일반 슬롯,2,1,2,none,0,5,7
+S0117,REF039,loadtest_ref_039,오라지,ORG039,누리봄가정의학과의원,2,12:03:14,43394,lunch,reissue,normal,정상 흐름,LAB01,가람영상의학센터,복부 CT,BIZ+1,16:00,normal,일반 슬롯,1,1,2,none,0,5,6
+S0118,REF027,loadtest_ref_027,선다승,ORG027,온누리소아청소년과의원,2,12:04:03,43443,lunch,reissue,normal,정상 흐름,LAB10,바른영상센터,뇌 MRI,BIZ+1,11:30,normal,일반 슬롯,1,1,2,none,0,7,6
+S0119,REF052,loadtest_ref_052,하지보,ORG052,하늘빛내과의원,2,12:04:56,43496,lunch,reuse,normal,정상 흐름,LAB02,한빛MRI센터,뇌 MRI,BIZ+4,15:30,normal,일반 슬롯,1,1,2,none,0,7,5
+S0120,REF026,loadtest_ref_026,표아우,ORG026,도담가정의학과의원,3,12:05:02,43502,lunch,reissue,normal,정상 흐름,LAB06,온빛영상센터,복부 CT,BIZ+10,09:00,normal,일반 슬롯,1,1,2,none,0,5,6
+S0121,REF048,loadtest_ref_048,홍영다,ORG048,햇살이비인후과의원,2,12:05:17,43517,lunch,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB07,푸른영상의학과,뇌 MRI,BIZ+5,14:30,normal,일반 슬롯,1,2,2,none,0,4,7
+S0122,REF022,loadtest_ref_022,인혜연,ORG022,햇살가정의학과의원,1,12:06:20,43580,lunch,login,normal,정상 흐름,LAB05,다솜영상의학과,뇌 MRI,BIZ+4,17:30,normal,일반 슬롯,1,1,2,none,0,7,6
+S0123,REF038,loadtest_ref_038,신주석,ORG038,가온내과의원,3,12:06:31,43591,lunch,reissue,double_click,"예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송), 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB01,가람영상의학센터,척추 MRI,BIZ+6,14:00,normal,일반 슬롯,1,2,2,rebook,30,5,11
+S0124,REF061,loadtest_ref_061,고석영,ORG061,푸른숲가정의학과의원,3,12:07:20,43640,lunch,reissue,normal,정상 흐름,LAB05,다솜영상의학과,뇌 MRI,BIZ+1,08:30,normal,일반 슬롯,1,1,2,none,0,2,6
+S0125,REF033,loadtest_ref_033,인승하,ORG033,사랑채가정의학과의원,3,12:09:02,43742,lunch,reissue,normal,정상 흐름,LAB01,가람영상의학센터,척추 MRI,BIZ+4,11:00,normal,일반 슬롯,1,1,2,none,0,5,6
+S0126,REF049,loadtest_ref_049,하라정,ORG049,도담이비인후과의원,1,12:09:19,43759,lunch,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,척추 MRI,BIZ+10,11:00,normal,일반 슬롯,3,1,2,none,0,5,8
+S0127,REF029,loadtest_ref_029,민태라,ORG029,한결소아청소년과의원,2,12:10:26,43826,lunch,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB02,한빛MRI센터,척추 MRI,BIZ+8,10:30,normal,일반 슬롯,1,2,2,none,0,8,7
+S0128,REF074,loadtest_ref_074,하아유,ORG074,누리봄이비인후과의원,2,12:11:17,43877,lunch,reuse,normal,정상 흐름,LAB07,푸른영상의학과,복부 CT,BIZ+6,17:30,normal,일반 슬롯,1,1,2,none,0,7,5
+S0129,REF050,loadtest_ref_050,천재정,ORG050,꿈나무이비인후과의원,2,12:12:42,43962,lunch,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB10,바른영상센터,뇌 MRI,BIZ+10,11:00,normal,일반 슬롯,3,1,2,none,0,7,8
+S0130,REF014,loadtest_ref_014,나진혜,ORG014,한결이비인후과의원,2,12:14:11,44051,lunch,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB03,새솔영상의학과,흉부 CT,BIZ+4,17:00,normal,일반 슬롯,3,1,2,none,0,6,8
+S0131,REF012,loadtest_ref_012,엄서서,ORG012,사랑채이비인후과의원,2,12:14:22,44062,lunch,reuse,double_click,"예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송), 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB02,한빛MRI센터,뇌 MRI,BIZ+3,09:30,normal,일반 슬롯,1,2,2,rebook,29,8,10
+S0132,REF011,loadtest_ref_011,임동수,ORG011,가온소아청소년과의원,2,12:15:35,44135,lunch,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB10,바른영상센터,뇌 MRI,BIZ+8,08:30,normal,일반 슬롯,3,1,2,none,0,2,8
+S0133,REF047,loadtest_ref_047,도미주,ORG047,하늘빛가정의학과의원,2,12:17:00,44220,lunch,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB06,온빛영상센터,복부 CT,NEXT_SAT,08:30,popular,토요일 오전 슬롯,2,1,2,none,0,8,7
+S0134,REF076,loadtest_ref_076,구재라,ORG076,참좋은소아청소년과의원,2,12:18:09,44289,lunch,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB02,한빛MRI센터,뇌 MRI,BIZ+4,12:30,normal,일반 슬롯,1,1,6,none,0,4,10
+S0135,REF013,loadtest_ref_013,하수재,ORG013,늘빛내과의원,2,12:19:12,44352,lunch,reuse,normal,정상 흐름,LAB01,가람영상의학센터,척추 MRI,BIZ+10,08:30,normal,일반 슬롯,1,1,2,none,0,7,5
+S0136,REF052,loadtest_ref_052,하지보,ORG052,하늘빛내과의원,3,12:20:47,44447,lunch,reuse,status_poll,확정이 늦어 상태 조회를 반복,LAB02,한빛MRI센터,뇌 MRI,BIZ+7,17:00,normal,일반 슬롯,1,1,5,none,0,8,8
+S0137,REF046,loadtest_ref_046,류호현,ORG046,고운가정의학과의원,2,12:22:58,44578,lunch,reuse,normal,정상 흐름,LAB01,가람영상의학센터,복부 CT,BIZ+5,13:00,normal,일반 슬롯,1,1,2,none,0,2,5
+S0138,REF002,loadtest_ref_002,구라현,ORG002,하늘빛이비인후과의원,2,12:24:03,44643,lunch,reissue,status_poll,"확정이 늦어 상태 조회를 반복, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB09,새봄검진센터,복부 CT,BIZ+9,15:00,normal,일반 슬롯,1,1,6,rebook,21,4,14
+S0139,REF004,loadtest_ref_004,용희다,ORG004,소나무내과의원,1,12:24:07,44647,lunch,login,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB08,미르영상의학과,척추 MRI,BIZ+10,11:30,normal,일반 슬롯,2,1,2,none,0,4,7
+S0140,REF031,loadtest_ref_031,박유소,ORG031,다온소아청소년과의원,2,12:24:42,44682,lunch,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB07,푸른영상의학과,뇌 MRI,BIZ+1,17:00,normal,일반 슬롯,1,1,6,none,0,4,10
+S0141,REF040,loadtest_ref_040,인동혜,ORG040,바른길내과의원,1,12:25:16,44716,lunch,login,status_poll,"확정이 늦어 상태 조회를 반복, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB10,바른영상센터,흉부 CT,BIZ+6,09:00,normal,일반 슬롯,1,1,6,rebook,9,4,14
+S0142,REF067,loadtest_ref_067,임현우,ORG067,맑은샘내과의원,2,12:26:02,44762,lunch,reissue,normal,정상 흐름,LAB06,온빛영상센터,복부 CT,BIZ+10,14:30,normal,일반 슬롯,1,1,2,none,0,8,6
+S0143,REF024,loadtest_ref_024,국승우,ORG024,햇살내과의원,1,12:26:45,44805,lunch,login,normal,정상 흐름,LAB01,가람영상의학센터,흉부 CT,BIZ+2,13:30,normal,일반 슬롯,1,1,2,none,0,4,6
+S0144,REF008,loadtest_ref_008,마훈영,ORG008,꿈나무가정의학과의원,2,12:27:42,44862,lunch,reissue,normal,정상 흐름,LAB09,새봄검진센터,흉부 CT,BIZ+4,14:00,normal,일반 슬롯,1,1,2,none,0,7,6
+S0145,REF057,loadtest_ref_057,우훈수,ORG057,온누리내과의원,3,12:30:14,45014,lunch,reissue,normal,정상 흐름,LAB10,바른영상센터,흉부 CT,BIZ+10,17:00,normal,일반 슬롯,1,1,2,none,0,4,6
+S0146,REF022,loadtest_ref_022,인혜연,ORG022,햇살가정의학과의원,2,12:31:15,45075,lunch,reuse,status_poll,확정이 늦어 상태 조회를 반복,LAB01,가람영상의학센터,흉부 CT,BIZ+8,08:00,normal,일반 슬롯,1,1,5,none,0,8,8
+S0147,REF018,loadtest_ref_018,길가경,ORG018,햇살소아청소년과의원,2,12:32:02,45122,lunch,reissue,normal,정상 흐름,LAB01,가람영상의학센터,흉부 CT,BIZ+10,16:00,normal,일반 슬롯,1,1,2,none,0,5,6
+S0148,REF047,loadtest_ref_047,도미주,ORG047,하늘빛가정의학과의원,3,12:35:01,45301,lunch,reuse,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+8,14:00,normal,일반 슬롯,1,1,2,none,0,5,5
+S0149,REF001,loadtest_ref_001,용훈원,ORG001,밝은미소소아청소년과의원,2,12:35:35,45335,lunch,reissue,normal,"정상 흐름, 확정 후 일정이 맞지 않아 취소",LAB10,바른영상센터,흉부 CT,BIZ+3,16:30,normal,일반 슬롯,1,1,2,cancel,289,6,7
+S0150,REF070,loadtest_ref_070,반도민,ORG070,고운소아청소년과의원,3,12:35:52,45352,lunch,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB07,푸른영상의학과,복부 CT,BIZ+10,14:30,normal,일반 슬롯,1,1,5,none,0,6,9
+S0151,REF059,loadtest_ref_059,어성훈,ORG059,새봄가정의학과의원,3,12:35:55,45355,lunch,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB09,새봄검진센터,흉부 CT,BIZ+10,12:00,normal,일반 슬롯,2,1,2,none,0,7,7
+S0152,REF049,loadtest_ref_049,하라정,ORG049,도담이비인후과의원,2,12:36:46,45406,lunch,reuse,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB05,다솜영상의학과,흉부 CT,BIZ+9,16:30,normal,일반 슬롯,3,1,2,none,0,2,7
+S0153,REF020,loadtest_ref_020,탁혜나,ORG020,도담내과의원,3,12:37:49,45469,lunch,reissue,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+4,17:00,normal,일반 슬롯,1,1,2,none,0,7,6
+S0154,REF008,loadtest_ref_008,마훈영,ORG008,꿈나무가정의학과의원,3,12:40:14,45614,lunch,reuse,normal,정상 흐름,LAB05,다솜영상의학과,뇌 MRI,BIZ+4,13:00,normal,일반 슬롯,1,1,2,none,0,3,5
+S0155,REF040,loadtest_ref_040,인동혜,ORG040,바른길내과의원,2,12:40:39,45639,lunch,reuse,normal,정상 흐름,LAB01,가람영상의학센터,척추 MRI,BIZ+2,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,8,5
+S0156,REF077,loadtest_ref_077,허우윤,ORG077,든든내과의원,2,12:41:00,45660,lunch,reissue,normal,정상 흐름,LAB08,미르영상의학과,흉부 CT,BIZ+8,13:30,normal,일반 슬롯,1,1,2,none,0,4,6
+S0157,REF058,loadtest_ref_058,변희연,ORG058,밝은미소내과의원,3,12:43:14,45794,lunch,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB08,미르영상의학과,척추 MRI,NEXT_SAT,08:30,popular,토요일 오전 슬롯,4,1,2,none,0,7,9
+S0158,REF024,loadtest_ref_024,국승우,ORG024,햇살내과의원,2,12:43:33,45813,lunch,reuse,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB01,가람영상의학센터,척추 MRI,BIZ+5,12:30,normal,일반 슬롯,1,1,2,rebook,13,3,9
+S0159,REF065,loadtest_ref_065,연진라,ORG065,고운이비인후과의원,2,12:44:46,45886,lunch,reissue,status_poll,"확정이 늦어 상태 조회를 반복, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB02,한빛MRI센터,뇌 MRI,BIZ+4,17:00,normal,일반 슬롯,1,1,4,rebook,26,4,12
+S0160,REF076,loadtest_ref_076,구재라,ORG076,참좋은소아청소년과의원,3,12:44:55,45895,lunch,reuse,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,뇌 MRI,BIZ+10,15:30,normal,일반 슬롯,2,1,2,none,0,6,6
+S0161,REF025,loadtest_ref_025,한석수,ORG025,다온가정의학과의원,2,12:45:26,45926,lunch,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB02,한빛MRI센터,척추 MRI,BIZ+3,16:30,normal,일반 슬롯,1,2,2,none,0,4,7
+S0162,REF051,loadtest_ref_051,문윤동,ORG051,새봄소아청소년과의원,2,12:46:11,45971,lunch,reissue,normal,정상 흐름,LAB09,새봄검진센터,흉부 CT,BIZ+2,12:30,normal,일반 슬롯,1,1,2,none,0,7,6
+S0163,REF023,loadtest_ref_023,양가석,ORG023,바른길가정의학과의원,2,12:47:02,46022,lunch,reissue,normal,정상 흐름,LAB06,온빛영상센터,복부 CT,BIZ+4,11:30,normal,일반 슬롯,1,1,2,none,0,3,6
+S0164,REF046,loadtest_ref_046,류호현,ORG046,고운가정의학과의원,3,12:47:07,46027,lunch,reissue,status_poll,"확정이 늦어 상태 조회를 반복, 확정 후 일정이 맞지 않아 취소",LAB01,가람영상의학센터,척추 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,1,4,cancel,121,2,9
+S0165,REF004,loadtest_ref_004,용희다,ORG004,소나무내과의원,2,12:47:09,46029,lunch,reuse,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+1,08:00,normal,일반 슬롯,1,1,2,none,0,4,5
+S0166,REF003,loadtest_ref_003,주가원,ORG003,한결내과의원,2,12:47:12,46032,lunch,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,뇌 MRI,BIZ+5,10:30,normal,일반 슬롯,3,1,2,none,0,2,8
+S0167,REF019,loadtest_ref_019,심다아,ORG019,하늘빛소아청소년과의원,2,12:47:43,46063,lunch,reissue,normal,정상 흐름,LAB01,가람영상의학센터,척추 MRI,BIZ+2,08:30,normal,일반 슬롯,1,1,2,none,0,5,6
+S0168,REF079,loadtest_ref_079,맹혜진,ORG079,누리봄소아청소년과의원,3,12:48:22,46102,lunch,reuse,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB10,바른영상센터,흉부 CT,NEXT_SAT,09:00,popular,토요일 오전 슬롯,1,1,2,rebook,16,8,9
+S0169,REF071,loadtest_ref_071,이서은,ORG071,늘빛소아청소년과의원,3,12:48:40,46120,lunch,reuse,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB08,미르영상의학과,척추 MRI,BIZ+7,13:00,normal,일반 슬롯,1,2,2,none,0,4,6
+S0170,REF080,loadtest_ref_080,배윤은,ORG080,꿈나무내과의원,2,12:51:13,46273,lunch,reissue,normal,정상 흐름,LAB04,늘품영상검진센터,복부 CT,BIZ+4,14:30,normal,일반 슬롯,1,1,2,none,0,8,6
+S0171,REF009,loadtest_ref_009,제윤혜,ORG009,늘빛이비인후과의원,1,12:54:43,46483,lunch,login,status_poll,확정이 늦어 상태 조회를 반복,LAB03,새솔영상의학과,복부 CT,BIZ+1,08:00,normal,일반 슬롯,1,1,4,none,0,3,8
+S0172,REF068,loadtest_ref_068,유유호,ORG068,참좋은내과의원,2,12:56:17,46577,lunch,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB04,늘품영상검진센터,흉부 CT,BIZ+1,17:00,normal,일반 슬롯,3,1,2,none,0,5,8
+S0173,REF063,loadtest_ref_063,권수아,ORG063,소나무가정의학과의원,2,12:56:56,46616,lunch,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB06,온빛영상센터,복부 CT,BIZ+9,17:30,normal,일반 슬롯,2,1,2,none,0,3,7
+S0174,REF035,loadtest_ref_035,연나원,ORG035,온누리이비인후과의원,2,12:57:36,46656,lunch,reissue,normal,정상 흐름,LAB07,푸른영상의학과,뇌 MRI,BIZ+1,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,5,6
+S0175,REF078,loadtest_ref_078,곽연경,ORG078,든든가정의학과의원,2,13:01:04,46864,normal,reissue,normal,정상 흐름,LAB01,가람영상의학센터,척추 MRI,BIZ+10,08:30,normal,일반 슬롯,1,1,2,none,0,6,6
+S0176,REF011,loadtest_ref_011,임동수,ORG011,가온소아청소년과의원,3,13:03:41,47021,normal,reuse,normal,정상 흐름,LAB10,바른영상센터,뇌 MRI,BIZ+2,10:00,normal,일반 슬롯,1,1,2,none,0,6,5
+S0177,REF053,loadtest_ref_053,옥동민,ORG053,누리봄내과의원,3,13:14:32,47672,normal,reissue,normal,정상 흐름,LAB08,미르영상의학과,흉부 CT,BIZ+10,15:00,normal,일반 슬롯,1,1,2,none,0,3,6
+S0178,REF018,loadtest_ref_018,길가경,ORG018,햇살소아청소년과의원,3,13:17:45,47865,normal,reuse,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB04,늘품영상검진센터,흉부 CT,BIZ+2,17:30,normal,일반 슬롯,4,1,2,none,0,7,8
+S0179,REF050,loadtest_ref_050,천재정,ORG050,꿈나무이비인후과의원,3,13:22:52,48172,normal,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB04,늘품영상검진센터,복부 CT,BIZ+9,14:30,normal,일반 슬롯,1,1,5,none,0,2,9
+S0180,REF064,loadtest_ref_064,황연재,ORG064,온누리가정의학과의원,3,13:28:21,48501,normal,reissue,normal,정상 흐름,LAB01,가람영상의학센터,척추 MRI,BIZ+1,12:30,normal,일반 슬롯,1,1,2,none,0,5,6
+S0181,REF028,loadtest_ref_028,공채다,ORG028,바른길이비인후과의원,3,13:28:40,48520,normal,reissue,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB06,온빛영상센터,척추 MRI,BIZ+4,17:00,normal,일반 슬롯,1,1,2,rebook,8,4,10
+S0182,REF014,loadtest_ref_014,나진혜,ORG014,한결이비인후과의원,3,13:31:35,48695,normal,reissue,normal,정상 흐름,LAB02,한빛MRI센터,뇌 MRI,BIZ+10,10:00,normal,일반 슬롯,1,1,2,none,0,6,6
+S0183,REF072,loadtest_ref_072,홍진승,ORG072,푸른숲이비인후과의원,3,13:33:48,48828,normal,reissue,normal,정상 흐름,LAB05,다솜영상의학과,뇌 MRI,BIZ+8,11:00,normal,일반 슬롯,1,1,2,none,0,2,6
+S0184,REF009,loadtest_ref_009,제윤혜,ORG009,늘빛이비인후과의원,2,13:37:35,49055,normal,reuse,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+4,12:00,normal,일반 슬롯,1,1,2,none,0,6,5
+S0185,REF025,loadtest_ref_025,한석수,ORG025,다온가정의학과의원,3,13:41:08,49268,normal,reissue,normal,정상 흐름,LAB08,미르영상의학과,흉부 CT,BIZ+8,11:00,normal,일반 슬롯,1,1,2,none,0,2,6
+S0186,REF024,loadtest_ref_024,국승우,ORG024,햇살내과의원,3,13:48:24,49704,normal,reissue,normal,정상 흐름,LAB01,가람영상의학센터,척추 MRI,BIZ+5,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,5,6
+S0187,REF032,loadtest_ref_032,최혜윤,ORG032,든든이비인후과의원,2,13:56:52,50212,normal,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB09,새봄검진센터,흉부 CT,BIZ+8,09:00,normal,일반 슬롯,3,1,2,none,0,4,8
+S0188,REF022,loadtest_ref_022,인혜연,ORG022,햇살가정의학과의원,3,14:00:09,50409,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB05,다솜영상의학과,흉부 CT,BIZ+3,12:30,normal,일반 슬롯,1,2,2,none,0,6,7
+S0189,REF003,loadtest_ref_003,주가원,ORG003,한결내과의원,3,14:08:24,50904,normal,reissue,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,BIZ+1,13:00,normal,일반 슬롯,1,1,2,none,0,2,6
+S0190,REF063,loadtest_ref_063,권수아,ORG063,소나무가정의학과의원,3,14:11:20,51080,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB08,미르영상의학과,척추 MRI,BIZ+1,09:00,normal,일반 슬롯,1,2,2,none,0,3,7
+S0191,REF035,loadtest_ref_035,연나원,ORG035,온누리이비인후과의원,3,14:12:50,51170,normal,reissue,normal,정상 흐름,LAB09,새봄검진센터,흉부 CT,BIZ+3,08:30,normal,일반 슬롯,1,1,2,none,0,7,6
+S0192,REF004,loadtest_ref_004,용희다,ORG004,소나무내과의원,3,14:19:37,51577,normal,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,척추 MRI,BIZ+2,08:00,popular,MRI 오전 첫 타임,4,1,2,none,0,3,9
+S0193,REF036,loadtest_ref_036,지정승,ORG036,다온내과의원,2,14:22:45,51765,normal,reissue,normal,정상 흐름,LAB05,다솜영상의학과,흉부 CT,BIZ+3,09:30,normal,일반 슬롯,1,1,2,none,0,2,6
+S0194,REF031,loadtest_ref_031,박유소,ORG031,다온소아청소년과의원,3,14:22:48,51768,normal,reissue,normal,정상 흐름,LAB09,새봄검진센터,복부 CT,BIZ+2,14:00,normal,일반 슬롯,1,1,2,none,0,5,6
+S0195,REF006,loadtest_ref_006,추지영,ORG006,소나무소아청소년과의원,2,14:25:04,51904,normal,reissue,normal,"정상 흐름, 확정 후 일정이 맞지 않아 취소",LAB05,다솜영상의학과,흉부 CT,BIZ+5,16:30,normal,일반 슬롯,1,1,2,cancel,481,3,7
+S0196,REF001,loadtest_ref_001,용훈원,ORG001,밝은미소소아청소년과의원,3,14:26:08,51968,normal,reissue,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB01,가람영상의학센터,척추 MRI,BIZ+8,13:00,normal,일반 슬롯,1,1,2,rebook,10,6,10
+S0197,REF029,loadtest_ref_029,민태라,ORG029,한결소아청소년과의원,3,14:31:09,52269,normal,reissue,normal,정상 흐름,LAB05,다솜영상의학과,뇌 MRI,BIZ+10,12:30,normal,일반 슬롯,1,1,2,none,0,8,6
+S0198,REF077,loadtest_ref_077,허우윤,ORG077,든든내과의원,3,14:38:23,52703,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB01,가람영상의학센터,뇌 MRI,BIZ+8,14:00,normal,일반 슬롯,1,2,2,none,0,5,7
+S0199,REF065,loadtest_ref_065,연진라,ORG065,고운이비인후과의원,3,14:42:40,52960,normal,reissue,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB03,새솔영상의학과,흉부 CT,BIZ+9,16:00,normal,일반 슬롯,1,1,2,rebook,25,7,10
+S0200,REF021,loadtest_ref_021,원경혜,ORG021,든든소아청소년과의원,3,14:46:27,53187,normal,reissue,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,NEXT_SAT,09:00,popular,토요일 오전 슬롯,1,1,2,none,0,3,6
+S0201,REF044,loadtest_ref_044,구진미,ORG044,맑은샘이비인후과의원,3,14:48:07,53287,normal,reissue,normal,"정상 흐름, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB02,한빛MRI센터,뇌 MRI,BIZ+6,10:30,normal,일반 슬롯,1,1,2,rebook,8,6,10
+S0202,REF034,loadtest_ref_034,안나정,ORG034,다온이비인후과의원,2,14:55:48,53748,normal,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB01,가람영상의학센터,흉부 CT,BIZ+9,14:30,normal,일반 슬롯,1,1,4,none,0,7,8
+S0203,REF069,loadtest_ref_069,손다승,ORG069,도담소아청소년과의원,3,15:03:23,54203,normal,reissue,normal,정상 흐름,LAB09,새봄검진센터,복부 CT,BIZ+10,08:00,normal,일반 슬롯,1,1,2,none,0,8,6
+S0204,REF067,loadtest_ref_067,임현우,ORG067,맑은샘내과의원,3,15:10:43,54643,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB06,온빛영상센터,척추 MRI,BIZ+5,10:30,normal,일반 슬롯,1,2,2,none,0,3,7
+S0205,REF056,loadtest_ref_056,현보영,ORG056,가온이비인후과의원,3,15:18:25,55105,normal,reissue,normal,정상 흐름,LAB02,한빛MRI센터,뇌 MRI,BIZ+9,16:30,normal,일반 슬롯,1,1,2,none,0,2,6
+S0206,REF055,loadtest_ref_055,금가준,ORG055,푸른숲내과의원,3,15:18:38,55118,normal,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB03,새솔영상의학과,복부 CT,BIZ+5,09:30,normal,일반 슬롯,1,1,4,none,0,4,8
+S0207,REF009,loadtest_ref_009,제윤혜,ORG009,늘빛이비인후과의원,3,15:20:33,55233,normal,reissue,normal,정상 흐름,LAB01,가람영상의학센터,복부 CT,BIZ+9,15:00,normal,일반 슬롯,1,1,2,none,0,5,6
+S0208,REF006,loadtest_ref_006,추지영,ORG006,소나무소아청소년과의원,3,15:25:33,55533,normal,reissue,search_retry,"원하는 날짜가 없어 슬롯 검색을 여러 번 반복, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB02,한빛MRI센터,척추 MRI,BIZ+3,08:00,popular,MRI 오전 첫 타임,3,1,2,rebook,17,2,12
+S0209,REF068,loadtest_ref_068,유유호,ORG068,참좋은내과의원,3,15:31:17,55877,normal,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,척추 MRI,BIZ+1,09:30,normal,일반 슬롯,4,1,2,none,0,5,9
+S0210,REF023,loadtest_ref_023,양가석,ORG023,바른길가정의학과의원,3,15:33:25,56005,normal,reissue,normal,정상 흐름,LAB02,한빛MRI센터,척추 MRI,BIZ+6,17:00,normal,일반 슬롯,1,1,2,none,0,2,6
+S0211,REF042,loadtest_ref_042,제정하,ORG042,참좋은이비인후과의원,2,15:35:00,56100,normal,reissue,normal,정상 흐름,LAB10,바른영상센터,뇌 MRI,BIZ+2,16:00,normal,일반 슬롯,1,1,2,none,0,8,6
+S0212,REF037,loadtest_ref_037,서혜승,ORG037,가온가정의학과의원,3,15:35:51,56151,normal,reissue,normal,정상 흐름,LAB06,온빛영상센터,척추 MRI,BIZ+10,17:00,normal,일반 슬롯,1,1,2,none,0,7,6
+S0213,REF075,loadtest_ref_075,채미은,ORG075,한결가정의학과의원,2,15:41:55,56515,normal,reissue,search_retry,"원하는 날짜가 없어 슬롯 검색을 여러 번 반복, 확정 후 일정이 맞지 않아 취소",LAB04,늘품영상검진센터,복부 CT,BIZ+2,16:30,normal,일반 슬롯,3,1,2,cancel,255,8,9
+S0214,REF062,loadtest_ref_062,민성다,ORG062,사랑채내과의원,2,15:46:13,56773,normal,reissue,normal,정상 흐름,LAB06,온빛영상센터,복부 CT,BIZ+3,15:30,normal,일반 슬롯,1,1,2,none,0,5,6
+S0215,REF042,loadtest_ref_042,제정하,ORG042,참좋은이비인후과의원,3,15:49:49,56989,normal,reuse,normal,정상 흐름,LAB06,온빛영상센터,복부 CT,BIZ+2,11:00,normal,일반 슬롯,1,1,2,none,0,7,5
+S0216,REF027,loadtest_ref_027,선다승,ORG027,온누리소아청소년과의원,3,15:50:39,57039,normal,reissue,normal,정상 흐름,LAB05,다솜영상의학과,흉부 CT,BIZ+4,09:00,normal,일반 슬롯,1,1,2,none,0,3,6
+S0217,REF005,loadtest_ref_005,왕도하,ORG005,사랑채소아청소년과의원,3,15:58:39,57519,normal,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB01,가람영상의학센터,뇌 MRI,BIZ+3,14:00,normal,일반 슬롯,1,1,5,none,0,3,9
+S0218,REF040,loadtest_ref_040,인동혜,ORG040,바른길내과의원,3,16:00:27,57627,normal,reissue,normal,정상 흐름,LAB05,다솜영상의학과,뇌 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,1,2,none,0,8,6
+S0219,REF048,loadtest_ref_048,홍영다,ORG048,햇살이비인후과의원,3,16:01:33,57693,normal,reissue,normal,정상 흐름,LAB01,가람영상의학센터,흉부 CT,BIZ+3,11:00,normal,일반 슬롯,1,1,2,none,0,2,6
+S0220,REF039,loadtest_ref_039,오라지,ORG039,누리봄가정의학과의원,3,16:06:49,58009,normal,reissue,normal,정상 흐름,LAB04,늘품영상검진센터,복부 CT,BIZ+5,10:00,normal,일반 슬롯,1,1,2,none,0,7,6
+S0221,REF074,loadtest_ref_074,하아유,ORG074,누리봄이비인후과의원,3,16:11:43,58303,normal,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB04,늘품영상검진센터,복부 CT,BIZ+6,12:30,normal,일반 슬롯,1,1,5,none,0,7,9
+S0222,REF013,loadtest_ref_013,하수재,ORG013,늘빛내과의원,3,16:15:24,58524,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB03,새솔영상의학과,복부 CT,BIZ+6,08:00,normal,일반 슬롯,1,2,2,none,0,5,7
+S0223,REF030,loadtest_ref_030,한호주,ORG030,꿈나무소아청소년과의원,3,16:20:22,58822,normal,reissue,normal,정상 흐름,LAB04,늘품영상검진센터,복부 CT,BIZ+8,13:30,normal,일반 슬롯,1,1,2,none,0,7,6
+S0224,REF032,loadtest_ref_032,최혜윤,ORG032,든든이비인후과의원,3,16:29:41,59381,normal,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB03,새솔영상의학과,복부 CT,BIZ+2,15:00,normal,일반 슬롯,1,1,6,none,0,3,10
+S0225,REF080,loadtest_ref_080,배윤은,ORG080,꿈나무내과의원,3,16:33:32,59612,normal,reissue,search_retry,"원하는 날짜가 없어 슬롯 검색을 여러 번 반복, 확정 실패 시 다른 슬롯으로 새 의뢰 생성",LAB08,미르영상의학과,척추 MRI,BIZ+10,17:00,normal,일반 슬롯,4,1,2,rebook,21,3,13
+S0226,REF066,loadtest_ref_066,길윤혜,ORG066,소나무이비인후과의원,3,16:38:27,59907,normal,reissue,normal,정상 흐름,LAB01,가람영상의학센터,척추 MRI,BIZ+7,15:00,normal,일반 슬롯,1,1,2,none,0,7,6
+S0227,REF051,loadtest_ref_051,문윤동,ORG051,새봄소아청소년과의원,3,16:40:58,60058,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB05,다솜영상의학과,뇌 MRI,BIZ+4,08:00,popular,MRI 오전 첫 타임,1,2,2,none,0,6,7
+S0228,REF078,loadtest_ref_078,곽연경,ORG078,든든가정의학과의원,3,16:42:43,60163,normal,reissue,double_click,예약 버튼을 두 번 클릭 (같은 멱등 키로 의뢰 생성 2회 전송),LAB06,온빛영상센터,척추 MRI,BIZ+1,10:00,normal,일반 슬롯,1,2,2,none,0,8,7
+S0229,REF002,loadtest_ref_002,구라현,ORG002,하늘빛이비인후과의원,3,16:44:51,60291,normal,reissue,normal,정상 흐름,LAB02,한빛MRI센터,뇌 MRI,BIZ+10,09:00,normal,일반 슬롯,1,1,2,none,0,5,6
+S0230,REF054,loadtest_ref_054,진동연,ORG054,바른길소아청소년과의원,3,16:45:17,60317,normal,reissue,normal,정상 흐름,LAB02,한빛MRI센터,뇌 MRI,BIZ+4,11:30,normal,일반 슬롯,1,1,2,none,0,3,6
+S0231,REF036,loadtest_ref_036,지정승,ORG036,다온내과의원,3,17:04:26,61466,normal,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,뇌 MRI,BIZ+6,09:30,normal,일반 슬롯,4,1,2,none,0,3,9
+S0232,REF049,loadtest_ref_049,하라정,ORG049,도담이비인후과의원,3,17:06:51,61611,normal,reissue,normal,정상 흐름,LAB06,온빛영상센터,복부 CT,BIZ+1,09:00,normal,일반 슬롯,1,1,2,none,0,2,6
+S0233,REF075,loadtest_ref_075,채미은,ORG075,한결가정의학과의원,3,17:13:14,61994,normal,reissue,normal,정상 흐름,LAB01,가람영상의학센터,척추 MRI,BIZ+5,11:30,normal,일반 슬롯,1,1,2,none,0,4,6
+S0234,REF012,loadtest_ref_012,엄서서,ORG012,사랑채이비인후과의원,3,17:14:17,62057,normal,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB02,한빛MRI센터,척추 MRI,BIZ+5,08:00,popular,MRI 오전 첫 타임,3,1,2,none,0,8,8
+S0235,REF019,loadtest_ref_019,심다아,ORG019,하늘빛소아청소년과의원,3,17:18:57,62337,normal,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB03,새솔영상의학과,흉부 CT,BIZ+9,12:30,normal,일반 슬롯,1,1,5,none,0,4,9
+S0236,REF062,loadtest_ref_062,민성다,ORG062,사랑채내과의원,3,17:32:04,63124,normal,reissue,search_retry,원하는 날짜가 없어 슬롯 검색을 여러 번 반복,LAB01,가람영상의학센터,뇌 MRI,BIZ+1,08:00,popular,MRI 오전 첫 타임,3,1,2,none,0,7,8
+S0237,REF015,loadtest_ref_015,원경경,ORG015,밝은미소이비인후과의원,3,17:40:07,63607,normal,reissue,normal,정상 흐름,LAB08,미르영상의학과,척추 MRI,BIZ+7,16:00,normal,일반 슬롯,1,1,2,none,0,2,6
+S0238,REF016,loadtest_ref_016,연진도,ORG016,맑은샘소아청소년과의원,3,17:43:42,63822,normal,reissue,normal,정상 흐름,LAB09,새봄검진센터,복부 CT,BIZ+7,14:30,normal,일반 슬롯,1,1,2,none,0,5,6
+S0239,REF007,loadtest_ref_007,오윤준,ORG007,참좋은가정의학과의원,3,17:49:20,64160,normal,reissue,status_poll,확정이 늦어 상태 조회를 반복,LAB01,가람영상의학센터,뇌 MRI,BIZ+7,08:00,normal,일반 슬롯,1,1,5,none,0,3,9
+S0240,REF034,loadtest_ref_034,안나정,ORG034,다온이비인후과의원,3,17:49:29,64169,normal,reissue,normal,정상 흐름,LAB01,가람영상의학센터,흉부 CT,BIZ+1,14:00,normal,일반 슬롯,1,1,2,none,0,3,6
