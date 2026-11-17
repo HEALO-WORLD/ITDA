@@ -1,0 +1,11 @@
+﻿user_id,login_id,name,lab_id,lab_name,login_time,logout_time,poll_interval_sec,poll_jitter_sec,lunch_behavior,processing_style,batch_size,today_exam_count,expected_poll_calls,expected_reissue_calls,expected_process_calls,expected_api_calls
+LAB01,loadtest_lab_01,류서호,LAB01,가람영상의학센터,07:50:10,18:04:48,30,5,pause,immediate,0,24,1109,11,72,1193
+LAB02,loadtest_lab_02,석소승,LAB02,한빛MRI센터,07:46:08,18:25:02,30,5,keep_polling,immediate,0,24,1277,11,72,1361
+LAB03,loadtest_lab_03,지민주,LAB03,새솔영상의학과,07:44:27,18:02:46,30,5,pause,immediate,0,24,1116,11,72,1200
+LAB04,loadtest_lab_04,하승소,LAB04,늘품영상검진센터,07:43:37,18:12:23,30,5,keep_polling,batch,6,24,1257,11,72,1341
+LAB05,loadtest_lab_05,설지민,LAB05,다솜영상의학과,07:51:39,18:07:20,30,5,keep_polling,batch,5,24,1231,11,72,1315
+LAB06,loadtest_lab_06,강하동,LAB06,온빛영상센터,07:49:00,18:18:59,30,5,pause,batch,6,24,1139,11,72,1223
+LAB07,loadtest_lab_07,노유소,LAB07,푸른영상의학과,07:54:20,18:05:14,30,5,keep_polling,immediate,0,24,1221,11,72,1305
+LAB08,loadtest_lab_08,주재연,LAB08,미르영상의학과,07:51:58,18:18:42,30,5,pause,immediate,0,24,1133,11,72,1217
+LAB09,loadtest_lab_09,소채채,LAB09,새봄검진센터,07:42:19,18:25:05,30,5,keep_polling,batch,6,24,1285,11,72,1369
+LAB10,loadtest_lab_10,석민호,LAB10,바른영상센터,07:57:29,18:05:31,30,5,pause,batch,8,24,1096,11,72,1180
