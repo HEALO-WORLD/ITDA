@@ -11,7 +11,8 @@ DB별 테이블 CSV로 나눠 쓴다. 적재는 run-seed.sh가 COPY로 한다.
     python gen_seed.py --total 21900         # 규모 조절 (기본 240 x 365 = 87,600)
 
 규칙:
-    - 모든 ID는 f1KK0000-0000-0000-0000-NNNNNNNNNNNN 형태다 (KK=종류, N=순번). 식별·삭제는 이 패턴 전체로 한다
+    - 모든 ID는 f1KK0000-0000-0000-0000-NNNNNNNNNNNN 형태다 (KK=종류 01~, N=순번). 식별·삭제는 이 패턴 전체로 한다
+      (KK=00인 f1000000-…은 예전 load-test/sql 테스트가 만든 데이터라 run-seed.sh가 시드로 보지 않는다)
       (앞 두 글자 f1만 보면 앱이 만든 무작위 UUID도 256분의 1 확률로 걸린다. v4·v7 UUID는 세 번째 묶음이 0000일 수 없다)
     - 같은 시드·기준일이면 항상 같은 결과가 나온다
     - 의뢰는 기준일 전날까지 만들어지고, 검사일은 의뢰일로부터 1~10영업일 뒤(일부 토요일)
@@ -172,11 +173,12 @@ def build(seed: int, today: date, total: int, days: int, out_root: Path, ahead_d
         out.row(t_part_h, [ids.next("partnership_history"), pid, "PENDING", "ACTIVE",
                            ts(approved_at), SYSTEM_USER, ts(approved_at), SYSTEM_USER])
 
-    t_exam_type = out.table("institution_db", "p_exam_types", ["id", "name", "modality", "duration_minutes"] + BASE_COLS)
+    # 검사 시간은 장비별 검사 종류(p_equipment_exam_types)에만 있다
+    t_exam_type = out.table("institution_db", "p_exam_types", ["id", "name", "modality"] + BASE_COLS)
     exam_type_id = {}
     for name, modality in EXAM_TYPES.items():
         exam_type_id[name] = ids.next("exam_type")
-        out.row(t_exam_type, [exam_type_id[name], name, modality, EXAM_MINUTES,
+        out.row(t_exam_type, [exam_type_id[name], name, modality,
                               ts(setup_at), SYSTEM_USER, ts(setup_at), SYSTEM_USER])
 
     t_eq = out.table("institution_db", "p_equipments",
