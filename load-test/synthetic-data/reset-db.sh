@@ -61,6 +61,12 @@ restore() {
     admin -c "DROP DATABASE $db WITH (FORCE)" -c "CREATE DATABASE $db TEMPLATE ${db}_seed"
     echo "  ${db}_seed → $db"
   done
+  # 복원 시각을 남긴다. after-test.sh가 이 시각 이후 생성된 행만 '이번 회차'로 센다 (기존 운영 데이터가 섞이지 않도록)
+  # 앱이 created_at을 한국 시간으로 쓰므로 같은 기준으로 적는다
+  local at
+  at=$(admin -c "SELECT to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS.US')")
+  admin -c "COMMENT ON DATABASE referral_db IS 'restored_at=$at'"
+  echo "  복원 시각 $at"
 }
 
 status() {

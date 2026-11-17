@@ -26,6 +26,9 @@ export const TOKEN_REFRESH_SEC = Number(__ENV.TOKEN_REFRESH_SEC || 55 * 60);
 
 // API별 응답 시간 기준 (p95, ms)
 export const P95_MS = Number(__ENV.P95_MS || 500);
+// 로그인은 따로 1초로 둔다. 비밀번호 확인(BCrypt 강도 10)이 한 건에 CPU 약 100ms를 써서,
+// 접수 오픈처럼 로그인이 몰리면 코어 수만큼만 동시에 처리되고 나머지는 줄을 선다 (배포 2 vCPU에서 동시 10건 → 약 0.5초)
+export const LOGIN_P95_MS = Number(__ENV.LOGIN_P95_MS || 1000);
 // 생성 → 확정·실패까지 기준 (p95, ms)
 // saga 한 바퀴에 Outbox 발행이 4번(HoldRequested → SlotHeld → BookSlot → SlotBooked)이고 발행 주기가 1초라
 // 부하가 없어도 2초 안팎이 걸린다. 상태 조회 간격(1초) 오차까지 감안해 5초로 둔다

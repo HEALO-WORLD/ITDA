@@ -1,7 +1,7 @@
 // CSV 시각표 재생 (기준선·내구성 공통)
 //   원무직원 80명, 검사관리자 10명이 각자 VU 하나를 맡아, 시간대(WINDOW_START~WINDOW_END)의 일정을 순서대로 실행한다
 import exec from 'k6/execution';
-import { CONFIRM_P95_MS, P95_MS, TIME_SCALE } from './config.js';
+import { CONFIRM_P95_MS, LOGIN_P95_MS, P95_MS, TIME_SCALE } from './config.js';
 import { managers, referrers, sessions } from './data.js';
 import {
     labManagerDay, newCtx, referrerSession, setupExamTypes, setupManagerCtxs, setupTodayExams,
@@ -17,7 +17,9 @@ export function thresholds(apis, extra) {
         flow_error: ['count==0'],
         idempotency_violation: ['count==0'],
     };
-    (apis || MEASURED_APIS).forEach((a) => { t[`http_req_duration{api:${a}}`] = [`p(95)<${P95_MS}`]; });
+    (apis || MEASURED_APIS).forEach((a) => {
+        t[`http_req_duration{api:${a}}`] = [`p(95)<${a === 'login' ? LOGIN_P95_MS : P95_MS}`];
+    });
     return Object.assign(t, extra || {});
 }
 

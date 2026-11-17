@@ -10,11 +10,22 @@ cd "$(dirname "$0")"
 CONTAINER="${CONTAINER:-itda-postgres}"
 PGUSER="${PGUSER:-itda}"
 DRAIN_TIMEOUT="${DRAIN_TIMEOUT:-300}"
-SEED_ID='f1______-0000-0000-0000-%'   # run-seed.sh와 같은 시드 ID 패턴
-
 q() {  # q <db> <sql>
   docker exec -i "$CONTAINER" psql -U "$PGUSER" -d "$1" -v ON_ERROR_STOP=1 -q -At -c "$2"
 }
+
+# '이번 회차' = reset-db.sh restore가 남긴 복원 시각 이후 생성된 행 (기존 운영 데이터·시드가 섞이지 않는다)
+# 복원 시각이 없으면(restore 없이 시드 직후 실행 등) 시드 ID 패턴이 아닌 행 전체로 본다
+SINCE=$(q postgres "SELECT substring(shobj_description(oid, 'pg_database') FROM 'restored_at=(.*)') FROM pg_database WHERE datname = 'referral_db'")
+if [ -n "$SINCE" ]; then
+  ROUND="created_at >= TIMESTAMP '$SINCE'"
+  ROUND_UPDATED="updated_at >= TIMESTAMP '$SINCE'"
+  ROUND_DESC="복원 시각 $SINCE 이후 생성"
+else
+  ROUND="id::text NOT LIKE 'f1______-0000-0000-0000-%'"
+  ROUND_UPDATED="updated_at::date = CURRENT_DATE"
+  ROUND_DESC="시드 ID 패턴이 아닌 행 (복원 시각 없음)"
+fi
 
 echo "== 밀린 처리 대기 (최대 ${DRAIN_TIMEOUT}초)"
 start=$(date +%s)
@@ -67,9 +78,9 @@ check "의뢰의 현재 예약이 그 의뢰의 예약이 아님" \
 check "DLT에 처리 대기 메시지 (referral·slot 합계)" \
   "$(( $(q referral_db "SELECT count(*) FROM p_dead_letter_events WHERE dead_letter_status = 'PENDING'") + $(q slot_db "SELECT count(*) FROM p_dead_letter_events WHERE dead_letter_status = 'PENDING'") ))"
 
-echo "== 이번 회차에 테스트가 만든 데이터 (시드 ID 패턴이 아닌 행)"
-q referral_db "SELECT '  의뢰 ' || referral_status || ' ' || count(*) || '건' FROM p_referrals WHERE id::text NOT LIKE '$SEED_ID' GROUP BY referral_status ORDER BY 1"
-q referral_db "SELECT '  검사 ' || status || ' ' || count(*) || '건 (오늘 검사 예정분 처리 결과 포함)' FROM p_examinations WHERE updated_at::date = CURRENT_DATE GROUP BY status ORDER BY 1"
+echo "== 이번 회차에 테스트가 만든 데이터 ($ROUND_DESC)"
+q referral_db "SELECT '  의뢰 ' || referral_status || ' ' || count(*) || '건' FROM p_referrals WHERE $ROUND GROUP BY referral_status ORDER BY 1"
+q referral_db "SELECT '  검사 ' || status || ' ' || count(*) || '건 (오늘 검사 예정분 처리 결과 포함)' FROM p_examinations WHERE $ROUND_UPDATED GROUP BY status ORDER BY 1"
 
 # 생성 → 확정·실패까지 걸린 시간을 DB 시각으로 잰다 (k6 상태 조회 간격과 무관한 밀리초 단위 값, 추가 요청 없음)
 #   확정: confirmed_at - created_at / 실패(슬롯 경합 등): ended_at - created_at
@@ -81,7 +92,7 @@ docker exec -i "$CONTAINER" psql -U "$PGUSER" -d referral_db -q -c "
            reservation_status,
            extract(epoch FROM (coalesce(confirmed_at, ended_at) - created_at)) * 1000 AS ms
       FROM p_reservations
-     WHERE id::text NOT LIKE '$SEED_ID'
+     WHERE $ROUND
   )
   SELECT to_char(minute, 'HH24:MI') AS 분,
          count(*) AS 생성,
