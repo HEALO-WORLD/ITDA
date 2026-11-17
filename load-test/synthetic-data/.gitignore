@@ -1,0 +1,2 @@
+# gen_seed.py가 만드는 적재용 CSV (약 450MB, 언제든 다시 생성 가능)
+seed-out/
