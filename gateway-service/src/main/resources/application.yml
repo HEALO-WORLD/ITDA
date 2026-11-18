@@ -161,7 +161,6 @@ gateway:
           - "GET /api/v1/equipments/*/status-histories"
           - "POST /api/v1/examinations/*/results"
           - "PATCH /api/v1/examinations/*/status"
-          - "PATCH /api/v1/referrals/*/complete"
           - "GET /api/v1/examinations/*/results"
           - "GET /api/v1/examinations"
 
@@ -189,9 +188,7 @@ gateway:
         rules:
           - "POST /api/v1/slots"
           - "POST /api/v1/slots/generate"
-          - "PATCH,DELETE /api/v1/slots/*"
           - "POST /api/v1/equipment-downtimes"
-          - "PATCH,DELETE /api/v1/equipment-downtimes/*"
           - "PATCH /api/v1/equipment-downtimes/*/recovery"
           - "PATCH /api/v1/equipment-downtimes/*/extension"
           - "GET /api/v1/equipment-incidents"
@@ -217,8 +214,6 @@ gateway:
           - "PATCH /api/v1/partnerships/*/terminate"
           - "GET /api/v1/slots"
           - "GET /api/v1/slots/*"
-          - "GET /api/v1/equipment-downtimes"
-          - "GET /api/v1/equipment-downtimes/*"
           - "GET /api/v1/referrals/*"
           - "GET /api/v1/referrals/reservations"
           - "GET /api/v1/referrals/reservations/*"
