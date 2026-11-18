@@ -49,7 +49,9 @@ spring:
 
 outbox:
   publish:
-    fixed-delay-ms: 1000
+    # 발행 회차 사이 쉬는 시간. 확정까지 Outbox를 여러 번 거치므로 짧을수록 확정이 빨라진다
+    # 문제가 생기면 재배포 없이 환경변수로 되돌린다 (예전 값 1000)
+    fixed-delay-ms: ${OUTBOX_PUBLISH_FIXED_DELAY_MS:200}
 
 hold-expiry:
   fixed-delay-ms: 10000   # HOLD 만료 스캔 간격 (회차 종료 후 대기)
