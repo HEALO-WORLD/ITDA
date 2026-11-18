@@ -1,0 +1,14 @@
+gradle.beforeProject { project ->
+    project.plugins.withId('java') {
+        project.pluginManager.apply('jacoco')
+
+        project.tasks.named('jacocoTestReport') {
+            dependsOn project.tasks.named('test')
+
+            reports {
+                html.required = true
+                xml.required = true
+            }
+        }
+    }
+}
