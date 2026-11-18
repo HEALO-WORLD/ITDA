@@ -12,6 +12,9 @@
 # 시나리오 문서
 !/docs/SCENARIOS.md
 
+# 테스트 및 성능 문서
+!/docs/PERFORMANCE_TEST.md
+
 ### 환경변수 (비밀번호) ###
 .env
 !.env.example
