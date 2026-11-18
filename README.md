@@ -435,6 +435,57 @@ Kafka 이벤트 처리 지연 및 자원 사용량을 분석했습니다.
 
 **[부하 테스트 및 성능 검증 상세 결과 보기](docs/PERFORMANCE_TEST.md)**
 
+### 7.3 코드 커버리지 측정 (JaCoCo)
+
+JUnit 기반 테스트의 코드 커버리지를 확인하기 위해 JaCoCo를 활용합니다.
+
+프로젝트 루트의 `jacoco.init.gradle`을 공통 설정으로 사용하여 **Eureka, Gateway, Institution, Slot, Referral Service 각각의
+테스트 커버리지를 측정**할 수 있도록 구성했습니다.
+
+각 서비스는 독립적인 Gradle 프로젝트이므로,
+서비스별로 테스트를 실행하고 HTML 커버리지 리포트를 확인합니다.
+
+#### 실행 방법
+
+Windows PowerShell 기준, 프로젝트 루트에서 실행합니다.
+
+```powershell
+# 측정할 서비스 선택
+cd slot-service
+
+# 테스트 실행 및 커버리지 리포트 생성
+.\gradlew.bat -I ..\jacoco.init.gradle test jacocoTestReport
+
+# HTML 리포트 확인
+Start-Process .\build\reports\jacoco\test\html\index.html
+
+# 프로젝트 루트로 복귀
+cd ..
+```
+
+`slot-service` 대신 다음 서비스 디렉터리를 선택할 수 있습니다.
+
+- `eureka-server`
+- `gateway-service`
+- `institution-service`
+- `slot-service`
+- `referral-service`
+
+#### 커버리지 리포트
+
+각 서비스의 리포트는 다음 위치에 생성됩니다.
+
+`<서비스명>/build/reports/jacoco/test/html/index.html`
+
+JaCoCo는 클래스·메서드·라인·분기별 커버리지를 제공하여
+테스트가 실행한 코드 범위를 확인할 수 있도록 지원합니다.
+
+> 커버리지 측정은 테스트 품질을 보조적으로 확인하는 수단이며,
+> 높은 커버리지 수치가 모든 비즈니스 로직의 정확성을 보장하지는 않습니다.
+
+```
+
+
 ## 8. 배포 및 운영
 
 ### 8.1 배포 구성
