@@ -17,6 +17,11 @@ spring:
     gateway:
       server:
         webflux:
+          # 서비스가 응답하지 않을 때 무한정 기다리지 않고 504로 끝낸다
+          # 서비스 안쪽 호출(referral → institution·slot, 최악 3번 x 2초)보다 길게 잡아, 서비스가 보낸 실패 응답은 그대로 전달되게 한다
+          httpclient:
+            connect-timeout: 1000   # ms
+            response-timeout: 10s
           routes:
             - id: block-internal
               uri: no://op
