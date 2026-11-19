@@ -2,6 +2,15 @@ server:
   port: 8083
 
 spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          # institution-service, slot-service 공통 (기본값은 연결 10초, 응답 60초)
+          # 의뢰 생성은 DB 커넥션을 잡은 채 세 번 차례로 호출하므로, 상대가 멈췄을 때 커넥션 풀이 바닥나지 않게 짧게 끊는다
+          default:
+            connectTimeout: 1000
+            readTimeout: 2000
   application:
     name: referral-service
   config:
